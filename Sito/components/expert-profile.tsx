@@ -34,6 +34,11 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
   const [connecting, setConnecting] = useState(false);
   const [registeringInterest, setRegisteringInterest] = useState<string | null>(null);
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
+  const [showInterestForm, setShowInterestForm] = useState<string | null>(null);
+  const [interestFormData, setInterestFormData] = useState({
+    countryCode: "",
+    phoneNumber: "",
+  });
   const supabase = createClient();
   const { user } = useAuth();
 
@@ -124,6 +129,11 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
       return;
     }
 
+    // Show form to collect phone number (optional)
+    setShowInterestForm(productId);
+  };
+
+  const handleSubmitInterest = async (productId: string) => {
     setRegisteringInterest(productId);
     try {
       // Get user email
@@ -136,6 +146,8 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
         product_id: productId,
         user_id: user.id,
         user_email: authUser.email,
+        country_code: interestFormData.countryCode || null,
+        phone_number: interestFormData.phoneNumber || null,
       });
 
       if (error) {
@@ -146,6 +158,8 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
         }
       } else {
         alert("Interest registered! The expert will be notified.");
+        setShowInterestForm(null);
+        setInterestFormData({ countryCode: "", phoneNumber: "" });
         
         // Send email notification
         await fetch("/api/notify-product-interest", {
@@ -405,17 +419,59 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
                       </div>
                     </div>
                     {user?.id !== expertId && (
-                      <button
-                        onClick={() => handleRegisterInterest(product.id)}
-                        disabled={registeringInterest === product.id}
-                        className="w-full bg-cyber-green text-custom-text py-2 rounded-lg font-semibold hover:bg-cyber-green-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_10px_rgba(0,255,136,0.3)]"
-                      >
-                        {registeringInterest === product.id 
-                          ? "Registering..." 
-                          : user 
-                          ? "Register Your Interest" 
-                          : "Sign in to Register Interest"}
-                      </button>
+                      <div>
+                        {showInterestForm === product.id ? (
+                          <div className="space-y-3 bg-dark-green-800/30 p-4 rounded-lg border border-cyber-green/30">
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <label className="block text-xs text-custom-text/70 mb-1">Country Code</label>
+                                <input
+                                  type="text"
+                                  placeholder="+1"
+                                  value={interestFormData.countryCode}
+                                  onChange={(e) => setInterestFormData({ ...interestFormData, countryCode: e.target.value })}
+                                  className="w-full px-2 py-1.5 bg-dark-green-900/50 border border-cyber-green/30 rounded text-custom-text placeholder-custom-text/50 text-sm"
+                                />
+                              </div>
+                              <div className="col-span-2">
+                                <label className="block text-xs text-custom-text/70 mb-1">Phone Number (Optional)</label>
+                                <input
+                                  type="tel"
+                                  placeholder="1234567890"
+                                  value={interestFormData.phoneNumber}
+                                  onChange={(e) => setInterestFormData({ ...interestFormData, phoneNumber: e.target.value })}
+                                  className="w-full px-2 py-1.5 bg-dark-green-900/50 border border-cyber-green/30 rounded text-custom-text placeholder-custom-text/50 text-sm"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleSubmitInterest(product.id)}
+                                disabled={registeringInterest === product.id}
+                                className="flex-1 bg-cyber-green text-custom-text py-2 rounded-lg font-semibold hover:bg-cyber-green-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                              >
+                                {registeringInterest === product.id ? "Registering..." : "Submit"}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setShowInterestForm(null);
+                                  setInterestFormData({ countryCode: "", phoneNumber: "" });
+                                }}
+                                className="px-4 py-2 border border-cyber-green/30 text-custom-text rounded-lg hover:bg-dark-green-800/50 transition-colors text-sm"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleRegisterInterest(product.id)}
+                            className="w-full bg-cyber-green text-custom-text py-2 rounded-lg font-semibold hover:bg-cyber-green-light transition-colors shadow-[0_0_10px_rgba(0,255,136,0.3)]"
+                          >
+                            {user ? "Register Your Interest" : "Sign in to Register Interest"}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 );

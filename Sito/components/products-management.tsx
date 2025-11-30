@@ -20,6 +20,8 @@ interface ProductInterest {
   user_id: string;
   user_email: string;
   user_name: string;
+  country_code?: string;
+  phone_number?: string;
   created_at: string;
 }
 
@@ -91,6 +93,8 @@ export function ProductsManagement() {
           product_id,
           user_id,
           user_email,
+          country_code,
+          phone_number,
           created_at,
           products!inner(name, expert_id)
         `)
@@ -133,6 +137,8 @@ export function ProductsManagement() {
         user_id: item.user_id,
         user_email: item.user_email,
         user_name: userNameMap[item.user_id] || "Unknown User",
+        country_code: item.country_code || undefined,
+        phone_number: item.phone_number || undefined,
         created_at: item.created_at,
       }));
 
@@ -248,11 +254,14 @@ export function ProductsManagement() {
       return;
     }
 
-    const headers = ["Product Name", "User Name", "User Email", "Registered Date"];
+    const headers = ["Product Name", "User Name", "User Email", "Phone Number", "Registered Date"];
     const rows = interests.map((interest) => [
       interest.product_name,
       interest.user_name,
       interest.user_email,
+      interest.country_code && interest.phone_number 
+        ? `${interest.country_code} ${interest.phone_number}` 
+        : interest.phone_number || "",
       new Date(interest.created_at).toLocaleDateString(),
     ]);
 
@@ -540,6 +549,7 @@ export function ProductsManagement() {
                     <th className="px-4 py-3 text-left text-sm font-semibold text-custom-text">Product</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-custom-text">User Name</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-custom-text">Email</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-custom-text">Phone</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-custom-text">Date</th>
                   </tr>
                 </thead>
@@ -552,6 +562,11 @@ export function ProductsManagement() {
                       <td className="px-4 py-3 text-sm text-custom-text">{interest.product_name}</td>
                       <td className="px-4 py-3 text-sm text-custom-text">{interest.user_name}</td>
                       <td className="px-4 py-3 text-sm text-custom-text">{interest.user_email}</td>
+                      <td className="px-4 py-3 text-sm text-custom-text/70">
+                        {interest.country_code && interest.phone_number 
+                          ? `${interest.country_code} ${interest.phone_number}` 
+                          : interest.phone_number || "-"}
+                      </td>
                       <td className="px-4 py-3 text-sm text-custom-text/70">
                         {new Date(interest.created_at).toLocaleDateString()}
                       </td>

@@ -31,6 +31,34 @@ export function DashboardContent() {
         return;
       }
 
+      // Update profile name from Google OAuth if available
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          const googleName = authUser.user_metadata?.full_name || 
+                            authUser.user_metadata?.name || 
+                            authUser.user_metadata?.display_name;
+          
+          if (googleName) {
+            // Check if profile exists and name is missing or different
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("name")
+              .eq("id", user.id)
+              .single();
+            
+            if (profile && (!profile.name || profile.name !== googleName)) {
+              await supabase
+                .from("profiles")
+                .update({ name: googleName })
+                .eq("id", user.id);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error updating profile name from Google:", error);
+      }
+
       try {
         // Fetch profile status
         const { data: profile } = await supabase
