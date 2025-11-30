@@ -100,8 +100,8 @@ export function FeaturedCourses() {
               created_at: product.created_at,
             };
           })
-          .filter((item: any) => item !== null)
-          .slice(0, 6);
+          .filter((item) => item !== null)
+          .slice(0, 6) as Product[];
 
         console.log("FeaturedCourses: Final products:", productsWithProfiles.length);
         setFeaturedProducts(productsWithProfiles);
