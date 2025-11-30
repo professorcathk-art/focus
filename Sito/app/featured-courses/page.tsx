@@ -96,16 +96,16 @@ export default function FeaturedCoursesPage() {
         let filtered = combinedData;
 
         // Apply search filter
-          if (searchQuery) {
-            filtered = productsData.filter(
-              (product: Product) =>
-                product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                product.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                product.expert_name.toLowerCase().includes(searchQuery.toLowerCase())
-            );
-          }
+        if (searchQuery) {
+          filtered = combinedData.filter(
+            (product: Product) =>
+              product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              product.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              product.expert_name.toLowerCase().includes(searchQuery.toLowerCase())
+          );
+        }
 
-          setProducts(filtered);
+        setProducts(filtered);
         }
       } catch (error) {
         console.error("Error:", error);
