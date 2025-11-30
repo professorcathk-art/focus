@@ -1,43 +1,227 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { createClient } from "@/lib/supabase/client";
 
-const categories = [
-  "Website Development",
-  "Software Development",
-  "Trading",
-  "Entrepreneur",
-  "Design",
-  "Marketing",
-];
+interface Category {
+  id: string;
+  name: string;
+}
+
+interface Country {
+  id: string;
+  name: string;
+  code: string;
+}
 
 export function ProfileSetupForm() {
   const router = useRouter();
   const { user } = useAuth();
   const supabase = createClient();
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [categorySearch, setCategorySearch] = useState("");
+  const [countrySearch, setCountrySearch] = useState("");
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [formData, setFormData] = useState({
+    name: "",
     title: "",
-    category: "",
+    categoryId: "",
+    categoryName: "",
     bio: "",
-    location: "",
+    countryId: "",
+    countryName: "",
     website: "",
     linkedin: "",
     listedOnMarketplace: false,
+    avatarUrl: "",
   });
   const [loading, setLoading] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [error, setError] = useState("");
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const countryDropdownRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        categoryDropdownRef.current &&
+        !categoryDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowCategoryDropdown(false);
+      }
+      if (
+        countryDropdownRef.current &&
+        !countryDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowCountryDropdown(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Fetch categories, countries, and existing profile
+  useEffect(() => {
+    async function fetchData() {
+      if (!user) {
+        setLoadingProfile(false);
+        return;
+      }
+
+      try {
+        const [categoriesRes, countriesRes, profileRes] = await Promise.all([
+          supabase.from("categories").select("id, name").order("name"),
+          supabase.from("countries").select("id, name, code").order("name"),
+          supabase
+            .from("profiles")
+            .select(`
+              name,
+              title,
+              bio,
+              website,
+              linkedin,
+              listed_on_marketplace,
+              category_id,
+              country_id,
+              avatar_url,
+              categories(name),
+              countries(name)
+            `)
+            .eq("id", user.id)
+            .single(),
+        ]);
+
+        if (categoriesRes.data) setCategories(categoriesRes.data);
+        if (countriesRes.data) setCountries(countriesRes.data);
+
+        // Load existing profile data if it exists
+        if (profileRes.data) {
+          const profile = profileRes.data;
+          setFormData({
+            name: profile.name || "",
+            title: profile.title || "",
+            categoryId: profile.category_id || "",
+            categoryName: (profile.categories as any)?.name || "",
+            bio: profile.bio || "",
+            countryId: profile.country_id || "",
+            countryName: (profile.countries as any)?.name || "",
+            website: profile.website || "",
+            linkedin: profile.linkedin || "",
+            listedOnMarketplace: profile.listed_on_marketplace || false,
+            avatarUrl: profile.avatar_url || "",
+          });
+          if (profile.category_id && (profile.categories as any)?.name) {
+            setCategorySearch((profile.categories as any).name);
+          }
+          if (profile.country_id && (profile.countries as any)?.name) {
+            setCountrySearch((profile.countries as any).name);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoadingProfile(false);
+      }
+    }
+    fetchData();
+  }, [supabase, user]);
+
+  const filteredCategories = categories.filter((cat) =>
+    cat.name.toLowerCase().includes(categorySearch.toLowerCase())
+  );
+
+  const filteredCountries = countries.filter((country) =>
+    country.name.toLowerCase().includes(countrySearch.toLowerCase())
+  );
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const value = e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value;
     setFormData({
       ...formData,
       [e.target.name]: value,
     });
+  };
+
+  const handleCategorySelect = (category: Category) => {
+    setFormData({
+      ...formData,
+      categoryId: category.id,
+      categoryName: category.name,
+    });
+    setCategorySearch(category.name);
+    setShowCategoryDropdown(false);
+  };
+
+  const handleCountrySelect = (country: Country) => {
+    setFormData({
+      ...formData,
+      countryId: country.id,
+      countryName: country.name,
+    });
+    setCountrySearch(country.name);
+    setShowCountryDropdown(false);
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      setError("Please upload an image file");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image size must be less than 5MB");
+      return;
+    }
+
+    setUploadingAvatar(true);
+    setError("");
+
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `avatars/${fileName}`;
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Get public URL
+      const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      
+      setFormData({
+        ...formData,
+        avatarUrl: data.publicUrl,
+      });
+    } catch (err: any) {
+      setError(err.message || "Failed to upload image. Please try again.");
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,12 +241,14 @@ export function ProfileSetupForm() {
         .from("profiles")
         .upsert({
           id: user.id,
+          name: formData.name,
           title: formData.title,
-          category: formData.category,
+          category_id: formData.categoryId || null,
+          country_id: formData.countryId || null,
           bio: formData.bio,
-          location: formData.location,
           website: formData.website || null,
           linkedin: formData.linkedin || null,
+          avatar_url: formData.avatarUrl || null,
           listed_on_marketplace: formData.listedOnMarketplace,
           updated_at: new Date().toISOString(),
         });
@@ -81,17 +267,43 @@ export function ProfileSetupForm() {
     }
   };
 
+  if (loadingProfile) {
+    return (
+      <div className="animate-pulse space-y-6">
+        <div className="h-10 bg-dark-green-800/50 rounded"></div>
+        <div className="h-10 bg-dark-green-800/50 rounded"></div>
+        <div className="h-32 bg-dark-green-800/50 rounded"></div>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg">
+        <div className="p-4 bg-red-900/30 border border-red-500/50 text-red-200 rounded-lg">
           {error}
         </div>
       )}
 
       <div>
-        <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
-          Professional Title *
+        <label htmlFor="name" className="block text-sm font-medium text-custom-text mb-2">
+          Display Name *
+        </label>
+        <input
+          id="name"
+          name="name"
+          type="text"
+          value={formData.name}
+          onChange={handleChange}
+          required
+          className="w-full px-4 py-3 bg-dark-green-900/50 border border-cyber-green/30 rounded-lg focus:ring-2 focus:ring-cyber-green focus:border-cyber-green text-custom-text placeholder-custom-text/50"
+          placeholder="Your display name"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="title" className="block text-sm font-medium text-custom-text mb-2">
+          Tagline * <span className="text-xs text-custom-text/60">({formData.title.length}/100 characters)</span>
         </label>
         <input
           id="title"
@@ -100,34 +312,90 @@ export function ProfileSetupForm() {
           value={formData.title}
           onChange={handleChange}
           required
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
-          placeholder="e.g., Senior Full-Stack Developer"
+          maxLength={100}
+          className="w-full px-4 py-3 bg-dark-green-900/50 border border-cyber-green/30 rounded-lg focus:ring-2 focus:ring-cyber-green focus:border-cyber-green text-custom-text placeholder-custom-text/50"
+          placeholder="Add a tagline to describe yourself (e.g., Helping startups scale their tech teams)"
         />
+        {formData.title.length >= 90 && (
+          <p className="mt-1 text-xs text-yellow-400">Approaching character limit</p>
+        )}
       </div>
 
       <div>
-        <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor="avatar" className="block text-sm font-medium text-custom-text mb-2">
+          Profile Picture
+        </label>
+        <div className="flex items-center gap-4">
+          {formData.avatarUrl && (
+            <img
+              src={formData.avatarUrl}
+              alt="Profile"
+              className="w-20 h-20 rounded-full object-cover border-2 border-cyber-green/30"
+            />
+          )}
+          <div className="flex-1">
+            <input
+              ref={fileInputRef}
+              id="avatar"
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingAvatar}
+              className="px-4 py-2 bg-dark-green-800/50 border border-cyber-green/30 rounded-lg text-custom-text hover:bg-dark-green-800 hover:border-cyber-green transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            >
+              {uploadingAvatar ? "Uploading..." : formData.avatarUrl ? "Change Picture" : "Upload Picture"}
+            </button>
+            <p className="mt-1 text-xs text-custom-text/60">Max 5MB, JPG/PNG/GIF</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="relative" ref={categoryDropdownRef}>
+        <label className="block text-sm font-medium text-custom-text mb-2">
           Category *
         </label>
-        <select
-          id="category"
-          name="category"
-          value={formData.category}
-          onChange={handleChange}
-          required
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
-        >
-          <option value="">Select a category</option>
-          {categories.map((cat) => (
-            <option key={cat} value={cat}>
-              {cat}
-            </option>
-          ))}
-        </select>
+        <input
+          type="text"
+          value={categorySearch}
+          onChange={(e) => {
+            setCategorySearch(e.target.value);
+            setShowCategoryDropdown(true);
+          }}
+          onFocus={() => setShowCategoryDropdown(true)}
+          placeholder="Search and select a category..."
+          required={!formData.categoryId}
+          className="w-full px-4 py-3 bg-dark-green-900/50 border border-cyber-green/30 rounded-lg focus:ring-2 focus:ring-cyber-green focus:border-cyber-green text-custom-text placeholder-custom-text/50"
+        />
+        {showCategoryDropdown && (
+          <div className="absolute z-50 w-full mt-1 bg-dark-green-800 border border-cyber-green/30 rounded-lg shadow-lg max-h-60 overflow-auto">
+            {filteredCategories.length === 0 ? (
+              <div className="px-4 py-3 text-custom-text/70">No categories found</div>
+            ) : (
+              filteredCategories.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => handleCategorySelect(cat)}
+                  className="w-full text-left px-4 py-2 text-custom-text hover:bg-dark-green-700 hover:text-cyber-green transition-colors"
+                >
+                  {cat.name}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+        {formData.categoryId && (
+          <input type="hidden" name="categoryId" value={formData.categoryId} />
+        )}
       </div>
 
       <div>
-        <label htmlFor="bio" className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor="bio" className="block text-sm font-medium text-custom-text mb-2">
           Bio *
         </label>
         <textarea
@@ -137,29 +405,52 @@ export function ProfileSetupForm() {
           onChange={handleChange}
           required
           rows={5}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+          className="w-full px-4 py-3 bg-dark-green-900/50 border border-cyber-green/30 rounded-lg focus:ring-2 focus:ring-cyber-green focus:border-cyber-green text-custom-text placeholder-custom-text/50"
           placeholder="Tell us about your expertise and experience..."
         />
       </div>
 
-      <div>
-        <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-2">
+      <div className="relative" ref={countryDropdownRef}>
+        <label className="block text-sm font-medium text-custom-text mb-2">
           Location
         </label>
         <input
-          id="location"
-          name="location"
           type="text"
-          value={formData.location}
-          onChange={handleChange}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
-          placeholder="e.g., San Francisco, CA"
+          value={countrySearch}
+          onChange={(e) => {
+            setCountrySearch(e.target.value);
+            setShowCountryDropdown(true);
+          }}
+          onFocus={() => setShowCountryDropdown(true)}
+          placeholder="Search and select a country..."
+          className="w-full px-4 py-3 bg-dark-green-900/50 border border-cyber-green/30 rounded-lg focus:ring-2 focus:ring-cyber-green focus:border-cyber-green text-custom-text placeholder-custom-text/50"
         />
+        {showCountryDropdown && (
+          <div className="absolute z-50 w-full mt-1 bg-dark-green-800 border border-cyber-green/30 rounded-lg shadow-lg max-h-60 overflow-auto">
+            {filteredCountries.length === 0 ? (
+              <div className="px-4 py-3 text-custom-text/70">No countries found</div>
+            ) : (
+              filteredCountries.map((country) => (
+                <button
+                  key={country.id}
+                  type="button"
+                  onClick={() => handleCountrySelect(country)}
+                  className="w-full text-left px-4 py-2 text-custom-text hover:bg-dark-green-700 hover:text-cyber-green transition-colors"
+                >
+                  {country.name}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+        {formData.countryId && (
+          <input type="hidden" name="countryId" value={formData.countryId} />
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="website" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="website" className="block text-sm font-medium text-custom-text mb-2">
             Website
           </label>
           <input
@@ -168,12 +459,12 @@ export function ProfileSetupForm() {
             type="url"
             value={formData.website}
             onChange={handleChange}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+            className="w-full px-4 py-3 bg-dark-green-900/50 border border-cyber-green/30 rounded-lg focus:ring-2 focus:ring-cyber-green focus:border-cyber-green text-custom-text placeholder-custom-text/50"
             placeholder="https://yourwebsite.com"
           />
         </div>
         <div>
-          <label htmlFor="linkedin" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="linkedin" className="block text-sm font-medium text-custom-text mb-2">
             LinkedIn
           </label>
           <input
@@ -182,7 +473,7 @@ export function ProfileSetupForm() {
             type="url"
             value={formData.linkedin}
             onChange={handleChange}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+            className="w-full px-4 py-3 bg-dark-green-900/50 border border-cyber-green/30 rounded-lg focus:ring-2 focus:ring-cyber-green focus:border-cyber-green text-custom-text placeholder-custom-text/50"
             placeholder="https://linkedin.com/in/yourprofile"
           />
         </div>
@@ -195,9 +486,9 @@ export function ProfileSetupForm() {
           type="checkbox"
           checked={formData.listedOnMarketplace}
           onChange={handleChange}
-          className="h-4 w-4 text-gray-900 focus:ring-gray-900 border-gray-300 rounded"
+          className="h-4 w-4 text-cyber-green focus:ring-cyber-green border-cyber-green/30 rounded bg-dark-green-900/50"
         />
-        <label htmlFor="listedOnMarketplace" className="ml-3 text-sm text-gray-700">
+        <label htmlFor="listedOnMarketplace" className="ml-3 text-sm text-custom-text">
           List my profile on the marketplace (visible to all users)
         </label>
       </div>
@@ -206,14 +497,14 @@ export function ProfileSetupForm() {
         <button
           type="submit"
           disabled={loading}
-          className="flex-1 bg-gray-900 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 bg-cyber-green text-custom-text py-3 rounded-lg font-semibold hover:bg-cyber-green-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(0,255,136,0.3)]"
         >
           {loading ? "Saving..." : "Save Profile"}
         </button>
         <button
           type="button"
           onClick={() => router.push("/dashboard")}
-          className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+          className="px-6 py-3 border border-cyber-green/30 text-custom-text rounded-lg hover:bg-dark-green-800/50 transition-colors"
         >
           Skip for Now
         </button>

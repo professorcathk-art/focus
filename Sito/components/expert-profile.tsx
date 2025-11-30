@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/contexts/auth-context";
 
 interface Expert {
   id: string;
@@ -15,40 +17,180 @@ interface Expert {
   verified: boolean;
 }
 
-// Mock data - will be replaced with Supabase queries
-const mockExpert: Expert = {
-  id: "1",
-  name: "Sarah Chen",
-  title: "Senior Full-Stack Developer",
-  category: "Website Development",
-  bio: "10+ years of experience building scalable web applications. Specialized in React, Node.js, and cloud infrastructure. I've helped dozens of startups scale their tech stack and build robust applications.",
-  location: "San Francisco, CA",
-  website: "https://sarahchen.dev",
-  linkedin: "https://linkedin.com/in/sarahchen",
-  verified: true,
-};
-
 export function ExpertProfile({ expertId }: { expertId: string }) {
   const [expert, setExpert] = useState<Expert | null>(null);
   const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<"none" | "pending" | "accepted" | "rejected">("none");
+  const [connecting, setConnecting] = useState(false);
+  const supabase = createClient();
+  const { user } = useAuth();
 
   useEffect(() => {
-    // TODO: Fetch expert data from Supabase
-    // For now, use mock data
-    setTimeout(() => {
-      setExpert(mockExpert);
-      setLoading(false);
-    }, 500);
-  }, [expertId]);
+    async function fetchExpert() {
+      try {
+        // Build query - allow viewing if listed OR if it's the user's own profile
+        let query = supabase
+          .from("profiles")
+          .select(`
+            id,
+            name,
+            title,
+            bio,
+            website,
+            linkedin,
+            verified,
+            listed_on_marketplace,
+            categories(name),
+            countries(name)
+          `)
+          .eq("id", expertId);
+
+        // If not viewing own profile, only show if listed
+        if (!user || user.id !== expertId) {
+          query = query.eq("listed_on_marketplace", true);
+        }
+
+        const { data, error } = await query.single();
+
+        if (error) {
+          console.error("Error fetching expert:", error);
+          setExpert(null);
+        } else if (data) {
+          setExpert({
+            id: data.id,
+            name: data.name || "Anonymous",
+            title: data.title || "",
+            category: (data.categories as any)?.name || "",
+            bio: data.bio || "",
+            location: (data.countries as any)?.name || "",
+            website: data.website || undefined,
+            linkedin: data.linkedin || undefined,
+            verified: data.verified || false,
+          });
+        } else {
+          setExpert(null);
+        }
+      } catch (error) {
+        console.error("Error:", error);
+        setExpert(null);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchExpert();
+  }, [expertId, supabase]);
+
+  // Check connection status
+  useEffect(() => {
+    async function checkConnectionStatus() {
+      if (!user || !expert || user.id === expert.id) {
+        return;
+      }
+
+      try {
+        // Check if user has sent a connection request to this expert
+        const { data: sentConnection } = await supabase
+          .from("connections")
+          .select("status")
+          .eq("user_id", user.id)
+          .eq("expert_id", expert.id)
+          .single();
+
+        if (sentConnection) {
+          setConnectionStatus(sentConnection.status as "pending" | "accepted" | "rejected");
+        } else {
+          // Check if expert has sent a connection request to user
+          const { data: receivedConnection } = await supabase
+            .from("connections")
+            .select("status")
+            .eq("user_id", expert.id)
+            .eq("expert_id", user.id)
+            .single();
+
+          if (receivedConnection) {
+            setConnectionStatus(receivedConnection.status === "accepted" ? "accepted" : "none");
+          } else {
+            setConnectionStatus("none");
+          }
+        }
+      } catch (error) {
+        // No connection found
+        setConnectionStatus("none");
+      }
+    }
+
+    if (expert && user) {
+      checkConnectionStatus();
+    }
+  }, [expert, user, supabase]);
+
+  const handleConnect = async () => {
+    if (!user || !expert || user.id === expert.id) {
+      return;
+    }
+
+    setConnecting(true);
+    try {
+      const { error } = await supabase
+        .from("connections")
+        .insert({
+          user_id: user.id,
+          expert_id: expert.id,
+          status: "pending",
+        });
+
+      if (error) {
+        if (error.code === "23505") {
+          // Unique constraint violation - connection already exists
+          alert("Connection request already sent");
+        } else {
+          throw error;
+        }
+      } else {
+        setConnectionStatus("pending");
+        
+        // Send email notification to expert
+        try {
+          const { data: userProfile } = await supabase
+            .from("profiles")
+            .select("name")
+            .eq("id", user.id)
+            .single();
+
+          await fetch("/api/notify-connection", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              expert_id: expert.id,
+              user_name: userProfile?.name || "Someone",
+            }),
+          });
+        } catch (emailError) {
+          console.error("Failed to send email notification:", emailError);
+          // Don't fail the connection request if email fails
+        }
+        
+        alert("Connection request sent!");
+      }
+    } catch (error: any) {
+      console.error("Error sending connection request:", error);
+      alert("Failed to send connection request. Please try again.");
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-2xl shadow-lg p-8">
+        <div className="bg-dark-green-800/30 backdrop-blur-sm border border-cyber-green/30 rounded-2xl shadow-lg p-8">
           <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/2 mb-8"></div>
-            <div className="h-32 bg-gray-200 rounded"></div>
+            <div className="h-8 bg-dark-green-800/50 rounded w-1/3 mb-4"></div>
+            <div className="h-4 bg-dark-green-800/50 rounded w-1/2 mb-8"></div>
+            <div className="h-32 bg-dark-green-800/50 rounded"></div>
           </div>
         </div>
       </div>
@@ -58,8 +200,8 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
   if (!expert) {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
-          <p className="text-gray-600">Expert not found</p>
+        <div className="bg-dark-green-800/30 backdrop-blur-sm border border-cyber-green/30 rounded-2xl shadow-lg p-8 text-center">
+          <p className="text-custom-text/80">Expert not found</p>
         </div>
       </div>
     );
@@ -67,40 +209,44 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="bg-white rounded-2xl shadow-lg p-8">
+      <div className="bg-dark-green-800/30 backdrop-blur-sm border border-cyber-green/30 rounded-2xl shadow-lg p-8">
         <div className="flex items-start justify-between mb-6">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-bold text-gray-900">{expert.name}</h1>
+              <h1 className="text-3xl font-bold text-custom-text">{expert.name}</h1>
               {expert.verified && (
-                <span className="text-blue-500 text-xl" title="Verified Expert">
+                <span className="text-cyber-green text-xl animate-pulse-glow" title="Verified Expert">
                   ✓
                 </span>
               )}
             </div>
-            <p className="text-xl text-gray-600 mb-2">{expert.title}</p>
-            <div className="flex items-center gap-4 text-gray-500">
-              <span className="bg-gray-100 px-3 py-1 rounded-full text-sm">{expert.category}</span>
+            <p className="text-xl text-custom-text/80 mb-2">{expert.title}</p>
+            <div className="flex items-center gap-4 text-custom-text/70">
+              {expert.category && (
+                <span className="text-xs text-cyber-green bg-dark-green-900/50 px-2 py-1 rounded-full border border-cyber-green/30">
+                  {expert.category}
+                </span>
+              )}
               {expert.location && <span>{expert.location}</span>}
             </div>
           </div>
         </div>
 
         <div className="mb-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-3">About</h2>
-          <p className="text-gray-700 leading-relaxed">{expert.bio}</p>
+          <h2 className="text-xl font-bold text-custom-text mb-3">About</h2>
+          <p className="text-custom-text/90 leading-relaxed">{expert.bio}</p>
         </div>
 
         {(expert.website || expert.linkedin) && (
           <div className="mb-8">
-            <h2 className="text-xl font-bold text-gray-900 mb-3">Links</h2>
+            <h2 className="text-xl font-bold text-custom-text mb-3">Links</h2>
             <div className="flex flex-wrap gap-4">
               {expert.website && (
                 <a
                   href={expert.website}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 underline"
+                  className="text-cyber-green hover:text-cyber-green-light underline transition-colors"
                 >
                   Website
                 </a>
@@ -110,7 +256,7 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
                   href={expert.linkedin}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 underline"
+                  className="text-cyber-green hover:text-cyber-green-light underline transition-colors"
                 >
                   LinkedIn
                 </a>
@@ -119,16 +265,34 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
           </div>
         )}
 
-        <div className="flex gap-4 pt-6 border-t border-gray-200">
+        <div className="flex gap-4 pt-6 border-t border-cyber-green/30">
           <Link
             href={`/messages?expert=${expert.id}`}
-            className="flex-1 bg-gray-900 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors text-center"
+            className="flex-1 bg-cyber-green text-custom-text py-3 rounded-lg font-semibold hover:bg-cyber-green-light transition-colors text-center shadow-[0_0_15px_rgba(0,255,136,0.3)]"
           >
             Send Message
           </Link>
-          <button className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
-            Connect
-          </button>
+          {user && user.id !== expert.id && (
+            <button
+              onClick={handleConnect}
+              disabled={connecting || connectionStatus !== "none"}
+              className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+                connectionStatus === "pending"
+                  ? "border border-cyber-green/50 text-cyber-green bg-dark-green-900/30 cursor-not-allowed"
+                  : connectionStatus === "accepted"
+                  ? "border border-cyber-green text-cyber-green bg-dark-green-900/30 cursor-not-allowed"
+                  : "border border-cyber-green/30 text-custom-text hover:bg-dark-green-800/50 hover:border-cyber-green"
+              }`}
+            >
+              {connecting
+                ? "Connecting..."
+                : connectionStatus === "pending"
+                ? "Pending"
+                : connectionStatus === "accepted"
+                ? "Connected"
+                : "Connect"}
+            </button>
+          )}
         </div>
       </div>
     </div>

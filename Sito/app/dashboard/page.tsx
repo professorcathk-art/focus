@@ -1,17 +1,11 @@
-import { Navigation } from "@/components/navigation";
 import { DashboardContent } from "@/components/dashboard-content";
-import { ProtectedRoute } from "@/components/protected-route";
+import { DashboardLayout } from "@/components/dashboard-layout";
 
 export default function DashboardPage() {
   return (
-    <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
-        <Navigation />
-        <div className="pt-16 pb-12">
-          <DashboardContent />
-        </div>
-      </div>
-    </ProtectedRoute>
+    <DashboardLayout>
+      <DashboardContent />
+    </DashboardLayout>
   );
 }
 
