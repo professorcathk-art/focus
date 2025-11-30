@@ -17,7 +17,7 @@ export default function PrivacyPage() {
               <section>
                 <h2 className="text-2xl font-bold text-custom-text mt-8 mb-4">1. Introduction</h2>
                 <p>
-                  Sito ("we", "us", or "our") is operated by Professor Cat Limited, a company incorporated in Hong Kong. 
+                  Sito (&quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) is operated by Professor Cat Limited, a company incorporated in Hong Kong. 
                   We are committed to protecting your privacy and ensuring the security of your personal information. 
                   This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you 
                   use our website and services.
@@ -85,7 +85,7 @@ export default function PrivacyPage() {
 
               <section>
                 <h2 className="text-2xl font-bold text-custom-text mt-8 mb-4">6. Your Rights</h2>
-                <p>Under Hong Kong's Personal Data (Privacy) Ordinance, you have the right to:</p>
+                <p>Under Hong Kong&apos;s Personal Data (Privacy) Ordinance, you have the right to:</p>
                 <ul className="list-disc list-inside space-y-2 ml-4">
                   <li>Access your personal data</li>
                   <li>Correct inaccurate personal data</li>
@@ -118,7 +118,7 @@ export default function PrivacyPage() {
               </section>
 
               <section>
-                <h2 className="text-2xl font-bold text-custom-text mt-8 mb-4">9. Children's Privacy</h2>
+                <h2 className="text-2xl font-bold text-custom-text mt-8 mb-4">9. Children&apos;s Privacy</h2>
                 <p>
                   Our services are not intended for individuals under the age of 18. We do not knowingly collect personal 
                   information from children. If you believe we have collected information from a child, please contact us immediately.
@@ -129,7 +129,7 @@ export default function PrivacyPage() {
                 <h2 className="text-2xl font-bold text-custom-text mt-8 mb-4">10. Changes to This Privacy Policy</h2>
                 <p>
                   We may update this Privacy Policy from time to time. We will notify you of any changes by posting the 
-                  new Privacy Policy on this page and updating the "Last Updated" date. You are advised to review this 
+                  new Privacy Policy on this page and updating the &quot;Last Updated&quot; date. You are advised to review this 
                   Privacy Policy periodically for any changes.
                 </p>
               </section>

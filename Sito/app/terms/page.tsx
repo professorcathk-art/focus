@@ -17,7 +17,7 @@ export default function TermsPage() {
               <section>
                 <h2 className="text-2xl font-bold text-custom-text mt-8 mb-4">1. Acceptance of Terms</h2>
                 <p>
-                  By accessing and using Sito ("the Platform"), operated by Professor Cat Limited, a company 
+                  By accessing and using Sito (&quot;the Platform&quot;), operated by Professor Cat Limited, a company 
                   incorporated in Hong Kong, you accept and agree to be bound by these Terms of Use. If you do not 
                   agree to these terms, please do not use our services.
                 </p>
@@ -115,7 +115,7 @@ export default function TermsPage() {
                 <h2 className="text-2xl font-bold text-custom-text mt-8 mb-4">8. Disclaimers</h2>
                 <h3 className="text-xl font-semibold text-custom-text mt-4 mb-2">8.1 Service Availability</h3>
                 <p>
-                  The Platform is provided "as is" and "as available" without warranties of any kind, either express 
+                  The Platform is provided &quot;as is&quot; and &quot;as available&quot; without warranties of any kind, either express 
                   or implied. We do not guarantee that the Platform will be uninterrupted, secure, or error-free.
                 </p>
 
