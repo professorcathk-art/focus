@@ -30,6 +30,149 @@ body {
   }
 }
 
+/* Product preview HTML styling for responsive display */
+.product-preview {
+  max-width: 100%;
+}
+
+.product-preview * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.product-preview img {
+  max-width: 100% !important;
+  height: auto !important;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+  display: block;
+}
+
+.product-preview video,
+.product-preview iframe {
+  max-width: 100% !important;
+  height: auto !important;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.5rem;
+}
+
+.product-preview table {
+  width: 100% !important;
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 1rem 0;
+}
+
+.product-preview pre,
+.product-preview code {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-width: 100%;
+  overflow-x: auto;
+  background: rgba(26, 58, 48, 0.5);
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.product-preview a {
+  color: #00ff88;
+  text-decoration: underline;
+}
+
+.product-preview a:hover {
+  color: #33ffaa;
+}
+
+.product-preview h1,
+.product-preview h2,
+.product-preview h3,
+.product-preview h4,
+.product-preview h5,
+.product-preview h6 {
+  color: #f7eddd;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+}
+
+.product-preview h1 {
+  font-size: 1.5rem;
+}
+
+.product-preview h2 {
+  font-size: 1.25rem;
+}
+
+.product-preview h3 {
+  font-size: 1.125rem;
+}
+
+.product-preview p {
+  color: rgba(247, 237, 221, 0.8);
+  margin-bottom: 0.75em;
+  line-height: 1.6;
+}
+
+.product-preview ul,
+.product-preview ol {
+  padding-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+
+.product-preview li {
+  color: rgba(247, 237, 221, 0.8);
+  margin-bottom: 0.25em;
+  line-height: 1.6;
+}
+
+.product-preview strong,
+.product-preview b {
+  color: #f7eddd;
+  font-weight: 600;
+}
+
+.product-preview em,
+.product-preview i {
+  font-style: italic;
+}
+
+.product-preview blockquote {
+  border-left: 3px solid #00ff88;
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: rgba(247, 237, 221, 0.7);
+  font-style: italic;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 640px) {
+  .product-preview {
+    font-size: 0.875rem;
+  }
+  
+  .product-preview h1 {
+    font-size: 1.25rem;
+  }
+  
+  .product-preview h2 {
+    font-size: 1.125rem;
+  }
+  
+  .product-preview h3 {
+    font-size: 1rem;
+  }
+  
+  .product-preview img {
+    margin: 0.75rem 0;
+  }
+  
+  .product-preview table {
+    font-size: 0.75rem;
+  }
+}
+
 /* Modern animations */
 @keyframes fadeInUp {
   from {
