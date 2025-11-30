@@ -17,11 +17,22 @@ interface Expert {
   verified: boolean;
 }
 
+interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  pricing_type: "one-off" | "hourly";
+}
+
 export function ExpertProfile({ expertId }: { expertId: string }) {
   const [expert, setExpert] = useState<Expert | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<"none" | "pending" | "accepted" | "rejected">("none");
   const [connecting, setConnecting] = useState(false);
+  const [registeringInterest, setRegisteringInterest] = useState<string | null>(null);
   const supabase = createClient();
   const { user } = useAuth();
 
@@ -80,8 +91,78 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
 
     if (expertId) {
       fetchExpert();
+      fetchProducts();
     }
   }, [expertId, supabase, user]);
+
+  const fetchProducts = async () => {
+    if (!expertId) return;
+    setLoadingProducts(true);
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("expert_id", expertId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setProducts(data || []);
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      setProducts([]);
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const handleRegisterInterest = async (productId: string) => {
+    if (!user) {
+      alert("Please sign in to register interest");
+      return;
+    }
+
+    setRegisteringInterest(productId);
+    try {
+      // Get user email
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser?.email) {
+        throw new Error("User email not found");
+      }
+
+      const { error } = await supabase.from("product_interests").insert({
+        product_id: productId,
+        user_id: user.id,
+        user_email: authUser.email,
+      });
+
+      if (error) {
+        if (error.code === "23505") {
+          alert("You have already registered interest in this product");
+        } else {
+          throw error;
+        }
+      } else {
+        alert("Interest registered! The expert will be notified.");
+        
+        // Send email notification
+        await fetch("/api/notify-product-interest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            productId,
+            expertId,
+            userId: user.id,
+            userEmail: authUser.email,
+          }),
+        });
+      }
+    } catch (err: any) {
+      console.error("Error registering interest:", err);
+      alert("Failed to register interest. Please try again.");
+    } finally {
+      setRegisteringInterest(null);
+    }
+  };
 
   // Check connection status
   useEffect(() => {
@@ -267,6 +348,52 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
             </div>
           </div>
         )}
+
+        {/* Products Section */}
+        {loadingProducts ? (
+          <div className="mb-8">
+            <h2 className="text-xl font-bold text-custom-text mb-3">Products & Services</h2>
+            <div className="animate-pulse space-y-4">
+              <div className="h-24 bg-dark-green-800/50 rounded-xl"></div>
+            </div>
+          </div>
+        ) : products.length > 0 ? (
+          <div className="mb-8">
+            <h2 className="text-xl font-bold text-custom-text mb-4">Products & Services</h2>
+            <div className="space-y-4">
+              {products.map((product) => (
+                <div
+                  key={product.id}
+                  className="bg-dark-green-900/30 border border-cyber-green/30 rounded-xl p-6"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-bold text-custom-text mb-2">{product.name}</h3>
+                      <p className="text-custom-text/80 mb-3">{product.description}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-cyber-green font-semibold">
+                          ${product.price} {product.pricing_type === "hourly" ? "/ hour" : ""}
+                        </span>
+                        <span className="text-custom-text/60 text-sm">
+                          {product.pricing_type === "hourly" ? "Hourly Rate" : "One-off Price"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  {user && user.id !== expertId && (
+                    <button
+                      onClick={() => handleRegisterInterest(product.id)}
+                      disabled={registeringInterest === product.id}
+                      className="w-full bg-cyber-green text-custom-text py-2 rounded-lg font-semibold hover:bg-cyber-green-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_10px_rgba(0,255,136,0.3)]"
+                    >
+                      {registeringInterest === product.id ? "Registering..." : "Register Your Interest"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex gap-4 pt-6 border-t border-cyber-green/30">
           <Link
