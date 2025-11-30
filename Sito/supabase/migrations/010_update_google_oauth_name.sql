@@ -19,6 +19,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Also update existing profiles that don't have names but have Google OAuth metadata
+-- Only update if name is NULL or empty string - never overwrite user-set names
 UPDATE public.profiles p
 SET name = COALESCE(
   (SELECT raw_user_meta_data->>'full_name' FROM auth.users WHERE id = p.id),
@@ -26,7 +27,7 @@ SET name = COALESCE(
   (SELECT raw_user_meta_data->>'display_name' FROM auth.users WHERE id = p.id),
   p.name
 )
-WHERE (p.name IS NULL OR p.name = '') 
+WHERE (p.name IS NULL OR TRIM(p.name) = '') 
 AND EXISTS (
   SELECT 1 FROM auth.users u 
   WHERE u.id = p.id 

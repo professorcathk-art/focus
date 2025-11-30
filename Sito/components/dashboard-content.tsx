@@ -40,14 +40,15 @@ export function DashboardContent() {
                             authUser.user_metadata?.display_name;
           
           if (googleName) {
-            // Check if profile exists and name is missing or different
+            // Check if profile exists and name is missing (only set Google name if user hasn't set one)
             const { data: profile } = await supabase
               .from("profiles")
               .select("name")
               .eq("id", user.id)
               .single();
             
-            if (profile && (!profile.name || profile.name !== googleName)) {
+            // Only update if name is null, empty, or undefined - never overwrite user-set names
+            if (profile && (!profile.name || profile.name.trim() === "")) {
               await supabase
                 .from("profiles")
                 .update({ name: googleName })
