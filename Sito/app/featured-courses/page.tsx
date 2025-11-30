@@ -84,7 +84,7 @@ export default function FeaturedCoursesPage() {
         console.log("Profiles fetched:", profilesData?.length || 0);
 
         // Combine products with profiles
-        const combinedData = productsData
+        const combinedData: Product[] = productsData
           .map((product: any) => {
             const profile = profilesData?.find((p: any) => p.id === product.expert_id);
             if (!profile) {
@@ -104,7 +104,7 @@ export default function FeaturedCoursesPage() {
               created_at: product.created_at,
             };
           })
-          .filter((item: any) => item !== null);
+          .filter((item): item is Product => item !== null);
 
         console.log("Combined products:", combinedData.length);
 
@@ -113,7 +113,7 @@ export default function FeaturedCoursesPage() {
         // Apply search filter
         if (searchQuery) {
           filtered = combinedData.filter(
-            (product: Product) =>
+            (product) =>
               product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
               product.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
               product.expert_name.toLowerCase().includes(searchQuery.toLowerCase())
