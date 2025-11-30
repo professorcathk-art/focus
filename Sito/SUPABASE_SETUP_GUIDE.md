@@ -24,32 +24,31 @@ This adds the `avatar_url` column to the `profiles` table.
 Run the following SQL in your Supabase SQL Editor:
 
 ```sql
--- Allow authenticated users to upload their own avatars
-CREATE POLICY "Users can upload their own avatar"
+-- Drop existing policies if they exist (optional, for clean setup)
+DROP POLICY IF EXISTS "Users can upload their own avatar" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update their own avatar" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete their own avatar" ON storage.objects;
+DROP POLICY IF EXISTS "Public can view avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Users can manage avatars" ON storage.objects;
+
+-- Allow authenticated users to upload any file in avatars bucket
+CREATE POLICY "Users can upload avatars"
 ON storage.objects FOR INSERT
 TO authenticated
-WITH CHECK (
-  bucket_id = 'avatars' AND
-  (storage.foldername(name))[1] = auth.uid()::text
-);
+WITH CHECK (bucket_id = 'avatars');
 
--- Allow authenticated users to update their own avatars
-CREATE POLICY "Users can update their own avatar"
+-- Allow authenticated users to update any file in avatars bucket
+CREATE POLICY "Users can update avatars"
 ON storage.objects FOR UPDATE
 TO authenticated
-USING (
-  bucket_id = 'avatars' AND
-  (storage.foldername(name))[1] = auth.uid()::text
-);
+USING (bucket_id = 'avatars')
+WITH CHECK (bucket_id = 'avatars');
 
--- Allow authenticated users to delete their own avatars
-CREATE POLICY "Users can delete their own avatar"
+-- Allow authenticated users to delete any file in avatars bucket
+CREATE POLICY "Users can delete avatars"
 ON storage.objects FOR DELETE
 TO authenticated
-USING (
-  bucket_id = 'avatars' AND
-  (storage.foldername(name))[1] = auth.uid()::text
-);
+USING (bucket_id = 'avatars');
 
 -- Allow public read access to avatars
 CREATE POLICY "Public can view avatars"
@@ -58,22 +57,7 @@ TO public
 USING (bucket_id = 'avatars');
 ```
 
-**Note:** The current implementation uploads files with the pattern `avatars/{user_id}-{timestamp}.{ext}`, so the folder-based policy above may need adjustment. Alternatively, you can use a simpler policy:
-
-```sql
--- Simpler policy: Allow authenticated users to upload/update/delete any file in avatars bucket
-CREATE POLICY "Users can manage avatars"
-ON storage.objects FOR ALL
-TO authenticated
-USING (bucket_id = 'avatars')
-WITH CHECK (bucket_id = 'avatars');
-
--- Allow public read access
-CREATE POLICY "Public can view avatars"
-ON storage.objects FOR SELECT
-TO public
-USING (bucket_id = 'avatars');
-```
+**Important:** These policies allow any authenticated user to upload/update/delete files in the avatars bucket. If you want more restrictive policies (users can only manage their own files), you'll need to adjust the file naming pattern in the upload code to include the user ID in a folder structure like `avatars/{user_id}/{filename}`.
 
 ## 3. Enable Google OAuth
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 interface Expert {
   id: string;
@@ -11,92 +12,128 @@ interface Expert {
   bio: string;
   location: string;
   verified: boolean;
+  avatarUrl?: string;
 }
 
-// Mock data - will be replaced with Supabase queries
-const mockExperts: Expert[] = [
-  {
-    id: "1",
-    name: "Sarah Chen",
-    title: "Senior Full-Stack Developer",
-    category: "Website Development",
-    bio: "10+ years of experience building scalable web applications",
-    location: "San Francisco, CA",
-    verified: true,
-  },
-  {
-    id: "2",
-    name: "Michael Rodriguez",
-    title: "Mobile App Architect",
-    category: "Software Development",
-    bio: "Expert in React Native and iOS development",
-    location: "New York, NY",
-    verified: true,
-  },
-  {
-    id: "3",
-    name: "David Kim",
-    title: "Trading Strategist",
-    category: "Trading",
-    bio: "Professional trader with 15+ years in forex and crypto",
-    location: "London, UK",
-    verified: true,
-  },
-  {
-    id: "4",
-    name: "Emma Wilson",
-    title: "UX Design Lead",
-    category: "Design",
-    bio: "Award-winning designer with expertise in user-centered design",
-    location: "San Francisco, CA",
-    verified: true,
-  },
-  {
-    id: "5",
-    name: "James Park",
-    title: "Startup Advisor",
-    category: "Entrepreneur",
-    bio: "Helped launch 50+ successful startups",
-    location: "Singapore",
-    verified: true,
-  },
-  {
-    id: "6",
-    name: "Lisa Zhang",
-    title: "Digital Marketing Director",
-    category: "Marketing",
-    bio: "Expert in growth marketing and brand strategy",
-    location: "Hong Kong",
-    verified: true,
-  },
-];
-
-const categories = [
-  "Website Development",
-  "Software Development",
-  "Trading",
-  "Entrepreneur",
-  "Design",
-  "Marketing",
-];
+interface Category {
+  id: string;
+  name: string;
+}
 
 export function FeaturedExperts() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [experts, setExperts] = useState<Expert[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
 
-  // Get featured experts (3 per category, or all if category selected)
-  const getFeaturedExperts = () => {
-    if (selectedCategory) {
-      return mockExperts.filter((expert) => expert.category === selectedCategory).slice(0, 3);
+  // Fetch categories from Supabase
+  useEffect(() => {
+    async function fetchCategories() {
+      try {
+        const { data, error } = await supabase
+          .from("categories")
+          .select("id, name")
+          .order("name");
+
+        if (error) {
+          console.error("Error fetching categories:", error);
+        } else if (data) {
+          setCategories(data);
+        }
+      } catch (error) {
+        console.error("Error:", error);
+      }
     }
-    // Show 2 experts per category
-    const expertsByCategory: { [key: string]: Expert[] } = {};
-    categories.forEach((cat) => {
-      expertsByCategory[cat] = mockExperts.filter((expert) => expert.category === cat).slice(0, 2);
-    });
-    return Object.values(expertsByCategory).flat();
-  };
+    fetchCategories();
+  }, [supabase]);
 
-  const featuredExperts = getFeaturedExperts();
+  // Fetch featured experts from Supabase
+  useEffect(() => {
+    async function fetchFeaturedExperts() {
+      setLoading(true);
+      try {
+        let query = supabase
+          .from("profiles")
+          .select(`
+            id,
+            name,
+            title,
+            bio,
+            verified,
+            listed_on_marketplace,
+            category_id,
+            country_id,
+            avatar_url,
+            categories(name),
+            countries(name)
+          `)
+          .eq("listed_on_marketplace", true)
+          .order("created_at", { ascending: false });
+
+        // Filter by category if selected
+        if (selectedCategory) {
+          query = query.eq("category_id", selectedCategory).limit(3);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.error("Error fetching experts:", error);
+          setExperts([]);
+        } else if (data) {
+          let expertsList: Expert[] = [];
+
+          if (selectedCategory) {
+            // Show up to 3 experts for selected category
+            expertsList = data.slice(0, 3).map((profile: any) => ({
+              id: profile.id,
+              name: profile.name || "Anonymous",
+              title: profile.title || "",
+              category: (profile.categories as any)?.name || "",
+              bio: profile.bio || "",
+              location: (profile.countries as any)?.name || "",
+              verified: profile.verified || false,
+              avatarUrl: profile.avatar_url || undefined,
+            }));
+          } else {
+            // Show 2 experts per category
+            const expertsByCategory: { [key: string]: Expert[] } = {};
+            
+            data.forEach((profile: any) => {
+              const categoryName = (profile.categories as any)?.name || "Uncategorized";
+              if (!expertsByCategory[categoryName]) {
+                expertsByCategory[categoryName] = [];
+              }
+              if (expertsByCategory[categoryName].length < 2) {
+                expertsByCategory[categoryName].push({
+                  id: profile.id,
+                  name: profile.name || "Anonymous",
+                  title: profile.title || "",
+                  category: categoryName,
+                  bio: profile.bio || "",
+                  location: (profile.countries as any)?.name || "",
+                  verified: profile.verified || false,
+                  avatarUrl: profile.avatar_url || undefined,
+                });
+              }
+            });
+
+            expertsList = Object.values(expertsByCategory).flat();
+          }
+
+          setExperts(expertsList);
+        }
+      } catch (error) {
+        console.error("Error:", error);
+        setExperts([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchFeaturedExperts();
+  }, [selectedCategory, supabase]);
 
   return (
     <section className="py-12 sm:py-16 lg:py-20 px-4 sm:px-6 lg:px-8">
@@ -120,7 +157,7 @@ export function FeaturedExperts() {
             onClick={() => setSelectedCategory(null)}
             className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-300 whitespace-nowrap ${
               selectedCategory === null
-                ? "bg-cyber-green text-custom-text shadow-[0_0_15px_rgba(0,255,136,0.5)]"
+                ? "bg-dark-green-800 text-custom-text border border-cyber-green/50 shadow-[0_0_15px_rgba(0,255,136,0.3)]"
                 : "bg-dark-green-800/50 text-custom-text hover:bg-dark-green-800 hover:border-cyber-green/50 border border-cyber-green/20"
             }`}
           >
@@ -128,33 +165,48 @@ export function FeaturedExperts() {
           </button>
           {categories.map((category) => (
             <button
-              key={category}
-              onClick={() => setSelectedCategory(category)}
+              key={category.id}
+              onClick={() => setSelectedCategory(category.id)}
               className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-300 whitespace-nowrap ${
-                selectedCategory === category
-                  ? "bg-cyber-green text-custom-text shadow-[0_0_15px_rgba(0,255,136,0.5)]"
+                selectedCategory === category.id
+                  ? "bg-dark-green-800 text-custom-text border border-cyber-green/50 shadow-[0_0_15px_rgba(0,255,136,0.3)]"
                   : "bg-dark-green-800/50 text-custom-text hover:bg-dark-green-800 hover:border-cyber-green/50 border border-cyber-green/20"
               }`}
             >
-              {category}
+              {category.name}
             </button>
           ))}
         </div>
 
-        {featuredExperts.length === 0 ? (
+        {loading ? (
           <div className="text-center py-12">
-            <p className="text-custom-text/80">No experts found in this category.</p>
+            <p className="text-custom-text/80 animate-pulse">Loading experts...</p>
+          </div>
+        ) : experts.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-custom-text/80">No experts found{selectedCategory ? " in this category" : ""}.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {featuredExperts.map((expert, index) => (
+            {experts.map((expert, index) => (
               <Link
                 key={expert.id}
                 href={`/expert/${expert.id}`}
                 className="group bg-dark-green-800/30 backdrop-blur-sm border border-cyber-green/30 p-4 sm:p-5 rounded-xl hover:bg-dark-green-800/50 hover:border-cyber-green hover:shadow-[0_0_20px_rgba(0,255,136,0.3)] transition-all duration-300 transform hover:-translate-y-1 hover:scale-[1.01] sm:hover:scale-[1.02] animate-fade-in-up"
                 style={{ animationDelay: `${index * 0.1}s` }}
               >
-                <div className="flex items-start justify-between mb-2 sm:mb-3">
+                <div className="flex items-start gap-4 mb-2 sm:mb-3">
+                  {expert.avatarUrl ? (
+                    <img
+                      src={expert.avatarUrl}
+                      alt={expert.name}
+                      className="w-12 h-12 sm:w-16 sm:h-16 rounded-full object-cover border-2 border-cyber-green/30 flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-dark-green-800/50 border-2 border-cyber-green/30 flex items-center justify-center flex-shrink-0">
+                      <span className="text-lg sm:text-2xl text-cyber-green">{expert.name.charAt(0).toUpperCase()}</span>
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="text-base sm:text-lg font-bold text-cyber-green group-hover:text-glow transition-all truncate">{expert.name}</h3>
@@ -183,7 +235,7 @@ export function FeaturedExperts() {
           <div className="text-center mt-6 sm:mt-8">
             <Link
               href="/directory"
-              className="inline-block bg-cyber-green text-custom-text px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base font-bold hover:bg-cyber-green-light transition-all duration-300 transform hover:scale-105 shadow-[0_0_20px_rgba(0,255,136,0.5)] animate-pulse-glow"
+              className="inline-block bg-dark-green-800 text-custom-text px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base font-bold border border-cyber-green/50 hover:bg-dark-green-700 hover:border-cyber-green transition-all duration-300 transform hover:scale-105 shadow-[0_0_20px_rgba(0,255,136,0.3)]"
             >
               View All Experts
             </Link>

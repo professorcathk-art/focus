@@ -196,7 +196,15 @@ export function ProfileSetupForm() {
     try {
       const fileExt = file.name.split(".").pop();
       const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      const filePath = fileName; // Upload directly to bucket root, not in a subfolder
+
+      // Delete old avatar if exists
+      if (formData.avatarUrl) {
+        const oldFileName = formData.avatarUrl.split("/").pop()?.split("?")[0];
+        if (oldFileName) {
+          await supabase.storage.from("avatars").remove([oldFileName]);
+        }
+      }
 
       // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
