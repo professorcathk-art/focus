@@ -72,6 +72,7 @@ export function ExpertDirectory() {
           .select(`
             id,
             name,
+            title,
             tagline,
             bio,
             verified,
@@ -103,7 +104,7 @@ export function ExpertDirectory() {
           let filtered = data.map((profile: any) => ({
             id: profile.id,
             name: profile.name || "Anonymous",
-            title: profile.tagline || "", // Changed to tagline
+            title: profile.tagline || profile.title || "", // Use tagline if available, fallback to title
             category_name: (profile.categories as any)?.name || "",
             bio: profile.bio || "",
             country_name: (profile.countries as any)?.name || "",

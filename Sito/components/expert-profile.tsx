@@ -372,7 +372,7 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
                       <p className="text-custom-text/80 mb-3">{product.description}</p>
                       <div className="flex items-center gap-2">
                         <span className="text-cyber-green font-semibold">
-                          ${product.price} {product.pricing_type === "hourly" ? "/ hour" : ""}
+                          USD ${product.price} {product.pricing_type === "hourly" ? "/ hour" : ""}
                         </span>
                         <span className="text-custom-text/60 text-sm">
                           {product.pricing_type === "hourly" ? "Hourly Rate" : "One-off Price"}

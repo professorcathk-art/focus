@@ -44,15 +44,13 @@ export function Navigation() {
               About
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-cyber-green group-hover:w-full transition-all duration-300 shadow-[0_0_10px_rgba(0,255,136,0.5)]"></span>
             </Link>
-            <a
-              href="https://tenthproject.com"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href="/featured-courses"
               className="text-custom-text/90 hover:text-custom-text transition-all duration-300 relative group text-sm lg:text-base"
             >
-              Certified Courses
+              Featured Courses
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-cyber-green group-hover:w-full transition-all duration-300 shadow-[0_0_10px_rgba(0,255,136,0.5)]"></span>
-            </a>
+            </Link>
             {loading ? (
               <div className="text-custom-text/80 animate-pulse text-sm lg:text-base">Loading...</div>
             ) : user ? (
@@ -133,15 +131,13 @@ export function Navigation() {
               >
                 About
               </Link>
-              <a
-                href="https://tenthproject.com"
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href="/featured-courses"
                 onClick={() => setMobileMenuOpen(false)}
                 className="block text-custom-text/90 hover:text-cyber-green transition-colors py-2"
               >
-                Certified Courses
-              </a>
+                Featured Courses
+              </Link>
               {loading ? (
                 <div className="text-custom-text/80 animate-pulse py-2">Loading...</div>
               ) : user ? (

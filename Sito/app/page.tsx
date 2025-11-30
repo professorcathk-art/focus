@@ -3,6 +3,7 @@ import { HeroSection } from "@/components/hero-section";
 import { CategorySection } from "@/components/category-section";
 import { FeaturesSection } from "@/components/features-section";
 import { FeaturedExperts } from "@/components/featured-experts";
+import { FeaturedCourses } from "@/components/featured-courses";
 import { TestimonialsSection } from "@/components/testimonials-section";
 import { Footer } from "@/components/footer";
 import { Navigation } from "@/components/navigation";
@@ -21,6 +22,7 @@ export default function Home() {
       <Navigation />
       <HeroSection />
       <FeaturedExperts />
+      <FeaturedCourses />
       <CategorySection />
       <FeaturesSection />
       <TestimonialsSection />
