@@ -44,7 +44,7 @@ export function ProductsManagement() {
     if (user) {
       fetchProducts();
     }
-  }, [user, supabase]);
+  }, [user]);
 
   const fetchProducts = async () => {
     if (!user) return;
@@ -67,11 +67,21 @@ export function ProductsManagement() {
   };
 
   const fetchInterests = async () => {
-    if (!user || products.length === 0) {
+    if (!user) {
       setInterests([]);
       return;
     }
+    
+    // Wait for products to be loaded
+    if (products.length === 0) {
+      setInterests([]);
+      return;
+    }
+    
     try {
+      console.log("Fetching interests for products:", products.map(p => p.id));
+      const productIds = products.map((p) => p.id);
+      
       const { data, error } = await supabase
         .from("product_interests")
         .select(`
@@ -83,17 +93,19 @@ export function ProductsManagement() {
           products(name),
           profiles:user_id(name)
         `)
-        .in(
-          "product_id",
-          products.map((p) => p.id)
-        );
+        .in("product_id", productIds);
 
       if (error) {
-        // If no products yet, that's okay
-        if (error.code !== "PGRST116") throw error;
+        console.error("Error fetching interests:", error);
+        // If no interests found, that's okay
+        if (error.code !== "PGRST116") {
+          throw error;
+        }
         setInterests([]);
         return;
       }
+
+      console.log("Interests fetched:", data?.length || 0);
 
       const interestsData = (data || []).map((item: any) => ({
         id: item.id,
@@ -113,12 +125,10 @@ export function ProductsManagement() {
   };
 
   useEffect(() => {
-    if (activeTab === "interests" && products.length > 0) {
+    if (activeTab === "interests") {
       fetchInterests();
-    } else if (activeTab === "interests" && products.length === 0) {
-      setInterests([]);
     }
-  }, [activeTab, products]);
+  }, [activeTab, products, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

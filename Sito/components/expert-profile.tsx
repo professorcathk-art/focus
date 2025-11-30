@@ -117,7 +117,9 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
 
   const handleRegisterInterest = async (productId: string) => {
     if (!user) {
-      alert("Please sign in to register interest");
+      // Redirect to login page with return URL
+      const currentUrl = window.location.pathname + window.location.search;
+      window.location.href = `/login?redirect=${encodeURIComponent(currentUrl)}`;
       return;
     }
 
@@ -380,13 +382,17 @@ export function ExpertProfile({ expertId }: { expertId: string }) {
                       </div>
                     </div>
                   </div>
-                  {user && user.id !== expertId && (
+                  {user?.id !== expertId && (
                     <button
                       onClick={() => handleRegisterInterest(product.id)}
                       disabled={registeringInterest === product.id}
                       className="w-full bg-cyber-green text-custom-text py-2 rounded-lg font-semibold hover:bg-cyber-green-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_10px_rgba(0,255,136,0.3)]"
                     >
-                      {registeringInterest === product.id ? "Registering..." : "Register Your Interest"}
+                      {registeringInterest === product.id 
+                        ? "Registering..." 
+                        : user 
+                        ? "Register Your Interest" 
+                        : "Sign in to Register Interest"}
                     </button>
                   )}
                 </div>

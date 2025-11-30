@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export function LoginForm() {
+export function LoginForm({ redirect }: { redirect?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +29,7 @@ export function LoginForm() {
       }
 
       if (data.user) {
-        router.push("/dashboard");
+        router.push(redirect || "/dashboard");
         router.refresh();
       }
     } catch (err) {
