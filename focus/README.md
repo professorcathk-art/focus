@@ -4,7 +4,7 @@ An iOS app for capturing, organizing, and finding ideas using voice recording, t
 
 ## Features
 
-- 🎤 **Voice Recording** - Record ideas with automatic transcription (Phase 2 - Currently Hidden)
+- 🎤 **Voice Recording** - Record ideas with automatic transcription
 - 📝 **Text Input** - Type ideas directly
 - 🤖 **AI Categorization** - Automatic category suggestions using embeddings
 - 🔍 **Semantic Search** - Find ideas by meaning, not keywords
@@ -44,7 +44,7 @@ An iOS app for capturing, organizing, and finding ideas using voice recording, t
 
 1. **Clone repository**
    ```bash
-   git clone https://github.com/professorcathk-art/focus.git
+   git clone https://github.com/YOUR_USERNAME/focus.git
    cd focus
    ```
 

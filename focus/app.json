@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Focus",
+    "slug": "focus",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.focus.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Focus needs access to your microphone to record your ideas.",
+        "NSSpeechRecognitionUsageDescription": "Focus uses speech recognition to transcribe your ideas."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Focus to access your microphone to record ideas."
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "scheme": "focus"
+  }
+}
