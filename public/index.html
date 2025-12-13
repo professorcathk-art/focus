@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>Focus</title>
+    <style id="expo-reset">
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        overflow: hidden;
+      }
+      #root {
+        height: 100%;
+      }
+    </style>
+    <script>
+      // Fix for import.meta - add type="module" to script tags before they load
+      (function() {
+        const observer = new MutationObserver(function(mutations) {
+          mutations.forEach(function(mutation) {
+            mutation.addedNodes.forEach(function(node) {
+              if (node.nodeName === 'SCRIPT' && node.src && node.src.includes('entry.bundle') && !node.type) {
+                node.type = 'module';
+              }
+            });
+          });
+        });
+        observer.observe(document.head || document.body, { childList: true, subtree: true });
+        
+        // Also check existing scripts
+        document.addEventListener('DOMContentLoaded', function() {
+          const scripts = document.querySelectorAll('script[src*="entry.bundle"]');
+          scripts.forEach(function(script) {
+            if (!script.type) {
+              script.type = 'module';
+            }
+          });
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <div id="root"></div>
+  </body>
+</html>
+

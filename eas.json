@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "version": ">= 5.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://focus-psi-one.vercel.app/api",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wqvevludffkemgicrfos.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_Wh-OXf9VvhfJjI7vcuYuFw_bqP9nUk1"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://focus-psi-one.vercel.app/api",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wqvevludffkemgicrfos.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_Wh-OXf9VvhfJjI7vcuYuFw_bqP9nUk1"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
+
