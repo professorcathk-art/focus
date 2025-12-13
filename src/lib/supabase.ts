@@ -26,6 +26,8 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     persistSession: true,
     detectSessionInUrl: true,
     flowType: 'pkce',
+    // Enable URL detection for OAuth callbacks
+    redirectTo: undefined, // Will be set per-request
   },
 });
 

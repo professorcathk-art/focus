@@ -155,10 +155,13 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signInWithGoogle: async () => {
     try {
-      // Use app scheme for redirect (focus://)
+      // For Expo Go (development), use exp:// URL
+      // Linking.createURL() automatically uses the correct scheme (exp:// for Expo Go, focus:// for native)
       const redirectUrl = Linking.createURL('/(auth)/signin');
+      
       console.log("[Auth] 🔵 Initiating Google sign in");
       console.log("[Auth] Redirect URL:", redirectUrl);
+      console.log("[Auth] Note: Using", redirectUrl.startsWith('exp://') ? 'Expo Go' : 'Native app', 'scheme');
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -177,14 +180,27 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error(error.message || "Google sign in failed");
       }
 
-      // OAuth will redirect to browser, then back to app
-      // Session will be set via onAuthStateChange listener
+      if (!data.url) {
+        throw new Error("No OAuth URL returned from Supabase");
+      }
+
       console.log("[Auth] ✅ Google sign in initiated");
       console.log("[Auth] OAuth URL:", data.url);
-      console.log("[Auth] Waiting for redirect...");
+      console.log("[Auth] Opening browser for Google sign-in...");
       
-      // The browser will open for Google sign-in
-      // After sign-in, it will redirect back to the app
+      // Manually open the OAuth URL in browser
+      // In React Native, signInWithOAuth doesn't automatically open the browser
+      const canOpen = await Linking.canOpenURL(data.url);
+      if (canOpen) {
+        await Linking.openURL(data.url);
+        console.log("[Auth] ✅ Browser opened successfully");
+      } else {
+        console.error("[Auth] ❌ Cannot open URL:", data.url);
+        throw new Error("Cannot open browser for Google sign-in");
+      }
+      
+      // OAuth will redirect to browser, then back to app
+      // Session will be set via onAuthStateChange listener
     } catch (error) {
       console.error("[Auth] ❌ Google sign in error:", error);
       throw error;

@@ -35,6 +35,7 @@ export default function RecordScreen() {
   const [newClusterName, setNewClusterName] = useState("");
   const [showSuggestedCategoryModal, setShowSuggestedCategoryModal] = useState(false);
   const [suggestedCategoryLabel, setSuggestedCategoryLabel] = useState<string | null>(null);
+  const [editableCategoryName, setEditableCategoryName] = useState<string>("");
   const [pendingIdeaId, setPendingIdeaId] = useState<string | null>(null);
   const { ideas, createIdea, refetch } = useIdeas();
   const { clusters, createCluster, assignIdeaToCluster, refetch: refetchClusters } = useClusters();
@@ -212,6 +213,7 @@ export default function RecordScreen() {
       // Handle suggested category if present
       if (idea.suggestedClusterLabel && !idea.clusterId) {
         setSuggestedCategoryLabel(idea.suggestedClusterLabel);
+        setEditableCategoryName(idea.suggestedClusterLabel);
         setPendingIdeaId(idea.id);
         setShowSuggestedCategoryModal(true);
         setStatus("idle");
@@ -339,6 +341,7 @@ export default function RecordScreen() {
           // Backend suggests a new category - show modal for approval
           console.log(`[Frontend] Backend suggested category: "${newIdea.suggestedClusterLabel}"`);
           setSuggestedCategoryLabel(newIdea.suggestedClusterLabel);
+          setEditableCategoryName(newIdea.suggestedClusterLabel);
           setPendingIdeaId(newIdea.id);
           setShowSuggestedCategoryModal(true);
           setStatus("idle"); // Reset status so user can interact
@@ -452,9 +455,8 @@ export default function RecordScreen() {
                 onChangeText={setTextInput}
                 multiline
                 textAlignVertical="top"
-                returnKeyType="done"
-                blurOnSubmit={true}
-                onSubmitEditing={Keyboard.dismiss}
+                returnKeyType="default"
+                blurOnSubmit={false}
                 style={{
                   fontSize: 16,
                   color: isDark ? "#FFFFFF" : "#000000",
@@ -805,6 +807,7 @@ export default function RecordScreen() {
         onRequestClose={() => {
           setShowSuggestedCategoryModal(false);
           setSuggestedCategoryLabel(null);
+          setEditableCategoryName("");
           setPendingIdeaId(null);
         }}
       >
@@ -824,23 +827,35 @@ export default function RecordScreen() {
             <Text className="text-xl font-bold text-black dark:text-white mb-2 text-center">
               Suggested Category
             </Text>
-            <Text className="text-sm text-gray-600 dark:text-gray-400 mb-6 text-center">
-              We couldn't find a similar category. Would you like to create a new one?
+            <Text className="text-sm text-gray-600 dark:text-gray-400 mb-4 text-center">
+              We couldn't find a similar category. You can edit the suggested name or create a new one.
             </Text>
             
-            <View className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 mb-6">
-              <Text className="text-base font-semibold text-green-700 dark:text-green-400 text-center">
-                {suggestedCategoryLabel}
+            <View className="mb-6">
+              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Category Name
               </Text>
+              <TextInput
+                className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 text-base text-black dark:text-white"
+                placeholder="Enter category name"
+                placeholderTextColor="#9CA3AF"
+                value={editableCategoryName}
+                onChangeText={setEditableCategoryName}
+                autoFocus={false}
+                returnKeyType="done"
+                blurOnSubmit={true}
+                onSubmitEditing={Keyboard.dismiss}
+              />
             </View>
 
             <View className="flex-row gap-3 mb-3">
               <TouchableOpacity
                 onPress={async () => {
-                  // User approves suggested category
-                  if (pendingIdeaId && suggestedCategoryLabel) {
+                  // User approves suggested category (with edited name if changed)
+                  const categoryName = editableCategoryName.trim() || suggestedCategoryLabel || "New Category";
+                  if (pendingIdeaId && categoryName) {
                     try {
-                      const newCluster = await createCluster(suggestedCategoryLabel);
+                      const newCluster = await createCluster(categoryName);
                       await assignIdeaToCluster(newCluster.id, pendingIdeaId);
                       await refetch();
                       await refetchClusters();
@@ -851,12 +866,13 @@ export default function RecordScreen() {
                   }
                   setShowSuggestedCategoryModal(false);
                   setSuggestedCategoryLabel(null);
+                  setEditableCategoryName("");
                   setPendingIdeaId(null);
                 }}
                 className="flex-1 px-6 py-3 rounded-xl"
                 style={{ backgroundColor: "#34C759" }}
               >
-                <Text className="text-white font-semibold text-center">Use This</Text>
+                <Text className="text-white font-semibold text-center">Create Category</Text>
               </TouchableOpacity>
             </View>
 
@@ -879,6 +895,7 @@ export default function RecordScreen() {
                 // User skips categorization
                 setShowSuggestedCategoryModal(false);
                 setSuggestedCategoryLabel(null);
+                setEditableCategoryName("");
                 setPendingIdeaId(null);
                 refetch();
               }}

@@ -330,8 +330,8 @@ export default function IdeaDetailScreen() {
                   textAlignVertical="top"
                   style={{ minHeight: 200 }}
                   autoFocus
-                  returnKeyType="done"
-                  blurOnSubmit={true}
+                  returnKeyType="default"
+                  blurOnSubmit={false}
                 />
               </ScrollView>
 

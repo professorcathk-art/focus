@@ -24,19 +24,60 @@ export default function RootLayout() {
     const handleDeepLink = async (url: string) => {
       console.log("[Deep Link] Received URL:", url);
       
-      // Check if this is an auth callback (contains access_token or code)
-      if (url.includes('access_token') || url.includes('code=') || url.includes('#access_token')) {
-        console.log("[Deep Link] Auth callback detected");
+      // Check if this is an auth callback
+      // Supabase OAuth callbacks contain access_token, code, or error in URL fragments/params
+      const isAuthCallback = 
+        url.includes('access_token') || 
+        url.includes('code=') || 
+        url.includes('#access_token') ||
+        url.includes('error=') ||
+        url.includes('error_description=') ||
+        url.includes('/auth/v1/callback');
+      
+      if (isAuthCallback) {
+        console.log("[Deep Link] 🔐 Auth callback detected");
         
-        // Get session from Supabase (it will parse the URL automatically)
-        const { data, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error("[Deep Link] Error getting session:", error);
-        }
-        
-        if (data?.session) {
-          console.log("[Deep Link] ✅ Session found, refreshing auth state");
+        try {
+          // Parse the URL to extract tokens
+          const urlObj = new URL(url);
+          const hashParams = new URLSearchParams(urlObj.hash.substring(1));
+          const queryParams = new URLSearchParams(urlObj.search);
+          
+          // Check for error first
+          const error = hashParams.get('error') || queryParams.get('error');
+          if (error) {
+            console.error("[Deep Link] ❌ OAuth error:", error);
+            const errorDesc = hashParams.get('error_description') || queryParams.get('error_description');
+            console.error("[Deep Link] Error description:", errorDesc);
+            return;
+          }
+          
+          // Try to get session - Supabase should handle URL parsing automatically
+          const { data, error: sessionError } = await supabase.auth.getSession();
+          
+          if (sessionError) {
+            console.error("[Deep Link] Error getting session:", sessionError);
+            // Try to exchange code for session if we have a code
+            const code = hashParams.get('code') || queryParams.get('code');
+            if (code) {
+              console.log("[Deep Link] Attempting to exchange code for session...");
+              // Supabase should handle this automatically via getSession()
+            }
+          }
+          
+          if (data?.session) {
+            console.log("[Deep Link] ✅ Session found, refreshing auth state");
+            await checkAuth();
+          } else {
+            console.log("[Deep Link] ⚠️ No session found, checking auth state...");
+            // Wait a bit and check again (OAuth flow might need time)
+            setTimeout(async () => {
+              await checkAuth();
+            }, 1000);
+          }
+        } catch (err) {
+          console.error("[Deep Link] Error processing auth callback:", err);
+          // Still try to check auth state
           await checkAuth();
         }
       } else {

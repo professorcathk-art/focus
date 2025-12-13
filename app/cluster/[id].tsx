@@ -28,8 +28,23 @@ export default function ClusterDetailScreen() {
   const { cluster, isLoading: clusterLoading } = useCluster(id || "");
   const { ideas, isLoading: ideasLoading } = useIdeas();
 
-  const clusterIdeas = cluster
-    ? ideas.filter((idea) => cluster.ideaIds.includes(idea.id))
+  // Handle uncategorised cluster (special case)
+  const isUncategorised = id === "uncategorised";
+  const uncategorisedCluster = isUncategorised ? {
+    id: "uncategorised",
+    label: "Uncategorised",
+    ideaIds: ideas.filter(idea => !idea.clusterId).map(idea => idea.id),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    userId: "current-user",
+  } : null;
+
+  const displayCluster = isUncategorised ? uncategorisedCluster : cluster;
+
+  const clusterIdeas = displayCluster
+    ? isUncategorised
+      ? ideas.filter((idea) => !idea.clusterId)
+      : ideas.filter((idea) => displayCluster.ideaIds.includes(idea.id))
     : [];
 
   if (clusterLoading || ideasLoading) {
@@ -42,13 +57,13 @@ export default function ClusterDetailScreen() {
     );
   }
 
-  if (!cluster) {
+  if (!displayCluster) {
     return (
       <SafeAreaView className="flex-1 bg-white dark:bg-black">
         <View className="flex-1 items-center justify-center px-6">
           <Ionicons name="folder-outline" size={64} color="#8E8E93" />
           <Text className="text-lg font-medium text-gray-500 dark:text-gray-400 mt-4">
-            Cluster not found
+            Category not found
           </Text>
           <TouchableOpacity
             onPress={() => router.back()}
@@ -73,9 +88,11 @@ export default function ClusterDetailScreen() {
           />
         </TouchableOpacity>
         <View className="flex-row items-center">
-          <Text className="text-xl mr-2">{getClusterEmoji(cluster.label)}</Text>
+          <Text className="text-xl mr-2">
+            {isUncategorised ? "📋" : getClusterEmoji(displayCluster.label)}
+          </Text>
           <Text className="text-lg font-semibold text-black dark:text-white">
-            {cluster.label}
+            {displayCluster.label}
           </Text>
         </View>
         <View style={{ width: 24 }} />
@@ -106,7 +123,14 @@ export default function ClusterDetailScreen() {
                     params: { id: idea.id },
                   })
                 }
-                className="bg-card dark:bg-card-dark rounded-xl p-4 mb-3"
+                className="bg-card dark:bg-card-dark rounded-xl p-4 mb-3 border border-gray-200 dark:border-gray-800"
+                style={{
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 4,
+                  elevation: 2,
+                }}
               >
                 <Text
                   className="text-base text-black dark:text-white mb-2"

@@ -2,11 +2,12 @@
  * Custom hook for managing idea clusters
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Cluster } from "@/types";
 import { apiClient } from "@/lib/api-client";
 import { API_ENDPOINTS } from "@/config/api";
 import * as SecureStore from "expo-secure-store";
+import { clusterCache } from "@/lib/cluster-cache";
 
 const DEFAULT_CATEGORIES = [
   { id: "cat-business", label: "Business", emoji: "💼" },
@@ -38,11 +39,26 @@ export function useClusters() {
     loadCategories();
   }, []);
 
-  const fetchClusters = async () => {
+  const fetchClusters = async (useCache = true) => {
     setIsLoading(true);
     setError(null);
+    
     try {
+      // Try cache first for instant UI update
+      if (useCache) {
+        const cached = await clusterCache.get();
+        if (cached && cached.length > 0) {
+          setClusters(cached);
+          setIsLoading(false);
+          // Continue fetching in background to update cache
+        }
+      }
+
+      // Fetch from API
       const data = await apiClient.get<Cluster[]>(API_ENDPOINTS.clusters.list);
+      
+      // Update cache and state
+      await clusterCache.set(data);
       setClusters(data);
     } catch (err) {
       // In dev mode, return empty array instead of error
@@ -66,7 +82,9 @@ export function useClusters() {
         await apiClient.put(API_ENDPOINTS.clusters.update(id), {
           label: newLabel.trim(),
         });
-        await fetchClusters(); // Refresh clusters from database
+        // Clear cache and refresh
+        clusterCache.clear();
+        await fetchClusters(false); // Force refresh from API
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Failed to update category";
         setError(errorMessage);
@@ -92,31 +110,33 @@ export function useClusters() {
     fetchClusters();
   }, []);
 
-  // Merge clusters with categories
-  // First, add all database clusters
-  const databaseClusters = clusters.map(cluster => ({
-    id: cluster.id,
-    label: cluster.label,
-    ideaIds: cluster.ideaIds || [],
-    createdAt: cluster.createdAt,
-    updatedAt: cluster.updatedAt,
-    userId: cluster.userId,
-  }));
-
-  // Then add local categories that don't have database clusters
-  const localCategories = categories
-    .filter(cat => !clusters.find(c => c.label === cat.label))
-    .map(cat => ({
-      id: cat.id,
-      label: cat.label,
-      ideaIds: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userId: "current-user",
+  // Merge clusters with categories - memoized for performance
+  const allCategories = useMemo(() => {
+    // First, add all database clusters
+    const databaseClusters = clusters.map(cluster => ({
+      id: cluster.id,
+      label: cluster.label,
+      ideaIds: cluster.ideaIds || [],
+      createdAt: cluster.createdAt,
+      updatedAt: cluster.updatedAt,
+      userId: cluster.userId,
     }));
 
-  // Combine: database clusters first, then local categories
-  const allCategories = [...databaseClusters, ...localCategories];
+    // Then add local categories that don't have database clusters
+    const localCategories = categories
+      .filter(cat => !clusters.find(c => c.label === cat.label))
+      .map(cat => ({
+        id: cat.id,
+        label: cat.label,
+        ideaIds: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userId: "current-user",
+      }));
+
+    // Combine: database clusters first, then local categories
+    return [...databaseClusters, ...localCategories];
+  }, [clusters, categories]);
 
   const createCluster = async (label: string) => {
     setIsLoading(true);
@@ -125,7 +145,9 @@ export function useClusters() {
       const data = await apiClient.post<Cluster>(API_ENDPOINTS.clusters.create, {
         label,
       });
-      await fetchClusters();
+      // Clear cache and refresh
+      clusterCache.clear();
+      await fetchClusters(false); // Force refresh from API
       return data;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to create cluster";
@@ -141,7 +163,9 @@ export function useClusters() {
       await apiClient.post(API_ENDPOINTS.clusters.assign(clusterId), {
         ideaId,
       });
-      await fetchClusters();
+      // Clear cache and refresh
+      clusterCache.clear();
+      await fetchClusters(false); // Force refresh from API
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to assign idea";
       setError(errorMessage);

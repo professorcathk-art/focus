@@ -2,11 +2,12 @@
  * Inbox tab - Browse ideas by cluster
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, useColorScheme, TextInput, Modal, Alert, KeyboardAvoidingView, Platform, Keyboard } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useClusters } from "@/hooks/use-clusters";
+import { useIdeas } from "@/hooks/use-ideas";
 import { Cluster } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -25,9 +26,38 @@ const getClusterEmoji = (label: string): string => {
 export default function InboxScreen() {
   const router = useRouter();
   const { clusters, isLoading, updateCategory } = useClusters();
+  const { ideas } = useIdeas();
   const isDark = useColorScheme() === "dark";
   const [editingCategory, setEditingCategory] = useState<{ id: string; label: string } | null>(null);
   const [editText, setEditText] = useState("");
+
+  // Get uncategorised ideas (ideas without clusterId)
+  const uncategorisedIdeas = useMemo(() => {
+    return ideas.filter(idea => !idea.clusterId);
+  }, [ideas]);
+
+  // Create uncategorised cluster if there are uncategorised ideas
+  const uncategorisedCluster: Cluster | null = useMemo(() => {
+    if (uncategorisedIdeas.length === 0) return null;
+    return {
+      id: "uncategorised",
+      label: "Uncategorised",
+      ideaIds: uncategorisedIdeas.map(idea => idea.id),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userId: "current-user",
+    };
+  }, [uncategorisedIdeas]);
+
+  // Combine clusters with uncategorised category
+  const allClusters = useMemo(() => {
+    const result = [...clusters];
+    if (uncategorisedCluster) {
+      // Add uncategorised at the beginning
+      result.unshift(uncategorisedCluster);
+    }
+    return result;
+  }, [clusters, uncategorisedCluster]);
 
   const handleClusterPress = (cluster: Cluster) => {
     router.push({
@@ -37,6 +67,8 @@ export default function InboxScreen() {
   };
 
   const handleEditPress = (cluster: Cluster) => {
+    // Don't allow editing uncategorised category
+    if (cluster.id === "uncategorised") return;
     setEditingCategory({ id: cluster.id, label: cluster.label });
     setEditText(cluster.label);
   };
@@ -83,7 +115,7 @@ export default function InboxScreen() {
         </View>
 
         {/* Clusters List */}
-        {clusters.length === 0 ? (
+        {allClusters.length === 0 ? (
           <View className="flex-1 items-center justify-center">
             <Ionicons
               name="folder-outline"
@@ -99,7 +131,7 @@ export default function InboxScreen() {
           </View>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false}>
-            {clusters.map((cluster) => (
+            {allClusters.map((cluster) => (
               <TouchableOpacity
                 key={cluster.id}
                 onPress={() => handleClusterPress(cluster)}
@@ -117,24 +149,26 @@ export default function InboxScreen() {
                 <View className="flex-1">
                   <View className="flex-row items-center mb-2">
                     <Text className="text-2xl mr-3">
-                      {getClusterEmoji(cluster.label)}
+                      {cluster.id === "uncategorised" ? "📋" : getClusterEmoji(cluster.label)}
                     </Text>
                     <Text className="text-lg font-semibold text-black dark:text-white flex-1">
                       {cluster.label}
                     </Text>
-                    <TouchableOpacity
-                      onPress={() => handleEditPress(cluster)}
-                      className="ml-2 p-1.5"
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      activeOpacity={0.7}
-                      delayPressIn={0}
-                    >
-                      <Ionicons
-                        name="create-outline"
-                        size={18}
-                        color="#34C759"
-                      />
-                    </TouchableOpacity>
+                    {cluster.id !== "uncategorised" && (
+                      <TouchableOpacity
+                        onPress={() => handleEditPress(cluster)}
+                        className="ml-2 p-1.5"
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        activeOpacity={0.7}
+                        delayPressIn={0}
+                      >
+                        <Ionicons
+                          name="create-outline"
+                          size={18}
+                          color="#34C759"
+                        />
+                      </TouchableOpacity>
+                    )}
                   </View>
                   <Text className="text-sm text-gray-500 dark:text-gray-400">
                     {cluster.ideaIds.length} idea{cluster.ideaIds.length !== 1 ? "s" : ""}
