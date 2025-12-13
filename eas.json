@@ -9,9 +9,6 @@
     },
     "preview": {
       "distribution": "internal",
-      "ios": {
-        "simulator": true
-      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://focus-psi-one.vercel.app/api",
         "EXPO_PUBLIC_SUPABASE_URL": "https://wqvevludffkemgicrfos.supabase.co",
