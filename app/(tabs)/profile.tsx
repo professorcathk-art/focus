@@ -2,17 +2,25 @@
  * Profile tab - Stats and settings
  */
 
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, useColorScheme } from "react-native";
+import { useState } from "react";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, useColorScheme, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
 import { useUserStats } from "@/hooks/use-user-stats";
 import { Ionicons } from "@expo/vector-icons";
+import { apiClient } from "@/lib/api-client";
+import { API_ENDPOINTS } from "@/config/api";
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
   const { stats, isLoading } = useUserStats();
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackSubject, setFeedbackSubject] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackType, setFeedbackType] = useState("General");
+  const [isSendingFeedback, setIsSendingFeedback] = useState(false);
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -30,6 +38,46 @@ export default function ProfileScreen() {
         },
       ]
     );
+  };
+
+  const handleSendFeedback = async () => {
+    if (!feedbackMessage.trim()) {
+      Alert.alert("Error", "Please enter your feedback message");
+      return;
+    }
+
+    setIsSendingFeedback(true);
+    try {
+      await apiClient.post(API_ENDPOINTS.feedback.send, {
+        subject: feedbackSubject.trim() || undefined,
+        message: feedbackMessage.trim(),
+        type: feedbackType,
+      });
+      
+      Alert.alert(
+        "Thank You!",
+        "Your feedback has been sent successfully. We'll get back to you soon.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              setShowFeedbackModal(false);
+              setFeedbackSubject("");
+              setFeedbackMessage("");
+              setFeedbackType("General");
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error("Send feedback error:", error);
+      Alert.alert(
+        "Error",
+        error instanceof Error ? error.message : "Failed to send feedback. Please try again later."
+      );
+    } finally {
+      setIsSendingFeedback(false);
+    }
   };
 
   const isDark = useColorScheme() === "dark";
@@ -109,6 +157,35 @@ export default function ProfileScreen() {
             </Text>
           )}
         </View>
+
+        {/* Support Section - Hidden for now */}
+        {false && (
+          <View className="mb-8">
+            <Text className="text-lg font-semibold text-black dark:text-white mb-4">
+              Support
+            </Text>
+
+            <TouchableOpacity 
+              onPress={() => setShowFeedbackModal(true)}
+              className="bg-white dark:bg-card-dark rounded-xl p-4 mb-3 flex-row items-center justify-between"
+              style={{
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.05,
+                shadowRadius: 4,
+                elevation: 2,
+              }}
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="mail" size={20} color="#34C759" />
+                <Text className="text-base text-black dark:text-white ml-3">
+                  Send Feedback
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Settings Section */}
         <View className="mb-8">
@@ -225,6 +302,160 @@ export default function ProfileScreen() {
           <Text className="text-white text-base font-semibold">Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Feedback Modal */}
+      <Modal
+        visible={showFeedbackModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          Keyboard.dismiss();
+          setShowFeedbackModal(false);
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          className="flex-1"
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => {
+              Keyboard.dismiss();
+              setShowFeedbackModal(false);
+            }}
+            className="flex-1 justify-end bg-black/50"
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+              className="bg-white dark:bg-[#1C1C1E] rounded-t-3xl p-6"
+              style={{
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: -4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 16,
+                maxHeight: "90%",
+              }}
+            >
+              <View className="flex-row items-center justify-between mb-4">
+                <Text className="text-xl font-bold text-black dark:text-white">
+                  Send Feedback
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setShowFeedbackModal(false);
+                  }}
+                  className="p-2"
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Feedback Type */}
+                <View className="mb-4">
+                  <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Type
+                  </Text>
+                  <View className="flex-row gap-2">
+                    {["General", "Bug Report", "Feature Request", "Question"].map((type) => (
+                      <TouchableOpacity
+                        key={type}
+                        onPress={() => setFeedbackType(type)}
+                        className="px-4 py-2 rounded-full"
+                        style={{
+                          backgroundColor:
+                            feedbackType === type
+                              ? "#34C759"
+                              : isDark
+                              ? "#2C2C2E"
+                              : "#F2F2F7",
+                        }}
+                      >
+                        <Text
+                          className="text-sm font-medium"
+                          style={{
+                            color: feedbackType === type ? "#FFFFFF" : (isDark ? "#FFFFFF" : "#000000"),
+                          }}
+                        >
+                          {type}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Subject */}
+                <View className="mb-4">
+                  <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Subject (Optional)
+                  </Text>
+                  <TextInput
+                    className="bg-gray-50 dark:bg-[#2C2C2E] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-base text-black dark:text-white"
+                    placeholder="Brief description..."
+                    placeholderTextColor="#9CA3AF"
+                    value={feedbackSubject}
+                    onChangeText={setFeedbackSubject}
+                    returnKeyType="next"
+                  />
+                </View>
+
+                {/* Message */}
+                <View className="mb-4">
+                  <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Message *
+                  </Text>
+                  <TextInput
+                    className="bg-gray-50 dark:bg-[#2C2C2E] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-base text-black dark:text-white"
+                    placeholder="Tell us what you think..."
+                    placeholderTextColor="#9CA3AF"
+                    value={feedbackMessage}
+                    onChangeText={setFeedbackMessage}
+                    multiline
+                    textAlignVertical="top"
+                    style={{ minHeight: 150 }}
+                    returnKeyType="default"
+                    blurOnSubmit={false}
+                  />
+                </View>
+              </ScrollView>
+
+              <View className="flex-row justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <TouchableOpacity
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setShowFeedbackModal(false);
+                  }}
+                  className="px-6 py-3 rounded-xl"
+                  style={{ backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }}
+                  activeOpacity={0.7}
+                  disabled={isSendingFeedback}
+                >
+                  <Text className="text-gray-700 dark:text-gray-300 font-semibold">Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSendFeedback}
+                  className="px-6 py-3 rounded-xl flex-row items-center justify-center"
+                  style={{ backgroundColor: "#34C759" }}
+                  disabled={!feedbackMessage.trim() || isSendingFeedback}
+                  activeOpacity={0.7}
+                >
+                  {isSendingFeedback ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text className="text-white font-semibold">Send</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }

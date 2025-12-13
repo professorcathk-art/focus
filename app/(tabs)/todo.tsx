@@ -26,6 +26,10 @@ export default function TodoScreen() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [addingTodo, setAddingTodo] = useState(false);
+  const [togglingTodoId, setTogglingTodoId] = useState<string | null>(null);
+  const [deletingTodoId, setDeletingTodoId] = useState<string | null>(null);
+  const [resettingTodos, setResettingTodos] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -48,37 +52,66 @@ export default function TodoScreen() {
   };
 
   const handleAddTodo = async () => {
-    if (!input.trim() || !isAuthenticated) return;
+    if (!input.trim() || !isAuthenticated || addingTodo) return;
+
+    const tempId = `temp-${Date.now()}`;
+    const tempTodo: Todo = {
+      id: tempId,
+      text: input.trim(),
+      completed: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Optimistic update
+    setTodos([...todos, tempTodo]);
+    setInput("");
+    Keyboard.dismiss();
+    setAddingTodo(true);
 
     try {
       const newTodo = await apiClient.post<Todo>(API_ENDPOINTS.todos.create, {
-        text: input.trim(),
+        text: tempTodo.text,
       });
-      setTodos([...todos, newTodo]);
-      setInput("");
-      Keyboard.dismiss();
+      // Replace temp todo with real one
+      setTodos(todos.map(t => t.id === tempId ? newTodo : t));
     } catch (error) {
       console.error("Add todo error:", error);
+      // Revert optimistic update
+      setTodos(todos.filter(t => t.id !== tempId));
+      setInput(tempTodo.text);
       Alert.alert("Error", "Failed to add todo");
+    } finally {
+      setAddingTodo(false);
     }
   };
 
   const handleToggleTodo = async (id: string, completed: boolean) => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || togglingTodoId === id) return;
+
+    // Optimistic update
+    const newCompleted = !completed;
+    setTodos(todos.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t)));
+    setTogglingTodoId(id);
 
     try {
       const updatedTodo = await apiClient.put<Todo>(
         API_ENDPOINTS.todos.update(id),
-        { completed: !completed }
+        { completed: newCompleted }
       );
       setTodos(todos.map((t) => (t.id === id ? updatedTodo : t)));
     } catch (error) {
       console.error("Toggle todo error:", error);
+      // Revert optimistic update
+      setTodos(todos.map((t) => (t.id === id ? { ...t, completed } : t)));
+      Alert.alert("Error", "Failed to update todo");
+    } finally {
+      setTogglingTodoId(null);
     }
   };
 
   const handleDeleteTodo = async (id: string) => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || deletingTodoId === id) return;
 
     Alert.alert(
       "Delete Todo",
@@ -89,12 +122,22 @@ export default function TodoScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
+            // Optimistic update
+            const deletedTodo = todos.find(t => t.id === id);
+            setTodos(todos.filter((t) => t.id !== id));
+            setDeletingTodoId(id);
+
             try {
               await apiClient.delete(API_ENDPOINTS.todos.delete(id));
-              setTodos(todos.filter((t) => t.id !== id));
             } catch (error) {
               console.error("Delete todo error:", error);
+              // Revert optimistic update
+              if (deletedTodo) {
+                setTodos([...todos]);
+              }
               Alert.alert("Error", "Failed to delete todo");
+            } finally {
+              setDeletingTodoId(null);
             }
           },
         },
@@ -103,7 +146,7 @@ export default function TodoScreen() {
   };
 
   const handleResetToday = async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || resettingTodos) return;
 
     Alert.alert(
       "Reset Today's Tasks",
@@ -113,12 +156,15 @@ export default function TodoScreen() {
         {
           text: "Reset",
           onPress: async () => {
+            setResettingTodos(true);
             try {
               await apiClient.post(API_ENDPOINTS.todos.resetToday);
               await loadTodos();
             } catch (error) {
               console.error("Reset todos error:", error);
               Alert.alert("Error", "Failed to reset todos");
+            } finally {
+              setResettingTodos(false);
             }
           },
         },
@@ -159,8 +205,13 @@ export default function TodoScreen() {
                 onPress={handleResetToday}
                 className="px-3 py-1.5 rounded-full"
                 style={{ backgroundColor: isDark ? "#38383A" : "#FFFFFF" }}
+                disabled={resettingTodos}
               >
-                <Ionicons name="refresh" size={18} color={isDark ? "#FFFFFF" : "#000000"} />
+                {resettingTodos ? (
+                  <ActivityIndicator size="small" color={isDark ? "#FFFFFF" : "#000000"} />
+                ) : (
+                  <Ionicons name="refresh" size={18} color={isDark ? "#FFFFFF" : "#000000"} />
+                )}
               </TouchableOpacity>
             )}
           </View>
@@ -228,18 +279,23 @@ export default function TodoScreen() {
                 <TouchableOpacity
                   onPress={() => handleToggleTodo(todo.id, todo.completed)}
                   className="mr-3"
+                  disabled={togglingTodoId === todo.id}
                 >
-                  <View
-                    className="w-6 h-6 rounded-full border-2 items-center justify-center"
-                    style={{
-                      borderColor: todo.completed ? "#34C759" : "#D1D1D6",
-                      backgroundColor: todo.completed ? "#34C759" : "transparent",
-                    }}
-                  >
-                    {todo.completed && (
-                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                    )}
-                  </View>
+                  {togglingTodoId === todo.id ? (
+                    <ActivityIndicator size="small" color="#34C759" />
+                  ) : (
+                    <View
+                      className="w-6 h-6 rounded-full border-2 items-center justify-center"
+                      style={{
+                        borderColor: todo.completed ? "#34C759" : "#D1D1D6",
+                        backgroundColor: todo.completed ? "#34C759" : "transparent",
+                      }}
+                    >
+                      {todo.completed && (
+                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                      )}
+                    </View>
+                  )}
                 </TouchableOpacity>
 
                 <Text
@@ -261,12 +317,17 @@ export default function TodoScreen() {
                 <TouchableOpacity
                   onPress={() => handleDeleteTodo(todo.id)}
                   className="ml-2 p-2"
+                  disabled={deletingTodoId === todo.id}
                 >
-                  <Ionicons
-                    name="trash-outline"
-                    size={20}
-                    color={isDark ? "#8E8E93" : "#8E8E93"}
-                  />
+                  {deletingTodoId === todo.id ? (
+                    <ActivityIndicator size="small" color="#FF3B30" />
+                  ) : (
+                    <Ionicons
+                      name="trash-outline"
+                      size={20}
+                      color={isDark ? "#8E8E93" : "#8E8E93"}
+                    />
+                  )}
                 </TouchableOpacity>
               </View>
             ))
@@ -298,28 +359,32 @@ export default function TodoScreen() {
             />
             <TouchableOpacity
               onPress={handleAddTodo}
-              disabled={!input.trim() || !isAuthenticated}
+              disabled={!input.trim() || !isAuthenticated || addingTodo}
               className="w-12 h-12 rounded-full items-center justify-center"
               style={{
                 backgroundColor:
-                  input.trim() && isAuthenticated
+                  input.trim() && isAuthenticated && !addingTodo
                     ? "#34C759"
                     : isDark
                     ? "#38383A"
                     : "#E5E5EA",
               }}
             >
-              <Ionicons
-                name="add"
-                size={24}
-                color={
-                  input.trim() && isAuthenticated
-                    ? "#FFFFFF"
-                    : isDark
-                    ? "#8E8E93"
-                    : "#8E8E93"
-                }
-              />
+              {addingTodo ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons
+                  name="add"
+                  size={24}
+                  color={
+                    input.trim() && isAuthenticated
+                      ? "#FFFFFF"
+                      : isDark
+                      ? "#8E8E93"
+                      : "#8E8E93"
+                  }
+                />
+              )}
             </TouchableOpacity>
           </View>
           {!isAuthenticated && (

@@ -10,6 +10,8 @@ import { useClusters } from "@/hooks/use-clusters";
 import { useIdeas } from "@/hooks/use-ideas";
 import { Cluster } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
+import { apiClient } from "@/lib/api-client";
+import { API_ENDPOINTS } from "@/config/api";
 
 const getClusterEmoji = (label: string): string => {
   const lower = label.toLowerCase();
@@ -25,11 +27,13 @@ const getClusterEmoji = (label: string): string => {
 
 export default function InboxScreen() {
   const router = useRouter();
-  const { clusters, isLoading, updateCategory } = useClusters();
-  const { ideas } = useIdeas();
+  const { clusters, isLoading, updateCategory, refetch: refetchClusters } = useClusters();
+  const { ideas, refetch: refetchIdeas } = useIdeas();
   const isDark = useColorScheme() === "dark";
   const [editingCategory, setEditingCategory] = useState<{ id: string; label: string } | null>(null);
   const [editText, setEditText] = useState("");
+  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
+  const [isUpdatingCategory, setIsUpdatingCategory] = useState(false);
 
   // Get uncategorised ideas (ideas without clusterId)
   const uncategorisedIdeas = useMemo(() => {
@@ -75,6 +79,7 @@ export default function InboxScreen() {
 
   const handleSaveEdit = useCallback(async () => {
     if (editingCategory && editText.trim()) {
+      setIsUpdatingCategory(true);
       try {
         await updateCategory(editingCategory.id, editText.trim());
         Keyboard.dismiss();
@@ -82,9 +87,52 @@ export default function InboxScreen() {
         setEditText("");
       } catch (err) {
         Alert.alert("Error", err instanceof Error ? err.message : "Failed to update category");
+      } finally {
+        setIsUpdatingCategory(false);
       }
     }
   }, [editingCategory, editText, updateCategory]);
+
+  const handleDeleteCategory = useCallback(async (clusterId: string, clusterLabel: string) => {
+    // Double confirmation for category deletion
+    Alert.alert(
+      "Delete Category",
+      `Are you sure you want to delete "${clusterLabel}"? This will remove the category but keep all notes.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Confirm Deletion",
+              `This will permanently delete "${clusterLabel}". All notes in this category will become uncategorised. This cannot be undone.`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Delete",
+                  style: "destructive",
+                  onPress: async () => {
+                    setDeletingCategoryId(clusterId);
+                    try {
+                      await apiClient.delete(API_ENDPOINTS.clusters.delete(clusterId));
+                      await refetchClusters();
+                      await refetchIdeas();
+                      Alert.alert("Success", "Category deleted successfully");
+                    } catch (err) {
+                      Alert.alert("Error", err instanceof Error ? err.message : "Failed to delete category");
+                    } finally {
+                      setDeletingCategoryId(null);
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  }, [refetchClusters, refetchIdeas]);
 
   const handleCancelEdit = () => {
     setEditingCategory(null);
@@ -155,19 +203,39 @@ export default function InboxScreen() {
                       {cluster.label}
                     </Text>
                     {cluster.id !== "uncategorised" && (
-                      <TouchableOpacity
-                        onPress={() => handleEditPress(cluster)}
-                        className="ml-2 p-1.5"
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        activeOpacity={0.7}
-                        delayPressIn={0}
-                      >
-                        <Ionicons
-                          name="create-outline"
-                          size={18}
-                          color="#34C759"
-                        />
-                      </TouchableOpacity>
+                      <View className="flex-row items-center gap-2">
+                        <TouchableOpacity
+                          onPress={() => handleEditPress(cluster)}
+                          className="p-1.5"
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          activeOpacity={0.7}
+                          delayPressIn={0}
+                        >
+                          <Ionicons
+                            name="create-outline"
+                            size={18}
+                            color="#34C759"
+                          />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleDeleteCategory(cluster.id, cluster.label)}
+                          className="p-1.5"
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          activeOpacity={0.7}
+                          delayPressIn={0}
+                          disabled={deletingCategoryId === cluster.id}
+                        >
+                          {deletingCategoryId === cluster.id ? (
+                            <ActivityIndicator size="small" color="#FF3B30" />
+                          ) : (
+                            <Ionicons
+                              name="trash-outline"
+                              size={18}
+                              color="#FF3B30"
+                            />
+                          )}
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </View>
                   <Text className="text-sm text-gray-500 dark:text-gray-400">
@@ -178,6 +246,7 @@ export default function InboxScreen() {
                   name="chevron-forward"
                   size={20}
                   color="#8E8E93"
+                  style={{ marginLeft: 8 }}
                 />
               </TouchableOpacity>
             ))}
@@ -241,6 +310,7 @@ export default function InboxScreen() {
                     className="px-6 py-3 rounded-xl"
                     style={{ backgroundColor: "#F2F2F7" }}
                     activeOpacity={0.7}
+                    disabled={isUpdatingCategory}
                   >
                     <Text className="text-gray-700 dark:text-gray-300 font-semibold">Cancel</Text>
                   </TouchableOpacity>
@@ -248,10 +318,14 @@ export default function InboxScreen() {
                     onPress={handleSaveEdit}
                     className="px-6 py-3 rounded-xl"
                     style={{ backgroundColor: "#34C759" }}
-                    disabled={!editText.trim()}
+                    disabled={!editText.trim() || isUpdatingCategory}
                     activeOpacity={0.7}
                   >
-                    <Text className="text-white font-semibold">Save</Text>
+                    {isUpdatingCategory ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text className="text-white font-semibold">Save</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>

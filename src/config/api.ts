@@ -43,6 +43,7 @@ export const API_ENDPOINTS = {
     ideas: (id: string) => `/clusters/${id}/ideas`,
     update: (id: string) => `/clusters/${id}`,
     assign: (id: string) => `/clusters/${id}/assign`,
+    delete: (id: string) => `/clusters/${id}`,
   },
   // Search
   search: {
@@ -66,6 +67,10 @@ export const API_ENDPOINTS = {
     stats: "/user/stats",
     export: "/user/export",
     delete: "/user/delete",
+  },
+  // Feedback
+  feedback: {
+    send: "/feedback",
   },
 } as const;
 

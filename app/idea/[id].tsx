@@ -39,6 +39,8 @@ export default function IdeaDetailScreen() {
   const [editText, setEditText] = useState("");
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isChangingCategory, setIsChangingCategory] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleCopy = async () => {
     if (idea?.transcript) {
@@ -82,6 +84,7 @@ export default function IdeaDetailScreen() {
   const handleChangeCategory = useCallback(async (clusterId: string) => {
     if (!idea) return;
 
+    setIsChangingCategory(true);
     try {
       // Handle local category IDs (like "cat-business")
       let actualClusterId = clusterId;
@@ -114,13 +117,51 @@ export default function IdeaDetailScreen() {
         await refetch();
         setShowCategoryPicker(false);
         Alert.alert("Success", "Category updated successfully");
+      } else if (clusterId === "") {
+        // Remove category (set to null)
+        await apiClient.put(API_ENDPOINTS.ideas.update(idea.id), {
+          clusterId: null,
+        });
+        await refetch();
+        setShowCategoryPicker(false);
+        Alert.alert("Success", "Category removed successfully");
       } else {
         Alert.alert("Error", "Invalid category");
       }
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to update category");
+    } finally {
+      setIsChangingCategory(false);
     }
   }, [idea, clusters, assignIdeaToCluster, createCluster, refetch]);
+
+  const handleDeleteIdea = useCallback(async () => {
+    if (!idea) return;
+
+    Alert.alert(
+      "Delete Note",
+      "Are you sure you want to delete this note? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              await apiClient.delete(API_ENDPOINTS.ideas.delete(idea.id));
+              Alert.alert("Success", "Note deleted successfully");
+              router.back();
+            } catch (err) {
+              Alert.alert("Error", err instanceof Error ? err.message : "Failed to delete note");
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [idea, router]);
 
   const getClusterLabel = (clusterId: string | null): string => {
     if (!clusterId) return "Uncategorized";
@@ -171,14 +212,29 @@ export default function IdeaDetailScreen() {
         <Text className="text-lg font-semibold text-black dark:text-white">
           Idea Details
         </Text>
-        <TouchableOpacity
-          onPress={handleEdit}
-          activeOpacity={0.7}
-          delayPressIn={0}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="create-outline" size={24} color="#34C759" />
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-3">
+          <TouchableOpacity
+            onPress={handleEdit}
+            activeOpacity={0.7}
+            delayPressIn={0}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="create-outline" size={24} color="#34C759" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleDeleteIdea}
+            activeOpacity={0.7}
+            delayPressIn={0}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            disabled={isDeleting}
+          >
+            {isDeleting ? (
+              <ActivityIndicator size="small" color="#FF3B30" />
+            ) : (
+              <Ionicons name="trash-outline" size={24} color="#FF3B30" />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView className="flex-1 px-6">
@@ -387,25 +443,39 @@ export default function IdeaDetailScreen() {
               Change Category
             </Text>
             <ScrollView className="max-h-64">
-              <TouchableOpacity
-                onPress={() => handleChangeCategory("")}
-                className="py-3 px-4 rounded-xl mb-2"
-                style={{ backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }}
-              >
-                <Text className="text-base text-black dark:text-white">Uncategorized</Text>
-              </TouchableOpacity>
-              {clusters.map((cluster) => (
-                <TouchableOpacity
-                  key={cluster.id}
-                  onPress={() => handleChangeCategory(cluster.id)}
-                  className="py-3 px-4 rounded-xl mb-2"
-                  style={{ backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }}
-                  activeOpacity={0.7}
-                  delayPressIn={0}
-                >
-                  <Text className="text-base text-black dark:text-white">{cluster.label}</Text>
-                </TouchableOpacity>
-              ))}
+              {isChangingCategory ? (
+                <View className="py-8 items-center">
+                  <ActivityIndicator size="large" color="#34C759" />
+                  <Text className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+                    Updating category...
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    onPress={() => handleChangeCategory("")}
+                    className="py-3 px-4 rounded-xl mb-2"
+                    style={{ backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }}
+                    disabled={isChangingCategory}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-base text-black dark:text-white">Uncategorized</Text>
+                  </TouchableOpacity>
+                  {clusters.map((cluster) => (
+                    <TouchableOpacity
+                      key={cluster.id}
+                      onPress={() => handleChangeCategory(cluster.id)}
+                      className="py-3 px-4 rounded-xl mb-2"
+                      style={{ backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }}
+                      activeOpacity={0.7}
+                      delayPressIn={0}
+                      disabled={isChangingCategory}
+                    >
+                      <Text className="text-base text-black dark:text-white">{cluster.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
             </ScrollView>
             <TouchableOpacity
               onPress={() => setShowCategoryPicker(false)}

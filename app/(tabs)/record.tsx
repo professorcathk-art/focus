@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
-import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform, Keyboard, Alert, Modal } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform, Keyboard, Alert, Modal, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,6 +37,7 @@ export default function RecordScreen() {
   const [suggestedCategoryLabel, setSuggestedCategoryLabel] = useState<string | null>(null);
   const [editableCategoryName, setEditableCategoryName] = useState<string>("");
   const [pendingIdeaId, setPendingIdeaId] = useState<string | null>(null);
+  const [isAssigningCategory, setIsAssigningCategory] = useState(false);
   const { ideas, createIdea, refetch } = useIdeas();
   const { clusters, createCluster, assignIdeaToCluster, refetch: refetchClusters } = useClusters();
   
@@ -314,6 +315,7 @@ export default function RecordScreen() {
       // If a cluster was manually selected, assign the idea to it
       // This overrides automatic clustering (backend won't auto-assign if already assigned)
       if (selectedClusterId && newIdea) {
+        setIsAssigningCategory(true);
         try {
           let actualClusterId = getActualClusterId(selectedClusterId);
           
@@ -334,6 +336,8 @@ export default function RecordScreen() {
         } catch (err) {
           console.error("Failed to assign to cluster:", err);
           // Don't fail the save if assignment fails
+        } finally {
+          setIsAssigningCategory(false);
         }
       } else {
         // No manual selection - check backend response
@@ -484,11 +488,16 @@ export default function RecordScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={handleSaveText}
-                    className="px-6 py-2 rounded-full"
+                    className="px-6 py-2 rounded-full flex-row items-center justify-center"
                     style={{ backgroundColor: "#34C759" }}
                     activeOpacity={0.8}
+                    disabled={status === "saved" || isAssigningCategory}
                   >
-                    <Text className="text-white font-semibold text-sm">Save</Text>
+                    {(status === "saved" || isAssigningCategory) ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text className="text-white font-semibold text-sm">Save</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               )}
@@ -513,7 +522,8 @@ export default function RecordScreen() {
                     <Text className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-6">
                       {status === "recording" && `Recording... ${formatTime(recordingTime)}`}
                       {status === "transcribing" && "Transcribing..."}
-                      {status === "saved" && "✓ Idea saved!"}
+                      {status === "saved" && !isAssigningCategory && "✓ Idea saved!"}
+                      {isAssigningCategory && "Assigning category..."}
                     </Text>
                   )}
 

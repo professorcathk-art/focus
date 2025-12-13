@@ -288,5 +288,53 @@ router.put('/:id', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * Delete cluster (must come after /:id/assign and /:id/ideas routes)
+ */
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    // Check ownership
+    const { data: cluster } = await supabase
+      .from('clusters')
+      .select('id')
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (!cluster) {
+      return res.status(404).json({ message: 'Cluster not found' });
+    }
+
+    // Remove cluster_id from all ideas in this cluster (set to null)
+    const { error: updateError } = await supabase
+      .from('ideas')
+      .update({ cluster_id: null })
+      .eq('cluster_id', req.params.id)
+      .eq('user_id', req.user.id);
+
+    if (updateError) {
+      console.error('Error removing cluster from ideas:', updateError);
+      return res.status(500).json({ message: 'Failed to remove cluster from ideas' });
+    }
+
+    // Delete the cluster
+    const { error: deleteError } = await supabase
+      .from('clusters')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id);
+
+    if (deleteError) {
+      console.error('Delete cluster error:', deleteError);
+      return res.status(500).json({ message: 'Failed to delete cluster' });
+    }
+
+    res.json({ message: 'Cluster deleted successfully' });
+  } catch (error) {
+    console.error('Delete cluster error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 module.exports = router;
 
