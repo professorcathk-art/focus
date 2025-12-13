@@ -41,15 +41,11 @@ export default function SignUpScreen() {
     setError(null);
 
     try {
-      await signUp(email, password, name || undefined);
-      // If we get here, user is signed in (email confirmation disabled)
-      router.replace("/(tabs)/record");
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Sign up failed";
-      setError(errorMessage);
+      const result = await signUp(email, password, name || undefined);
       
-      // If email confirmation is required, show helpful message
-      if (errorMessage.includes("check your email") || errorMessage.includes("confirm") || errorMessage.includes("Account created")) {
+      // Check if email confirmation is required
+      if (result.requiresEmailConfirmation) {
+        // Show success message and navigate to sign in
         Alert.alert(
           "Check Your Email",
           "We've sent you a confirmation email. Please click the link in the email to verify your account, then you can sign in.",
@@ -63,7 +59,15 @@ export default function SignUpScreen() {
             }
           ]
         );
+        return;
       }
+      
+      // If we get here, user is signed in (email confirmation disabled or already confirmed)
+      router.replace("/(tabs)/record");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Sign up failed";
+      console.error("[SignUp] Error:", errorMessage);
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

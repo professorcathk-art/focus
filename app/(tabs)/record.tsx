@@ -481,17 +481,6 @@ export default function RecordScreen() {
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    onPress={Keyboard.dismiss}
-                    className="px-3 py-2 rounded-full border items-center justify-center"
-                    style={{ 
-                      borderColor: "#D1D1D6",
-                      backgroundColor: "transparent"
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="keyboard-outline" size={18} color="#8E8E93" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
                     onPress={handleSaveText}
                     className="px-6 py-2 rounded-full"
                     style={{ backgroundColor: "#34C759" }}

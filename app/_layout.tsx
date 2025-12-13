@@ -22,8 +22,26 @@ export default function RootLayout() {
 
     // Handle deep links for OAuth and email confirmation
     const handleDeepLink = async (url: string) => {
-      const { data, error } = await supabase.auth.getSession();
-      if (data?.session) {
+      console.log("[Deep Link] Received URL:", url);
+      
+      // Check if this is an auth callback (contains access_token or code)
+      if (url.includes('access_token') || url.includes('code=') || url.includes('#access_token')) {
+        console.log("[Deep Link] Auth callback detected");
+        
+        // Get session from Supabase (it will parse the URL automatically)
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("[Deep Link] Error getting session:", error);
+        }
+        
+        if (data?.session) {
+          console.log("[Deep Link] ✅ Session found, refreshing auth state");
+          await checkAuth();
+        }
+      } else {
+        // Regular deep link navigation
+        console.log("[Deep Link] Regular navigation");
         await checkAuth();
       }
     };

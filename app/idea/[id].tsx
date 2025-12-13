@@ -2,7 +2,7 @@
  * Idea detail view - View full transcript, play audio, copy text, edit
  */
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ import {
   TextInput,
   Modal,
   Keyboard,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -31,7 +33,7 @@ export default function IdeaDetailScreen() {
   const isDark = colorScheme === "dark";
   const { id } = useLocalSearchParams<{ id: string }>();
   const { idea, isLoading, updateIdea, refetch } = useIdea(id || "");
-  const { clusters, assignIdeaToCluster } = useClusters();
+  const { clusters, assignIdeaToCluster, createCluster } = useClusters();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState("");
@@ -77,18 +79,48 @@ export default function IdeaDetailScreen() {
     }
   };
 
-  const handleChangeCategory = async (clusterId: string) => {
+  const handleChangeCategory = useCallback(async (clusterId: string) => {
     if (!idea) return;
 
     try {
-      await assignIdeaToCluster(clusterId, idea.id);
-      await refetch();
-      setShowCategoryPicker(false);
-      Alert.alert("Success", "Category updated successfully");
+      // Handle local category IDs (like "cat-business")
+      let actualClusterId = clusterId;
+      
+      if (clusterId.startsWith("cat-")) {
+        // Find the cluster by ID to get its label
+        const category = clusters.find(c => c.id === clusterId);
+        if (!category) {
+          Alert.alert("Error", "Category not found");
+          return;
+        }
+        
+        // Find existing database cluster with this label
+        const existingCluster = clusters.find(c => 
+          c.label === category.label && !c.id.startsWith("cat-")
+        );
+        
+        if (existingCluster) {
+          actualClusterId = existingCluster.id;
+        } else {
+          // Create new cluster in database
+          const newCluster = await createCluster(category.label);
+          actualClusterId = newCluster.id;
+        }
+      }
+      
+      // Only assign if we have a valid database cluster ID
+      if (actualClusterId && !actualClusterId.startsWith("cat-")) {
+        await assignIdeaToCluster(actualClusterId, idea.id);
+        await refetch();
+        setShowCategoryPicker(false);
+        Alert.alert("Success", "Category updated successfully");
+      } else {
+        Alert.alert("Error", "Invalid category");
+      }
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to update category");
     }
-  };
+  }, [idea, clusters, assignIdeaToCluster, createCluster, refetch]);
 
   const getClusterLabel = (clusterId: string | null): string => {
     if (!clusterId) return "Uncategorized";
@@ -139,7 +171,12 @@ export default function IdeaDetailScreen() {
         <Text className="text-lg font-semibold text-black dark:text-white">
           Idea Details
         </Text>
-        <TouchableOpacity onPress={handleEdit}>
+        <TouchableOpacity
+          onPress={handleEdit}
+          activeOpacity={0.7}
+          delayPressIn={0}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
           <Ionicons name="create-outline" size={24} color="#34C759" />
         </TouchableOpacity>
       </View>
@@ -151,6 +188,8 @@ export default function IdeaDetailScreen() {
             onPress={() => setShowCategoryPicker(true)}
             className="self-start px-4 py-2 rounded-full"
             style={{ backgroundColor: isDark ? "#1C1C1E" : "#E8F5E9" }}
+            activeOpacity={0.7}
+            delayPressIn={0}
           >
             <Text className="text-sm font-medium" style={{ color: "#34C759" }}>
               📁 {getClusterLabel(idea.clusterId)}
@@ -232,64 +271,99 @@ export default function IdeaDetailScreen() {
         visible={isEditing}
         transparent
         animationType="slide"
-        onRequestClose={() => setIsEditing(false)}
+        onRequestClose={() => {
+          Keyboard.dismiss();
+          setIsEditing(false);
+        }}
       >
-        <View className="flex-1 justify-end bg-black/50">
-          <View className="bg-white dark:bg-[#1C1C1E] rounded-t-3xl p-6 max-h-[90%]"
-            style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: -4 },
-              shadowOpacity: 0.3,
-              shadowRadius: 16,
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          className="flex-1"
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => {
+              Keyboard.dismiss();
+              setIsEditing(false);
             }}
+            className="flex-1 justify-end bg-black/50"
           >
-            <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-xl font-bold text-black dark:text-white">
-                Edit Idea
-              </Text>
-              <TouchableOpacity
-                onPress={() => setIsEditing(false)}
-                className="p-2"
-              >
-                <Ionicons name="close" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+              className="bg-white dark:bg-[#1C1C1E] rounded-t-3xl p-6"
+              style={{
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: -4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 16,
+                maxHeight: "90%",
+              }}
+            >
+              <View className="flex-row items-center justify-between mb-4">
+                <Text className="text-xl font-bold text-black dark:text-white">
+                  Edit Idea
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setIsEditing(false);
+                  }}
+                  className="p-2"
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
+                </TouchableOpacity>
+              </View>
 
-            <TextInput
-              className="bg-gray-50 dark:bg-[#2C2C2E] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-base text-black dark:text-white mb-4"
-              placeholder="Edit your idea..."
-              placeholderTextColor="#9CA3AF"
-              value={editText}
-              onChangeText={setEditText}
-              multiline
-              textAlignVertical="top"
-              style={{ minHeight: 200 }}
-              autoFocus
-            />
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                <TextInput
+                  className="bg-gray-50 dark:bg-[#2C2C2E] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-base text-black dark:text-white mb-4"
+                  placeholder="Edit your idea..."
+                  placeholderTextColor="#9CA3AF"
+                  value={editText}
+                  onChangeText={setEditText}
+                  multiline
+                  textAlignVertical="top"
+                  style={{ minHeight: 200 }}
+                  autoFocus
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                />
+              </ScrollView>
 
-            <View className="flex-row justify-end gap-3">
-              <TouchableOpacity
-                onPress={() => setIsEditing(false)}
-                className="px-6 py-3 rounded-xl"
-                style={{ backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }}
-              >
-                <Text className="text-gray-700 dark:text-gray-300 font-semibold">Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleSaveEdit}
-                className="px-6 py-3 rounded-xl"
-                style={{ backgroundColor: "#34C759" }}
-                disabled={isSaving || !editText.trim()}
-              >
-                {isSaving ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text className="text-white font-semibold">Save</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+              <View className="flex-row justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <TouchableOpacity
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setIsEditing(false);
+                  }}
+                  className="px-6 py-3 rounded-xl"
+                  style={{ backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-gray-700 dark:text-gray-300 font-semibold">Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSaveEdit}
+                  className="px-6 py-3 rounded-xl"
+                  style={{ backgroundColor: "#34C759" }}
+                  disabled={isSaving || !editText.trim()}
+                  activeOpacity={0.7}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text className="text-white font-semibold">Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Category Picker Modal */}
@@ -326,6 +400,8 @@ export default function IdeaDetailScreen() {
                   onPress={() => handleChangeCategory(cluster.id)}
                   className="py-3 px-4 rounded-xl mb-2"
                   style={{ backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }}
+                  activeOpacity={0.7}
+                  delayPressIn={0}
                 >
                   <Text className="text-base text-black dark:text-white">{cluster.label}</Text>
                 </TouchableOpacity>

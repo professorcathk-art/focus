@@ -58,14 +58,33 @@ export function useClusters() {
   };
 
   const updateCategory = async (id: string, newLabel: string) => {
-    const updated = categories.map(cat => 
-      cat.id === id ? { ...cat, label: newLabel } : cat
-    );
-    setCategories(updated);
-    try {
-      await SecureStore.setItemAsync(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
-    } catch (err) {
-      console.error("Failed to save categories:", err);
+    // Check if it's a database cluster (not a local category)
+    if (!id.startsWith("cat-")) {
+      // Update database cluster
+      setIsLoading(true);
+      try {
+        await apiClient.put(API_ENDPOINTS.clusters.update(id), {
+          label: newLabel.trim(),
+        });
+        await fetchClusters(); // Refresh clusters from database
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to update category";
+        setError(errorMessage);
+        throw err;
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // Update local category
+      const updated = categories.map(cat => 
+        cat.id === id ? { ...cat, label: newLabel } : cat
+      );
+      setCategories(updated);
+      try {
+        await SecureStore.setItemAsync(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
+      } catch (err) {
+        console.error("Failed to save categories:", err);
+      }
     }
   };
 

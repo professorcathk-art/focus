@@ -2,8 +2,8 @@
  * Inbox tab - Browse ideas by cluster
  */
 
-import { useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, useColorScheme, TextInput, Modal, Alert } from "react-native";
+import { useState, useCallback } from "react";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, useColorScheme, TextInput, Modal, Alert, KeyboardAvoidingView, Platform, Keyboard } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useClusters } from "@/hooks/use-clusters";
@@ -41,13 +41,18 @@ export default function InboxScreen() {
     setEditText(cluster.label);
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = useCallback(async () => {
     if (editingCategory && editText.trim()) {
-      await updateCategory(editingCategory.id, editText.trim());
-      setEditingCategory(null);
-      setEditText("");
+      try {
+        await updateCategory(editingCategory.id, editText.trim());
+        Keyboard.dismiss();
+        setEditingCategory(null);
+        setEditText("");
+      } catch (err) {
+        Alert.alert("Error", err instanceof Error ? err.message : "Failed to update category");
+      }
     }
-  };
+  }, [editingCategory, editText, updateCategory]);
 
   const handleCancelEdit = () => {
     setEditingCategory(null);
@@ -106,6 +111,8 @@ export default function InboxScreen() {
                   shadowRadius: 4,
                   elevation: 2,
                 }}
+                activeOpacity={0.7}
+                delayPressIn={0}
               >
                 <View className="flex-1">
                   <View className="flex-row items-center mb-2">
@@ -119,6 +126,8 @@ export default function InboxScreen() {
                       onPress={() => handleEditPress(cluster)}
                       className="ml-2 p-1.5"
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      activeOpacity={0.7}
+                      delayPressIn={0}
                     >
                       <Ionicons
                         name="create-outline"
@@ -146,49 +155,74 @@ export default function InboxScreen() {
           visible={editingCategory !== null}
           transparent
           animationType="fade"
-          onRequestClose={handleCancelEdit}
+          onRequestClose={() => {
+            Keyboard.dismiss();
+            handleCancelEdit();
+          }}
         >
-          <View className="flex-1 justify-center items-center bg-black/50 px-6">
-            <View className="bg-white dark:bg-card-dark rounded-2xl p-6 w-full max-w-sm"
-              style={{
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.3,
-                shadowRadius: 16,
-                elevation: 16,
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            className="flex-1"
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => {
+                Keyboard.dismiss();
+                handleCancelEdit();
               }}
+              className="flex-1 justify-center items-center bg-black/50 px-6"
             >
-              <Text className="text-xl font-bold text-black dark:text-white mb-4">
-                Edit Category
-              </Text>
-              <TextInput
-                className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 text-base text-black dark:text-white mb-4"
-                placeholder="Category name"
-                placeholderTextColor="#9CA3AF"
-                value={editText}
-                onChangeText={setEditText}
-                autoFocus
-                onSubmitEditing={handleSaveEdit}
-              />
-              <View className="flex-row justify-end gap-3">
-                <TouchableOpacity
-                  onPress={handleCancelEdit}
-                  className="px-6 py-3 rounded-xl"
-                  style={{ backgroundColor: "#F2F2F7" }}
-                >
-                  <Text className="text-gray-700 dark:text-gray-300 font-semibold">Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleSaveEdit}
-                  className="px-6 py-3 rounded-xl"
-                  style={{ backgroundColor: "#34C759" }}
-                  disabled={!editText.trim()}
-                >
-                  <Text className="text-white font-semibold">Save</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={(e) => e.stopPropagation()}
+                className="bg-white dark:bg-card-dark rounded-2xl p-6 w-full max-w-sm"
+                style={{
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 16,
+                  elevation: 16,
+                }}
+              >
+                <Text className="text-xl font-bold text-black dark:text-white mb-4">
+                  Edit Category
+                </Text>
+                <TextInput
+                  className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 text-base text-black dark:text-white mb-4"
+                  placeholder="Category name"
+                  placeholderTextColor="#9CA3AF"
+                  value={editText}
+                  onChangeText={setEditText}
+                  autoFocus
+                  onSubmitEditing={handleSaveEdit}
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                />
+                <View className="flex-row justify-end gap-3">
+                  <TouchableOpacity
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      handleCancelEdit();
+                    }}
+                    className="px-6 py-3 rounded-xl"
+                    style={{ backgroundColor: "#F2F2F7" }}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-gray-700 dark:text-gray-300 font-semibold">Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleSaveEdit}
+                    className="px-6 py-3 rounded-xl"
+                    style={{ backgroundColor: "#34C759" }}
+                    disabled={!editText.trim()}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-white font-semibold">Save</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </KeyboardAvoidingView>
         </Modal>
       </View>
     </SafeAreaView>
