@@ -12,6 +12,7 @@ const DEFAULT_CATEGORIES = [
   { id: "cat-business", label: "Business", emoji: "💼" },
   { id: "cat-todo", label: "To-do", emoji: "✅" },
   { id: "cat-diary", label: "Diary", emoji: "📔" },
+  { id: "cat-spending", label: "My Spending", emoji: "💰" },
 ];
 
 const CATEGORIES_STORAGE_KEY = "user_categories";

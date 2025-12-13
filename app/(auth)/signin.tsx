@@ -13,11 +13,15 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  Keyboard,
+  ScrollView,
+  Pressable,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 
 const { width, height } = Dimensions.get("window");
 
@@ -27,7 +31,7 @@ export default function SignInScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const { signIn } = useAuthStore();
+  const { signIn, signInWithGoogle } = useAuthStore();
   
   // Animation values for fluid green elements
   const flow1 = useRef(new Animated.Value(0)).current;
@@ -107,6 +111,22 @@ export default function SignInScreen() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await signInWithGoogle();
+      // OAuth opens browser for Google sign-in
+      // After sign-in, browser redirects back to app
+      // Session will be set via onAuthStateChange listener in auth-store
+      // Keep loading state - will be cleared when auth state changes
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign in failed");
       setIsLoading(false);
     }
   };
@@ -197,12 +217,22 @@ export default function SignInScreen() {
       />
       
       <SafeAreaView className="flex-1">
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          className="flex-1 px-6 justify-center"
+        <Pressable 
+          onPress={Keyboard.dismiss}
+          className="flex-1"
         >
-          {/* Branding Section */}
-          <View className="mb-12 items-center">
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            className="flex-1 px-6 justify-center"
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+          >
+            <ScrollView
+              contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Branding Section */}
+              <View className="mb-12 items-center">
             <Text className="text-6xl font-bold text-white mb-4" style={{
               textShadowColor: "rgba(0, 0, 0, 0.3)",
               textShadowOffset: { width: 0, height: 2 },
@@ -255,12 +285,17 @@ export default function SignInScreen() {
                 keyboardType="email-address"
                 autoComplete="email"
                 editable={!isLoading}
+                returnKeyType="next"
+                blurOnSubmit={false}
                 style={{
                   shadowColor: "#000",
                   shadowOffset: { width: 0, height: 1 },
                   shadowOpacity: 0.05,
                   shadowRadius: 2,
                   elevation: 1,
+                  paddingVertical: 12,
+                  lineHeight: 20,
+                  minHeight: 48,
                 }}
               />
             </View>
@@ -279,12 +314,18 @@ export default function SignInScreen() {
                 autoCapitalize="none"
                 autoComplete="password"
                 editable={!isLoading}
+                returnKeyType="done"
+                blurOnSubmit={true}
+                onSubmitEditing={Keyboard.dismiss}
                 style={{
                   shadowColor: "#000",
                   shadowOffset: { width: 0, height: 1 },
                   shadowOpacity: 0.05,
                   shadowRadius: 2,
                   elevation: 1,
+                  paddingVertical: 12,
+                  lineHeight: 20,
+                  minHeight: 48,
                 }}
               />
             </View>
@@ -309,6 +350,32 @@ export default function SignInScreen() {
               )}
             </TouchableOpacity>
 
+            {/* Divider */}
+            <View className="flex-row items-center mb-4">
+              <View className="flex-1 h-px bg-gray-200" />
+              <Text className="mx-4 text-xs text-gray-500">OR</Text>
+              <View className="flex-1 h-px bg-gray-200" />
+            </View>
+
+            {/* Google Sign In Button */}
+            <TouchableOpacity
+              className="bg-white border border-gray-300 rounded-xl py-4 items-center justify-center mb-4 flex-row"
+              onPress={handleGoogleSignIn}
+              disabled={isLoading}
+              style={{
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+                elevation: 2,
+              }}
+            >
+              <Ionicons name="logo-google" size={20} color="#4285F4" style={{ marginRight: 8 }} />
+              <Text className="text-gray-900 text-base font-semibold">
+                Continue with Google
+              </Text>
+            </TouchableOpacity>
+
             <View className="flex-row justify-center items-center">
               <Text className="text-gray-600">
                 Don't have an account?{" "}
@@ -321,7 +388,9 @@ export default function SignInScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </KeyboardAvoidingView>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </Pressable>
       </SafeAreaView>
     </View>
   );

@@ -57,25 +57,39 @@ export function useIdea(id: string) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchIdea = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const data = await apiClient.get<Idea>(API_ENDPOINTS.ideas.get(id));
-        setIdea(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch idea");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const fetchIdea = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await apiClient.get<Idea>(API_ENDPOINTS.ideas.get(id));
+      setIdea(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch idea");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  const updateIdea = async (transcript: string) => {
+    try {
+      const updated = await apiClient.put<Idea>(API_ENDPOINTS.ideas.update(id), {
+        transcript,
+      });
+      setIdea(updated);
+      return updated;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to update idea";
+      setError(errorMessage);
+      throw err;
+    }
+  };
+
+  useEffect(() => {
     if (id) {
       fetchIdea();
     }
   }, [id]);
 
-  return { idea, isLoading, error };
+  return { idea, isLoading, error, updateIdea, refetch: fetchIdea };
 }
 

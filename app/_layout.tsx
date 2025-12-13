@@ -9,6 +9,8 @@ import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useAuthStore } from "@/store/auth-store";
+import * as Linking from "expo-linking";
+import { supabase } from "@/lib/supabase";
 import "../global.css";
 
 export default function RootLayout() {
@@ -17,6 +19,30 @@ export default function RootLayout() {
 
   useEffect(() => {
     checkAuth();
+
+    // Handle deep links for OAuth and email confirmation
+    const handleDeepLink = async (url: string) => {
+      const { data, error } = await supabase.auth.getSession();
+      if (data?.session) {
+        await checkAuth();
+      }
+    };
+
+    // Get initial URL if app was opened via deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink(url);
+      }
+    });
+
+    // Listen for deep links while app is running
+    const subscription = Linking.addEventListener('url', (event) => {
+      handleDeepLink(event.url);
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   if (isLoading) {

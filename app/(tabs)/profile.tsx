@@ -140,29 +140,6 @@ export default function ProfileScreen() {
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            className="bg-white dark:bg-card-dark rounded-xl p-4 mb-3 flex-row items-center justify-between"
-            style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.05,
-              shadowRadius: 4,
-              elevation: 2,
-            }}
-          >
-            <View className="flex-row items-center">
-              <Ionicons name="moon" size={20} color="#8E8E93" />
-              <Text className="text-base text-black dark:text-white ml-3">
-                Appearance
-              </Text>
-            </View>
-            <View className="flex-row items-center">
-              <Text className="text-sm text-gray-500 dark:text-gray-400 mr-2">
-                System
-              </Text>
-              <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
-            </View>
-          </TouchableOpacity>
 
           <TouchableOpacity 
             className="bg-white dark:bg-card-dark rounded-xl p-4 mb-3 flex-row items-center justify-between"

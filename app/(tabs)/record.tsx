@@ -236,12 +236,13 @@ export default function RecordScreen() {
       
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       
+      // Only show error, don't force logout - let user decide
       if (errorMessage.includes("token") || errorMessage.includes("auth") || errorMessage.includes("401")) {
         Alert.alert(
-          "Authentication Required",
-          "Your session has expired. Please sign in again.",
+          "Recording Failed",
+          "Authentication error. Please check your connection and try again.",
           [
-            { text: "OK", onPress: () => router.push("/(auth)/signin") }
+            { text: "OK" }
           ]
         );
       } else {
@@ -503,52 +504,59 @@ export default function RecordScreen() {
             </View>
           </View>
 
-          {/* Divider */}
-          <View className="flex-row items-center mb-6">
-            <View className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
-            <Text className="mx-4 text-xs text-gray-500 dark:text-gray-400 font-medium">OR</Text>
-            <View className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
-          </View>
+          {/* Voice Recording - Hidden for now (Phase 2) */}
+          {false && (
+            <>
+              {/* Divider */}
+              <View className="flex-row items-center mb-6">
+                <View className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+                <Text className="mx-4 text-xs text-gray-500 dark:text-gray-400 font-medium">OR</Text>
+                <View className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+              </View>
 
-          {/* Record Button Container */}
-          <View className="py-6 items-center" style={{ minHeight: 200 }}>
-            <View className="items-center">
-              {/* Status Text */}
-              {status !== "idle" && (
-                <Text className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-6">
-                  {status === "recording" && `Recording... ${formatTime(recordingTime)}`}
-                  {status === "transcribing" && "Transcribing..."}
-                  {status === "saved" && "✓ Idea saved!"}
-                </Text>
-              )}
+              {/* Record Button Container */}
+              <View className="py-6 items-center" style={{ minHeight: 200 }}>
+                <View className="items-center">
+                  {/* Status Text */}
+                  {status !== "idle" && (
+                    <Text className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-6">
+                      {status === "recording" && `Recording... ${formatTime(recordingTime)}`}
+                      {status === "transcribing" && "Transcribing..."}
+                      {status === "saved" && "✓ Idea saved!"}
+                    </Text>
+                  )}
 
-              {/* Record Button with gradient */}
-              <TouchableOpacity
-                onPressIn={handlePressIn}
-                onPressOut={handlePressOut}
-                className="w-24 h-24 rounded-full items-center justify-center shadow-lg"
-                style={{
-                  backgroundColor: isRecording ? "#30D158" : "#34C759",
-                  shadowColor: "#34C759",
-                  shadowOffset: { width: 0, height: 8 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 16,
-                  elevation: 8,
-                }}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={isRecording ? "stop" : "mic"}
-                  size={48}
-                  color="#FFFFFF"
-                />
-              </TouchableOpacity>
+                  {/* Record Button with gradient - fixed position */}
+                  <TouchableOpacity
+                    onPressIn={handlePressIn}
+                    onPressOut={handlePressOut}
+                    className="w-24 h-24 rounded-full items-center justify-center shadow-lg"
+                    style={{
+                      backgroundColor: isRecording ? "#30D158" : "#34C759",
+                      shadowColor: "#34C759",
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: 0.3,
+                      shadowRadius: 16,
+                      elevation: 8,
+                    }}
+                    activeOpacity={1}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                  >
+                    <Ionicons
+                      name={isRecording ? "stop" : "mic"}
+                      size={48}
+                      color="#FFFFFF"
+                    />
+                  </TouchableOpacity>
 
-              <Text className="text-sm text-gray-500 dark:text-gray-400 mt-6 text-center px-4">
-                Hold to record • Release when done
-              </Text>
-            </View>
-          </View>
+                  <Text className="text-sm text-gray-500 dark:text-gray-400 mt-6 text-center px-4">
+                    Hold to record • Release when done
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
 
         {/* Recent Ideas */}
         {ideas.length > 0 && (

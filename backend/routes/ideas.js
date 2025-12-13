@@ -193,80 +193,185 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       return res.status(400).json({ message: 'Audio file is required' });
     }
 
-    // AIMLAPI doesn't support Whisper - use OpenAI directly for transcription
-    // But keep using AIMLAPI for embeddings and chat
-    const openaiApiKey = process.env.OPENAI_API_KEY || process.env.AIML_API_KEY;
+    // Try AIMLAPI nova-3 model first, fallback to OpenAI Whisper
+    const aimlApiKey = process.env.AIML_API_KEY;
+    const openaiApiKey = process.env.OPENAI_API_KEY;
 
-    if (!openaiApiKey) {
-      console.error('[Upload Audio] No API key found. Set OPENAI_API_KEY or AIML_API_KEY');
+    if (!aimlApiKey && !openaiApiKey) {
+      console.error('[Upload Audio] No API key found. Set AIML_API_KEY or OPENAI_API_KEY');
       return res.status(500).json({ 
-        message: 'Transcription service not configured. Please set OPENAI_API_KEY in backend/.env' 
+        message: 'Transcription service not configured. Please set AIML_API_KEY or OPENAI_API_KEY in backend/.env' 
       });
     }
 
-    console.log(`[Upload Audio] Using OpenAI for Whisper transcription (AIMLAPI doesn't support it)`);
     console.log(`[Upload Audio] File size: ${req.file.size} bytes, type: ${req.file.mimetype}`);
 
-    // Use OpenAI directly for Whisper transcription
     let transcript;
-    try {
-      // Create FormData for OpenAI
-      const formData = new FormData();
-      formData.append('file', req.file.buffer, {
-        filename: req.file.originalname || 'audio.m4a',
-        contentType: req.file.mimetype || 'audio/m4a',
-      });
-      formData.append('model', 'whisper-1');
-      formData.append('language', 'en');
+    let transcriptionSource = 'unknown';
 
-      const formHeaders = formData.getHeaders ? formData.getHeaders() : {};
-      const openaiBaseUrl = 'https://api.openai.com/v1';
-      
-      console.log(`[Upload Audio] Calling OpenAI: ${openaiBaseUrl}/audio/transcriptions`);
-
-      // Use OpenAI directly for Whisper transcription
-      const transcriptionResponse = await fetch(`${openaiBaseUrl}/audio/transcriptions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openaiApiKey}`,
-          ...formHeaders,
-        },
-        body: formData,
-      });
-
-      if (!transcriptionResponse.ok) {
-        const errorText = await transcriptionResponse.text();
-        console.error('[Upload Audio] OpenAI transcription error:', {
-          status: transcriptionResponse.status,
-          statusText: transcriptionResponse.statusText,
-          error: errorText,
+    // Try AIMLAPI nova-3 model first
+    if (aimlApiKey) {
+      try {
+        console.log('[Upload Audio] Attempting transcription with AIMLAPI nova-3 model');
+        
+        // Create FormData for AIMLAPI
+        const aimlFormData = new FormData();
+        aimlFormData.append('file', req.file.buffer, {
+          filename: req.file.originalname || 'audio.m4a',
+          contentType: req.file.mimetype || 'audio/m4a',
         });
+        // Use nova-3 for speech-to-text transcription
+        aimlFormData.append('model', 'nova-3');
+        aimlFormData.append('language', 'en');
+
+        const aimlFormHeaders = aimlFormData.getHeaders ? aimlFormData.getHeaders() : {};
+        const aimlBaseUrl = process.env.AIML_API_BASE_URL || 'https://api.aimlapi.com/v1';
+        
+        console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/audio/transcriptions`);
+
+        const aimlResponse = await fetch(`${aimlBaseUrl}/audio/transcriptions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${aimlApiKey}`,
+            ...aimlFormHeaders,
+          },
+          body: aimlFormData,
+        });
+
+        if (aimlResponse.ok) {
+          const aimlData = await aimlResponse.json();
+          console.log('[Upload Audio] AIMLAPI transcription response:', aimlData);
+          
+          transcript = aimlData.text || aimlData.transcript;
+          transcriptionSource = 'AIMLAPI nova-3';
+          
+          if (transcript) {
+            console.log(`[Upload Audio] ✅ Success with AIMLAPI nova-3: "${transcript.substring(0, 100)}..."`);
+          }
+        } else {
+          const errorText = await aimlResponse.text();
+          let errorJson = null;
+          try {
+            errorJson = JSON.parse(errorText);
+          } catch (e) {
+            // Not JSON, use as text
+          }
+          
+          console.error('[Upload Audio] AIMLAPI transcription failed:', {
+            status: aimlResponse.status,
+            statusText: aimlResponse.statusText,
+            error: errorText,
+            errorJson: errorJson,
+            url: `${aimlBaseUrl}/audio/transcriptions`,
+            model: 'nova-3',
+          });
+          
+          // If AIMLAPI fails with 401, it's an auth issue - don't try OpenAI fallback
+          if (aimlResponse.status === 401) {
+            const errorMsg = errorJson?.message || errorJson?.error?.message || errorText || 'Unauthorized';
+            return res.status(500).json({ 
+              message: `AIMLAPI authentication failed (401). Please check AIML_API_KEY is set correctly in backend/.env. Error: ${errorMsg}`,
+            });
+          }
+          
+          // If 404, endpoint might not exist
+          if (aimlResponse.status === 404) {
+            return res.status(500).json({ 
+              message: 'AIMLAPI audio transcription endpoint not found (404). Please check if AIMLAPI supports audio transcription with nova-3 model.',
+            });
+          }
+          
+          // For other errors, log but continue to fallback if OpenAI key available
+          console.warn('[Upload Audio] AIMLAPI failed with status', aimlResponse.status, '- will try OpenAI fallback if available');
+        }
+      } catch (aimlError) {
+        console.warn('[Upload Audio] AIMLAPI transcription error, will try OpenAI fallback:', aimlError.message);
+      }
+    }
+
+    // Fallback to OpenAI Whisper if AIMLAPI failed or not configured
+    if (!transcript && openaiApiKey) {
+      try {
+        console.log('[Upload Audio] Using OpenAI Whisper as fallback');
+        
+        // Create FormData for OpenAI
+        const openaiFormData = new FormData();
+        openaiFormData.append('file', req.file.buffer, {
+          filename: req.file.originalname || 'audio.m4a',
+          contentType: req.file.mimetype || 'audio/m4a',
+        });
+        openaiFormData.append('model', 'whisper-1');
+        openaiFormData.append('language', 'en');
+
+        const openaiFormHeaders = openaiFormData.getHeaders ? openaiFormData.getHeaders() : {};
+        const openaiBaseUrl = 'https://api.openai.com/v1';
+        
+        console.log(`[Upload Audio] Calling OpenAI: ${openaiBaseUrl}/audio/transcriptions`);
+
+        const openaiResponse = await fetch(`${openaiBaseUrl}/audio/transcriptions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiApiKey}`,
+            ...openaiFormHeaders,
+          },
+          body: openaiFormData,
+        });
+
+        if (!openaiResponse.ok) {
+          const errorText = await openaiResponse.text();
+          console.error('[Upload Audio] OpenAI transcription error:', {
+            status: openaiResponse.status,
+            statusText: openaiResponse.statusText,
+            error: errorText,
+          });
+          
+          // Provide clearer error message for common issues
+          let errorMessage = `Failed to transcribe audio: ${openaiResponse.statusText}`;
+          if (openaiResponse.status === 401) {
+            errorMessage = 'Failed to transcribe audio: AIMLAPI authentication failed. Please check AIML_API_KEY is set correctly in backend/.env. OpenAI fallback also failed - OPENAI_API_KEY not configured.';
+          } else if (openaiResponse.status === 429) {
+            errorMessage = 'Failed to transcribe audio: Rate limit exceeded. Please try again later.';
+          }
+          
+          return res.status(500).json({ 
+            message: errorMessage,
+          });
+        }
+
+        const openaiData = await openaiResponse.json();
+        console.log('[Upload Audio] OpenAI transcription response:', openaiData);
+        
+        transcript = openaiData.text || openaiData.transcript;
+        transcriptionSource = 'OpenAI Whisper';
+        
+        if (transcript) {
+          console.log(`[Upload Audio] ✅ Success with OpenAI Whisper: "${transcript.substring(0, 100)}..."`);
+        }
+      } catch (openaiError) {
+        console.error('[Upload Audio] OpenAI transcription error:', openaiError);
         return res.status(500).json({ 
-          message: `Failed to transcribe audio: ${transcriptionResponse.statusText}. Make sure OPENAI_API_KEY is set correctly.`,
+          message: `Failed to transcribe audio: ${openaiError.message || 'Unknown error'}`,
         });
       }
+    }
 
-      const transcriptionData = await transcriptionResponse.json();
-      console.log('[Upload Audio] Transcription response:', transcriptionData);
+    if (!transcript) {
+      console.error('[Upload Audio] No transcript received from any service');
+      let errorMessage = 'Transcription failed: No transcript received from AIMLAPI.';
       
-      transcript = transcriptionData.text || transcriptionData.transcript;
-      
-      if (!transcript) {
-        console.error('[Upload Audio] No transcript in response:', transcriptionData);
-        return res.status(500).json({ message: 'Transcription returned empty result' });
+      // Provide helpful guidance
+      if (!aimlApiKey) {
+        errorMessage = 'Transcription failed: AIML_API_KEY not configured. Please set AIML_API_KEY in backend/.env';
+      } else {
+        errorMessage = 'Transcription failed: AIMLAPI transcription failed. Please check AIML_API_KEY is valid and nova-3 model is available for audio transcription.';
       }
       
-      console.log(`[Upload Audio] Transcript received: "${transcript.substring(0, 100)}..."`);
-    } catch (transcriptionError) {
-      console.error('[Upload Audio] Transcription error:', transcriptionError);
-      console.error('[Upload Audio] Error details:', {
-        message: transcriptionError.message,
-        stack: transcriptionError.stack,
-      });
       return res.status(500).json({ 
-        message: `Failed to transcribe audio: ${transcriptionError.message || 'Unknown error'}`,
+        message: errorMessage,
       });
     }
+    
+    console.log(`[Upload Audio] ✅ Final transcript (${transcriptionSource}): "${transcript.substring(0, 100)}..."`);
 
     // Generate embedding
     const embeddingResponse = await aimlClient.embeddings.create({

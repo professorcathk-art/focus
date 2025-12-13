@@ -12,10 +12,15 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  Keyboard,
+  Pressable,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import * as Linking from "expo-linking";
 
 export default function SignUpScreen() {
   const [name, setName] = useState("");
@@ -24,7 +29,7 @@ export default function SignUpScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const { signUp } = useAuthStore();
+  const { signUp, signInWithGoogle } = useAuthStore();
 
   const handleSignUp = async () => {
     if (!email || !password) {
@@ -37,25 +42,59 @@ export default function SignUpScreen() {
 
     try {
       await signUp(email, password, name || undefined);
+      // If we get here, user is signed in (email confirmation disabled)
       router.replace("/(tabs)/record");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign up failed");
+      const errorMessage = err instanceof Error ? err.message : "Sign up failed";
+      setError(errorMessage);
+      
+      // If email confirmation is required, show helpful message
+      if (errorMessage.includes("check your email") || errorMessage.includes("confirm") || errorMessage.includes("Account created")) {
+        Alert.alert(
+          "Check Your Email",
+          "We've sent you a confirmation email. Please click the link in the email to verify your account, then you can sign in.",
+          [
+            { 
+              text: "OK", 
+              onPress: () => {
+                // Navigate to sign in page after alert
+                router.replace("/(auth)/signin");
+              }
+            }
+          ]
+        );
+      }
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await signInWithGoogle();
+      // OAuth will handle redirect, session will be set via auth state listener
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign in failed");
       setIsLoading(false);
     }
   };
 
   return (
     <SafeAreaView className="flex-1 bg-white dark:bg-black">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        className="flex-1"
-      >
-        <ScrollView
-          className="flex-1 px-6"
-          contentContainerClassName="py-8"
-          keyboardShouldPersistTaps="handled"
+      <Pressable onPress={Keyboard.dismiss} className="flex-1">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          className="flex-1"
         >
+          <ScrollView
+            className="flex-1 px-6"
+            contentContainerClassName="py-8"
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
           <View className="mb-12">
             <Text className="text-4xl font-bold text-black dark:text-white mb-2">
               Create account
@@ -134,6 +173,32 @@ export default function SignUpScreen() {
             )}
           </TouchableOpacity>
 
+          {/* Divider */}
+          <View className="flex-row items-center mb-4">
+            <View className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+            <Text className="mx-4 text-xs text-gray-500 dark:text-gray-400">OR</Text>
+            <View className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+          </View>
+
+          {/* Google Sign In Button */}
+          <TouchableOpacity
+            className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl py-4 items-center justify-center mb-4 flex-row"
+            onPress={handleGoogleSignIn}
+            disabled={isLoading}
+            style={{
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+              elevation: 2,
+            }}
+          >
+            <Ionicons name="logo-google" size={20} color="#4285F4" style={{ marginRight: 8 }} />
+            <Text className="text-gray-900 dark:text-white text-base font-semibold">
+              Continue with Google
+            </Text>
+          </TouchableOpacity>
+
           <View className="flex-row justify-center items-center">
             <Text className="text-gray-600 dark:text-gray-400">
               Already have an account?{" "}
@@ -145,8 +210,9 @@ export default function SignUpScreen() {
               <Text className="text-primary font-semibold">Sign In</Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Pressable>
     </SafeAreaView>
   );
 }
