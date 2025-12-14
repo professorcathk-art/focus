@@ -115,7 +115,7 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
     console.log(`[Async Transcription] Generating embedding...`);
     const embeddingResponse = await aimlClient.embeddings.create({
       model: 'text-embedding-3-small',
-      input: trimmedTranscript,
+      input: transcript,
     });
     const embedding = embeddingResponse.data[0].embedding;
     console.log(`[Async Transcription] Embedding generated (${embedding.length} dimensions)`);
@@ -137,6 +137,20 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
     if (updateError) {
       console.error(`[Async Transcription] Database update error:`, updateError);
       throw new Error(`Failed to update idea: ${updateError.message}`);
+    }
+    
+    // Verify the update succeeded by fetching the idea
+    const { data: updatedIdea, error: verifyError } = await supabase
+      .from('ideas')
+      .select('transcript')
+      .eq('id', ideaId)
+      .eq('user_id', userId)
+      .single();
+    
+    if (verifyError || !updatedIdea) {
+      console.error(`[Async Transcription] Failed to verify update:`, verifyError);
+    } else {
+      console.log(`[Async Transcription] ✅ Verified: Idea ${ideaId} updated with transcript (${updatedIdea.transcript?.length || 0} chars)`);
     }
     
     console.log(`[Async Transcription] ✅ Idea ${ideaId} updated with transcript and embedding`);
