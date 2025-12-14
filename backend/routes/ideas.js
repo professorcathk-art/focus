@@ -55,20 +55,34 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, deepgramApiKe
   try {
     console.log(`[Async Transcription] Audio buffer size: ${audioBuffer.length} bytes, mimeType: ${mimeType}`);
     console.log(`[Async Transcription] Deepgram API key present: ${!!deepgramApiKey}`);
+    console.log(`[Async Transcription] Deepgram API key length: ${deepgramApiKey?.length || 0} characters`);
+    console.log(`[Async Transcription] Deepgram API key first 10 chars: ${deepgramApiKey?.substring(0, 10) || 'N/A'}...`);
     
     if (!deepgramApiKey) {
-      throw new Error('Deepgram API key not configured');
+      const errorMsg = 'Deepgram API key not configured';
+      console.error(`[Async Transcription] ❌ ${errorMsg}`);
+      await supabase
+        .from('ideas')
+        .update({
+          transcription_error: errorMsg,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ideaId)
+        .eq('user_id', userId)
+        .catch(err => console.error(`[Async Transcription] Failed to save error:`, err));
+      throw new Error(errorMsg);
     }
     
     // Use Deepgram API - single request, no polling needed
+    // Reference: https://developers.deepgram.com/docs/pre-recorded-audio
     const deepgramBaseUrl = 'https://api.deepgram.com';
     const deepgramEndpoint = '/v1/listen';
     
     // Determine content type for Deepgram
-    let contentType = mimeType || 'audio/m4a';
-    // Deepgram prefers specific content types
-    if (mimeType === 'audio/x-m4a' || mimeType === 'audio/m4a') {
-      contentType = 'audio/m4a';
+    // For M4A files, use audio/m4a as per Deepgram docs
+    let contentType = 'audio/m4a'; // Default for M4A files
+    if (mimeType && mimeType !== 'audio/x-m4a' && mimeType !== 'audio/m4a') {
+      contentType = mimeType;
     }
     
     // Build query parameters
@@ -79,8 +93,15 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, deepgramApiKe
     
     const url = `${deepgramBaseUrl}${deepgramEndpoint}?${queryParams.toString()}`;
     
-    console.log(`[Async Transcription] Calling Deepgram API: ${url}`);
-    console.log(`[Async Transcription] Audio buffer size: ${audioBuffer.length} bytes, Content-Type: ${contentType}`);
+    console.log(`[Async Transcription] 🚀 Calling Deepgram API: ${url}`);
+    console.log(`[Async Transcription] Request details:`, {
+      method: 'POST',
+      url: url,
+      contentType: contentType,
+      audioBufferSize: audioBuffer.length,
+      hasAuthHeader: true,
+      authHeaderPrefix: 'Token',
+    });
     
     // Single request to Deepgram - returns transcript directly
     const TIMEOUT_MS = 120000; // 2 minutes for transcription
@@ -89,6 +110,7 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, deepgramApiKe
     
     let response;
     try {
+      console.log(`[Async Transcription] 📤 Sending request to Deepgram...`);
       response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -99,8 +121,13 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, deepgramApiKe
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+      console.log(`[Async Transcription] 📥 Received response from Deepgram: ${response.status} ${response.statusText}`);
     } catch (fetchError) {
       clearTimeout(timeoutId);
+      console.error(`[Async Transcription] ❌ Fetch error:`, fetchError);
+      console.error(`[Async Transcription] Fetch error name: ${fetchError.name}`);
+      console.error(`[Async Transcription] Fetch error message: ${fetchError.message}`);
+      console.error(`[Async Transcription] Fetch error stack:`, fetchError.stack);
       if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
         throw new Error('Deepgram request timed out after 120 seconds');
       }
@@ -115,17 +142,34 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, deepgramApiKe
       } catch (e) {
         // Not JSON
       }
-      console.error(`[Async Transcription] Deepgram error response:`, {
+      console.error(`[Async Transcription] ❌ Deepgram error response:`, {
         status: response.status,
         statusText: response.statusText,
         error: errorText,
         errorJson: errorJson,
       });
-      throw new Error(`Deepgram transcription failed: ${response.status} - ${errorText.substring(0, 200)}`);
+      const errorMsg = `Deepgram transcription failed: ${response.status} - ${errorText.substring(0, 200)}`;
+      // Save error to database
+      await supabase
+        .from('ideas')
+        .update({
+          transcription_error: errorMsg,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ideaId)
+        .eq('user_id', userId)
+        .catch(err => console.error(`[Async Transcription] Failed to save error:`, err));
+      throw new Error(errorMsg);
     }
     
+    console.log(`[Async Transcription] ✅ Deepgram API call successful! Parsing response...`);
     const responseData = await response.json();
-    console.log(`[Async Transcription] Deepgram response:`, JSON.stringify(responseData).substring(0, 500));
+    console.log(`[Async Transcription] Deepgram response structure:`, {
+      hasResults: !!responseData.results,
+      hasChannels: !!responseData.results?.channels,
+      channelsLength: responseData.results?.channels?.length || 0,
+      fullResponsePreview: JSON.stringify(responseData).substring(0, 1000),
+    });
     
     // Extract transcript from Deepgram response format
     // Deepgram returns: { results: { channels: [{ alternatives: [{ transcript: "..." }] }] } }
