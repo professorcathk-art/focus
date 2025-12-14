@@ -85,10 +85,10 @@ export default function ClusterDetailScreen() {
   // This prevents showing deleted ideas that might still be in ideaIds array
   const clusterIdeas = displayCluster
     ? isUncategorised
-      ? ideas.filter((idea) => idea && !idea.clusterId)
+      ? ideas.filter((idea) => idea && idea.id && !idea.clusterId)
       : isFavourite
-      ? ideas.filter((idea) => idea && idea.isFavorite)
-      : ideas.filter((idea) => idea && displayCluster.ideaIds.includes(idea.id))
+      ? ideas.filter((idea) => idea && idea.id && idea.isFavorite)
+      : ideas.filter((idea) => idea && idea.id && displayCluster.ideaIds.includes(idea.id))
     : [];
 
   // For special clusters, only wait for ideas to load
