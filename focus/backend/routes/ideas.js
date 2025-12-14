@@ -11,116 +11,209 @@ const { requireAuth } = require('../middleware/auth');
 const { assignToCluster, findBestCluster, generateClusterLabel } = require('../lib/clustering');
 const FormData = require('form-data');
 
+// Import Vercel's waitUntil for background tasks
+let waitUntil;
+try {
+  waitUntil = require('@vercel/functions').waitUntil;
+} catch (e) {
+  // Fallback if @vercel/functions is not available (local dev)
+  waitUntil = (promise) => {
+    promise.catch(err => console.error('[waitUntil] Background task error:', err));
+  };
+}
+
 /**
  * Async transcription function - runs in background
  * Updates idea with transcript and embedding when complete
  */
-async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, userId) {
+async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, deepgramApiKey, userId) {
+  // Add initial validation and logging
+  console.log(`[Async Transcription] 🎙️ Starting transcription for idea: ${ideaId}`);
+  console.log(`[Async Transcription] Parameters:`, {
+    ideaId,
+    audioBufferSize: audioBuffer?.length || 0,
+    mimeType: mimeType || 'unknown',
+    deepgramApiKeyPresent: !!deepgramApiKey,
+    userId,
+  });
+  
+  if (!audioBuffer || audioBuffer.length === 0) {
+    const errorMsg = 'Audio buffer is empty or missing';
+    console.error(`[Async Transcription] ❌ ${errorMsg}`);
+    await supabase
+      .from('ideas')
+      .update({
+        transcription_error: errorMsg,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', ideaId)
+      .eq('user_id', userId)
+      .catch(err => console.error(`[Async Transcription] Failed to save error:`, err));
+    return;
+  }
+  
   try {
-    console.log(`[Async Transcription] 🎙️ Starting transcription for idea: ${ideaId}`);
     console.log(`[Async Transcription] Audio buffer size: ${audioBuffer.length} bytes, mimeType: ${mimeType}`);
-    console.log(`[Async Transcription] AIMLAPI key present: ${!!aimlApiKey}`);
+    console.log(`[Async Transcription] Deepgram API key present: ${!!deepgramApiKey}`);
+    console.log(`[Async Transcription] Deepgram API key length: ${deepgramApiKey?.length || 0} characters`);
+    console.log(`[Async Transcription] Deepgram API key first 10 chars: ${deepgramApiKey?.substring(0, 10) || 'N/A'}...`);
     
-    if (!aimlApiKey) {
-      throw new Error('AIMLAPI key not configured');
+    if (!deepgramApiKey) {
+      const errorMsg = 'Deepgram API key not configured';
+      console.error(`[Async Transcription] ❌ ${errorMsg}`);
+      await supabase
+        .from('ideas')
+        .update({
+          transcription_error: errorMsg,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ideaId)
+        .eq('user_id', userId)
+        .catch(err => console.error(`[Async Transcription] Failed to save error:`, err));
+      throw new Error(errorMsg);
     }
     
-    // Use AIMLAPI STT endpoint with multipart/form-data
-    const aimlFormData = new FormData();
-    aimlFormData.append('file', audioBuffer, {
-      filename: 'recording.m4a',
-      contentType: mimeType || 'audio/m4a',
-      knownLength: audioBuffer.length,
-    });
-    aimlFormData.append('model', '#g1_nova-2-general');
+    // Use Deepgram API - single request, no polling needed
+    // Reference: https://developers.deepgram.com/docs/pre-recorded-audio
+    const deepgramBaseUrl = 'https://api.deepgram.com';
+    const deepgramEndpoint = '/v1/listen';
     
-    const aimlFormHeaders = aimlFormData.getHeaders();
-    const aimlBaseUrl = 'https://api.aimlapi.com/v1';
+    // Determine content type for Deepgram
+    // For M4A files, use audio/m4a as per Deepgram docs
+    let contentType = 'audio/m4a'; // Default for M4A files
+    if (mimeType && mimeType !== 'audio/x-m4a' && mimeType !== 'audio/m4a') {
+      contentType = mimeType;
+    }
     
-    // Convert FormData to buffer
-    const formBuffer = await new Promise((resolve, reject) => {
-      const chunks = [];
-      aimlFormData.on('data', (chunk) => chunks.push(chunk));
-      aimlFormData.on('end', () => resolve(Buffer.concat(chunks)));
-      aimlFormData.on('error', reject);
+    // Build query parameters
+    const queryParams = new URLSearchParams({
+      model: 'nova-3',
+      smart_format: 'true',
     });
     
-    aimlFormHeaders['Content-Length'] = formBuffer.length.toString();
+    const url = `${deepgramBaseUrl}${deepgramEndpoint}?${queryParams.toString()}`;
     
-    console.log(`[Async Transcription] Calling AIMLAPI: ${aimlBaseUrl}/stt/create`);
-    console.log(`[Async Transcription] FormData size: ${formBuffer.length} bytes`);
+    console.log(`[Async Transcription] 🚀 Calling Deepgram API: ${url}`);
+    console.log(`[Async Transcription] Request details:`, {
+      method: 'POST',
+      url: url,
+      contentType: contentType,
+      audioBufferSize: audioBuffer.length,
+      hasAuthHeader: true,
+      authHeaderPrefix: 'Token',
+    });
     
-    // Add timeout (240s)
-    const TIMEOUT_MS = 240000;
+    // Single request to Deepgram - returns transcript directly
+    const TIMEOUT_MS = 120000; // 2 minutes for transcription
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
     
-    let aimlResponse;
+    let response;
     try {
-      aimlResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
+      console.log(`[Async Transcription] 📤 Sending request to Deepgram...`);
+      response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${aimlApiKey}`,
-          ...aimlFormHeaders,
+          'Authorization': `Token ${deepgramApiKey}`,
+          'Content-Type': contentType,
         },
-        body: formBuffer,
+        body: audioBuffer,
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+      console.log(`[Async Transcription] 📥 Received response from Deepgram: ${response.status} ${response.statusText}`);
     } catch (fetchError) {
       clearTimeout(timeoutId);
+      console.error(`[Async Transcription] ❌ Fetch error:`, fetchError);
+      console.error(`[Async Transcription] Fetch error name: ${fetchError.name}`);
+      console.error(`[Async Transcription] Fetch error message: ${fetchError.message}`);
+      console.error(`[Async Transcription] Fetch error stack:`, fetchError.stack);
       if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
-        throw new Error('AIMLAPI request timed out after 240 seconds');
+        throw new Error('Deepgram request timed out after 120 seconds');
       }
-      throw new Error(`AIMLAPI fetch error: ${fetchError.message}`);
+      throw new Error(`Deepgram fetch error: ${fetchError.message}`);
     }
     
-    if (!aimlResponse.ok) {
-      const errorText = await aimlResponse.text();
+    if (!response.ok) {
+      const errorText = await response.text();
       let errorJson = null;
       try {
         errorJson = JSON.parse(errorText);
       } catch (e) {
         // Not JSON
       }
-      console.error(`[Async Transcription] AIMLAPI error response:`, {
-        status: aimlResponse.status,
-        statusText: aimlResponse.statusText,
+      console.error(`[Async Transcription] ❌ Deepgram error response:`, {
+        status: response.status,
+        statusText: response.statusText,
         error: errorText,
         errorJson: errorJson,
       });
-      throw new Error(`AIMLAPI transcription failed: ${aimlResponse.status} - ${errorText.substring(0, 200)}`);
+      const errorMsg = `Deepgram transcription failed: ${response.status} - ${errorText.substring(0, 200)}`;
+      // Save error to database
+      await supabase
+        .from('ideas')
+        .update({
+          transcription_error: errorMsg,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ideaId)
+        .eq('user_id', userId)
+        .catch(err => console.error(`[Async Transcription] Failed to save error:`, err));
+      throw new Error(errorMsg);
     }
     
-    const aimlData = await aimlResponse.json();
-    console.log(`[Async Transcription] AIMLAPI response:`, JSON.stringify(aimlData).substring(0, 500));
+    console.log(`[Async Transcription] ✅ Deepgram API call successful! Parsing response...`);
+    const responseData = await response.json();
+    console.log(`[Async Transcription] Deepgram response structure:`, {
+      hasResults: !!responseData.results,
+      hasChannels: !!responseData.results?.channels,
+      channelsLength: responseData.results?.channels?.length || 0,
+      fullResponsePreview: JSON.stringify(responseData).substring(0, 1000),
+    });
     
-    const transcript = aimlData.transcription || aimlData.text || aimlData.transcript || 
-                       aimlData.result?.transcription || aimlData.data?.transcription;
-    
-    if (!transcript) {
-      console.error(`[Async Transcription] No transcript in response:`, JSON.stringify(aimlData));
-      throw new Error('No transcript returned from AIMLAPI');
+    // Extract transcript from Deepgram response format
+    // Deepgram returns: { results: { channels: [{ alternatives: [{ transcript: "..." }] }] } }
+    let transcript = null;
+    if (responseData.results?.channels?.[0]?.alternatives?.[0]?.transcript) {
+      transcript = responseData.results.channels[0].alternatives[0].transcript;
+    } else if (responseData.transcript) {
+      transcript = responseData.transcript;
+    } else if (responseData.results?.channels?.[0]?.alternatives?.[0]?.text) {
+      transcript = responseData.results.channels[0].alternatives[0].text;
     }
     
-    console.log(`[Async Transcription] ✅ Transcription complete for idea ${ideaId}: "${transcript.substring(0, 100)}..."`);
+    if (!transcript || typeof transcript !== 'string') {
+      console.error(`[Async Transcription] No transcript in Deepgram response:`, JSON.stringify(responseData));
+      throw new Error('No transcript returned from Deepgram API');
+    }
+    
+    const trimmedTranscript = transcript.trim();
+    if (!trimmedTranscript) {
+      console.error(`[Async Transcription] Transcript is empty after trimming`);
+      throw new Error('Transcript is empty');
+    }
+    
+    console.log(`[Async Transcription] ✅ Transcription complete for idea ${ideaId}: "${trimmedTranscript.substring(0, 100)}..."`);
     
     // Generate embedding
     console.log(`[Async Transcription] Generating embedding...`);
     const embeddingResponse = await aimlClient.embeddings.create({
       model: 'text-embedding-3-small',
-      input: transcript,
+      input: trimmedTranscript,
     });
     const embedding = embeddingResponse.data[0].embedding;
     console.log(`[Async Transcription] Embedding generated (${embedding.length} dimensions)`);
     
     // Update idea with transcript and embedding
     console.log(`[Async Transcription] Updating idea ${ideaId} in database...`);
+    console.log(`[Async Transcription] Transcript length: ${trimmedTranscript.length} characters`);
+    
     const { error: updateError } = await supabase
       .from('ideas')
       .update({
-        transcript: transcript,
+        transcript: trimmedTranscript,
         embedding: embedding,
+        transcription_error: null, // Clear any previous errors
         updated_at: new Date().toISOString(),
       })
       .eq('id', ideaId)
@@ -129,6 +222,20 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
     if (updateError) {
       console.error(`[Async Transcription] Database update error:`, updateError);
       throw new Error(`Failed to update idea: ${updateError.message}`);
+    }
+    
+    // Verify the update succeeded by fetching the idea
+    const { data: updatedIdea, error: verifyError } = await supabase
+      .from('ideas')
+      .select('transcript')
+      .eq('id', ideaId)
+      .eq('user_id', userId)
+      .single();
+    
+    if (verifyError || !updatedIdea) {
+      console.error(`[Async Transcription] Failed to verify update:`, verifyError);
+    } else {
+      console.log(`[Async Transcription] ✅ Verified: Idea ${ideaId} updated with transcript (${updatedIdea.transcript?.length || 0} chars)`);
     }
     
     console.log(`[Async Transcription] ✅ Idea ${ideaId} updated with transcript and embedding`);
@@ -151,8 +258,25 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
   } catch (error) {
     console.error(`[Async Transcription] ❌ Error transcribing idea ${ideaId}:`, error);
     console.error(`[Async Transcription] Error stack:`, error.stack);
-    // Update idea with error status (optional - you could add a status field)
-    // For now, just log the error
+    
+    // Store error in database so user can see what went wrong
+    const errorMessage = error.message || 'Unknown transcription error';
+    const errorDetails = `${errorMessage}${error.stack ? `\n\nStack: ${error.stack.substring(0, 500)}` : ''}`;
+    
+    try {
+      await supabase
+        .from('ideas')
+        .update({
+          transcription_error: errorDetails.substring(0, 1000), // Limit to 1000 chars
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ideaId)
+        .eq('user_id', userId);
+      
+      console.error(`[Async Transcription] Error saved to database for idea ${ideaId}`);
+    } catch (dbError) {
+      console.error(`[Async Transcription] Failed to save error to database:`, dbError);
+    }
   }
 }
 
@@ -182,19 +306,41 @@ const upload = multer({
  */
 router.get('/', requireAuth, async (req, res) => {
   try {
+    console.log(`[List Ideas] Fetching ideas for user: ${req.user.id}`);
+    
     // Select specific columns to avoid JSON parsing issues with vector/embedding type
     const { data: ideas, error } = await supabase
       .from('ideas')
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .eq('user_id', req.user.id)
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching ideas:', error);
-      return res.status(500).json({ message: 'Failed to fetch ideas' });
+      console.error('[List Ideas] Supabase error:', error);
+      console.error('[List Ideas] Error code:', error.code);
+      console.error('[List Ideas] Error message:', error.message);
+      console.error('[List Ideas] Error details:', error.details);
+      console.error('[List Ideas] Error hint:', error.hint);
+      
+      // Check if it's a connection/authentication error
+      if (error.message?.includes('JWT') || error.message?.includes('auth') || error.code === 'PGRST301') {
+        return res.status(401).json({ message: 'Authentication error. Please sign in again.' });
+      }
+      
+      // Check if it's a timeout or connection error
+      if (error.message?.includes('timeout') || error.message?.includes('ECONNREFUSED') || error.message?.includes('ENOTFOUND')) {
+        return res.status(503).json({ message: 'Database connection error. Please try again later.' });
+      }
+      
+      return res.status(500).json({ 
+        message: 'Failed to fetch ideas',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
 
-    const formattedIdeas = ideas.map(idea => ({
+    console.log(`[List Ideas] ✅ Successfully fetched ${ideas?.length || 0} ideas`);
+
+    const formattedIdeas = (ideas || []).map(idea => ({
       id: idea.id,
       userId: idea.user_id,
       transcript: idea.transcript,
@@ -204,12 +350,17 @@ router.get('/', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       isFavorite: idea.is_favorite || false,
+      transcriptionError: idea.transcription_error || null,
     }));
 
     res.json(formattedIdeas);
   } catch (error) {
-    console.error('List ideas error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('[List Ideas] Unexpected error:', error);
+    console.error('[List Ideas] Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -221,7 +372,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     // Select specific columns to avoid JSON parsing issues with vector/embedding type
     const { data: idea, error } = await supabase
       .from('ideas')
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .eq('id', req.params.id)
       .eq('user_id', req.user.id)
       .single();
@@ -240,6 +391,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       isFavorite: idea.is_favorite || false,
+      transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
     console.error('Get idea error:', error);
@@ -293,7 +445,7 @@ router.put('/:id/favorite', requireAuth, async (req, res) => {
       })
       .eq('id', ideaId)
       .eq('user_id', req.user.id)  // Double-check ownership
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .single();
 
     if (error) {
@@ -317,6 +469,7 @@ router.put('/:id/favorite', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       isFavorite: idea.is_favorite || false,
+      transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
     console.error('[Toggle Favorite] Unexpected error:', error);
@@ -364,7 +517,7 @@ router.post('/', requireAuth, async (req, res) => {
         created_at: now,
         updated_at: now,
       })
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .single();
 
     if (error) {
@@ -411,6 +564,7 @@ router.post('/', requireAuth, async (req, res) => {
       embedding: idea.embedding,
       isFavorite: idea.is_favorite || false,
       suggestedClusterLabel: suggestedClusterLabel, // Include suggested label if no match found
+      transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
     console.error('Create idea error:', error);
@@ -427,13 +581,13 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       return res.status(400).json({ message: 'Audio file is required' });
     }
 
-    // Use AIMLAPI Nova-2 model ONLY - no OpenAI fallback
-    const aimlApiKey = process.env.AIML_API_KEY;
-
-    if (!aimlApiKey) {
-      console.error('[Upload Audio] AIML_API_KEY not found. Set AIML_API_KEY in environment variables');
+    // Use Deepgram API with nova-3 model
+    const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+    
+    if (!deepgramApiKey) {
+      console.error('[Upload Audio] DEEPGRAM_API_KEY not found. Set DEEPGRAM_API_KEY in environment variables');
       return res.status(500).json({ 
-        message: 'Transcription service not configured. Please set AIML_API_KEY in Vercel environment variables' 
+        message: 'Transcription service not configured. Please set DEEPGRAM_API_KEY in Vercel environment variables' 
       });
     }
 
@@ -483,7 +637,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         created_at: now,
         updated_at: now,
       })
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .single();
 
     if (error) {
@@ -494,9 +648,22 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     console.log(`[Upload Audio] ✅ Idea saved immediately with audio URL: ${ideaId}`);
 
     // STEP 3: Start async transcription (don't wait for it)
+    // CRITICAL: Use waitUntil to ensure transcription continues after response is sent
+    // Vercel serverless functions terminate after response, so we need waitUntil
     console.log(`[Upload Audio] ⏳ Starting async transcription for idea: ${ideaId}`);
-    transcribeAudioAsync(ideaId, req.file.buffer, req.file.mimetype, aimlApiKey, req.user.id)
-      .catch(err => console.error(`[Upload Audio] ⚠️ Async transcription failed for ${ideaId}:`, err));
+    console.log(`[Upload Audio] Audio buffer available: ${!!req.file.buffer}, size: ${req.file.buffer?.length || 0} bytes`);
+    console.log(`[Upload Audio] Deepgram API key available: ${!!deepgramApiKey}`);
+    
+    waitUntil(
+      transcribeAudioAsync(ideaId, req.file.buffer, req.file.mimetype, deepgramApiKey, req.user.id)
+        .then(() => {
+          console.log(`[Upload Audio] ✅ Async transcription completed for idea: ${ideaId}`);
+        })
+        .catch(err => {
+          console.error(`[Upload Audio] ⚠️ Async transcription failed for ${ideaId}:`, err);
+          console.error(`[Upload Audio] Error stack:`, err.stack);
+        })
+    );
 
     // Return success immediately - transcription happens in background
     res.json({
@@ -510,6 +677,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       clusterId: idea.cluster_id || null,
       isFavorite: idea.is_favorite || false,
       suggestedClusterLabel: null, // Will be set by async transcription if needed
+      transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
     console.error('Upload audio error:', error);
@@ -569,7 +737,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       .from('ideas')
       .update(updateData)
       .eq('id', req.params.id)
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .single();
 
     if (error) {
@@ -587,6 +755,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       isFavorite: idea.is_favorite || false,
+      transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
     console.error('Update idea error:', error);
