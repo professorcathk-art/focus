@@ -353,8 +353,11 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
           
           // Provide clearer error message for common issues
           let errorMessage = `Failed to transcribe audio: ${openaiResponse.statusText}`;
-          if (openaiResponse.status === 401) {
-            errorMessage = 'Failed to transcribe audio: AIMLAPI authentication failed. Please check AIML_API_KEY is set correctly in backend/.env. OpenAI fallback also failed - OPENAI_API_KEY not configured.';
+          if (openaiResponse.status === 400) {
+            const errorDetails = errorText || 'Bad Request';
+            errorMessage = `Failed to transcribe audio: Bad Request (400). ${errorDetails}. This might be due to unsupported file format. Please check audio file format (MP3, WAV, M4A supported).`;
+          } else if (openaiResponse.status === 401) {
+            errorMessage = 'Failed to transcribe audio: Authentication failed. Please check OPENAI_API_KEY is set correctly in Vercel environment variables.';
           } else if (openaiResponse.status === 429) {
             errorMessage = 'Failed to transcribe audio: Rate limit exceeded. Please try again later.';
           }
@@ -602,7 +605,6 @@ router.put('/:id', requireAuth, async (req, res) => {
       createdAt: idea.created_at,
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
-      embedding: idea.embedding,
       isFavorite: idea.is_favorite || false,
     });
   } catch (error) {
