@@ -85,7 +85,13 @@ export default function ClusterDetailScreen() {
       : ideas.filter((idea) => idea && displayCluster.ideaIds.includes(idea.id))
     : [];
 
-  if (clusterLoading || ideasLoading) {
+  // For special clusters, only wait for ideas to load
+  // For regular clusters, wait for both cluster and ideas
+  const isLoading = isUncategorised || isFavourite 
+    ? ideasLoading 
+    : (clusterLoading || ideasLoading);
+  
+  if (isLoading) {
     return (
       <SafeAreaView className="flex-1 bg-white dark:bg-black">
         <View className="flex-1 items-center justify-center">
