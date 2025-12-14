@@ -28,7 +28,7 @@ const getClusterEmoji = (label: string): string => {
 export default function InboxScreen() {
   const router = useRouter();
   const { clusters, isLoading, updateCategory, refetch: refetchClusters } = useClusters();
-  const { ideas, refetch: refetchIdeas } = useIdeas();
+  const { ideas, isLoading: ideasLoading, error: ideasError, refetch: refetchIdeas } = useIdeas();
   const isDark = useColorScheme() === "dark";
   const [editingCategory, setEditingCategory] = useState<{ id: string; label: string } | null>(null);
   const [editText, setEditText] = useState("");
