@@ -18,6 +18,12 @@ const FormData = require('form-data');
 async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, userId) {
   try {
     console.log(`[Async Transcription] 🎙️ Starting transcription for idea: ${ideaId}`);
+    console.log(`[Async Transcription] Audio buffer size: ${audioBuffer.length} bytes, mimeType: ${mimeType}`);
+    console.log(`[Async Transcription] AIMLAPI key present: ${!!aimlApiKey}`);
+    
+    if (!aimlApiKey) {
+      throw new Error('AIMLAPI key not configured');
+    }
     
     // Use AIMLAPI STT endpoint with multipart/form-data
     const aimlFormData = new FormData();
@@ -41,44 +47,75 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
     
     aimlFormHeaders['Content-Length'] = formBuffer.length.toString();
     
+    console.log(`[Async Transcription] Calling AIMLAPI: ${aimlBaseUrl}/stt/create`);
+    console.log(`[Async Transcription] FormData size: ${formBuffer.length} bytes`);
+    
     // Add timeout (240s)
     const TIMEOUT_MS = 240000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
     
-    const aimlResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${aimlApiKey}`,
-        ...aimlFormHeaders,
-      },
-      body: formBuffer,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+    let aimlResponse;
+    try {
+      aimlResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${aimlApiKey}`,
+          ...aimlFormHeaders,
+        },
+        body: formBuffer,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
+        throw new Error('AIMLAPI request timed out after 240 seconds');
+      }
+      throw new Error(`AIMLAPI fetch error: ${fetchError.message}`);
+    }
     
     if (!aimlResponse.ok) {
-      throw new Error(`AIMLAPI transcription failed: ${aimlResponse.status}`);
+      const errorText = await aimlResponse.text();
+      let errorJson = null;
+      try {
+        errorJson = JSON.parse(errorText);
+      } catch (e) {
+        // Not JSON
+      }
+      console.error(`[Async Transcription] AIMLAPI error response:`, {
+        status: aimlResponse.status,
+        statusText: aimlResponse.statusText,
+        error: errorText,
+        errorJson: errorJson,
+      });
+      throw new Error(`AIMLAPI transcription failed: ${aimlResponse.status} - ${errorText.substring(0, 200)}`);
     }
     
     const aimlData = await aimlResponse.json();
+    console.log(`[Async Transcription] AIMLAPI response:`, JSON.stringify(aimlData).substring(0, 500));
+    
     const transcript = aimlData.transcription || aimlData.text || aimlData.transcript || 
                        aimlData.result?.transcription || aimlData.data?.transcription;
     
     if (!transcript) {
+      console.error(`[Async Transcription] No transcript in response:`, JSON.stringify(aimlData));
       throw new Error('No transcript returned from AIMLAPI');
     }
     
     console.log(`[Async Transcription] ✅ Transcription complete for idea ${ideaId}: "${transcript.substring(0, 100)}..."`);
     
     // Generate embedding
+    console.log(`[Async Transcription] Generating embedding...`);
     const embeddingResponse = await aimlClient.embeddings.create({
       model: 'text-embedding-3-small',
       input: transcript,
     });
     const embedding = embeddingResponse.data[0].embedding;
+    console.log(`[Async Transcription] Embedding generated (${embedding.length} dimensions)`);
     
     // Update idea with transcript and embedding
+    console.log(`[Async Transcription] Updating idea ${ideaId} in database...`);
     const { error: updateError } = await supabase
       .from('ideas')
       .update({
@@ -90,6 +127,7 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
       .eq('user_id', userId);
     
     if (updateError) {
+      console.error(`[Async Transcription] Database update error:`, updateError);
       throw new Error(`Failed to update idea: ${updateError.message}`);
     }
     
@@ -112,6 +150,7 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
     }
   } catch (error) {
     console.error(`[Async Transcription] ❌ Error transcribing idea ${ideaId}:`, error);
+    console.error(`[Async Transcription] Error stack:`, error.stack);
     // Update idea with error status (optional - you could add a status field)
     // For now, just log the error
   }
