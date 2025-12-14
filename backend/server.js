@@ -17,7 +17,17 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/ideas', require('./routes/ideas'));
+// Register ideas routes with explicit logging
+const ideasRouter = require('./routes/ideas');
+console.log('[SERVER] Ideas router loaded, checking routes...');
+// Log all registered routes for debugging
+ideasRouter.stack.forEach((r) => {
+  if (r.route) {
+    const methods = Object.keys(r.route.methods).join(', ').toUpperCase();
+    console.log(`[SERVER] Registered route: ${methods} ${r.route.path}`);
+  }
+});
+app.use('/api/ideas', ideasRouter);
 app.use('/api/clusters', require('./routes/clusters'));
 app.use('/api/search', require('./routes/search'));
 app.use('/api/chat', require('./routes/chat'));
