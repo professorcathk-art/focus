@@ -21,10 +21,15 @@ class ApiClient {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
-        console.log("[API Client] Token retrieved from Supabase");
+        // Only log in development to reduce noise
+        if (__DEV__) {
+          console.log("[API Client] Token retrieved from Supabase");
+        }
         return session.access_token;
       }
-      console.log("[API Client] No token found in Supabase session");
+      if (__DEV__) {
+        console.log("[API Client] No token found in Supabase session");
+      }
       return null;
     } catch (error) {
       console.error("[API Client] Error getting token:", error);

@@ -173,11 +173,34 @@ export default function InboxScreen() {
     setEditText("");
   };
 
-  if (isLoading) {
+  if (isLoading || ideasLoading) {
     return (
       <SafeAreaView className="flex-1" style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#34C759" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Show error if ideas failed to load
+  if (ideasError) {
+    return (
+      <SafeAreaView className="flex-1" style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
+        <View className="flex-1 items-center justify-center px-6">
+          <Ionicons name="alert-circle-outline" size={64} color="#FF3B30" />
+          <Text className="text-lg font-medium text-gray-900 dark:text-white mt-4 text-center">
+            Failed to load notes
+          </Text>
+          <Text className="text-sm text-gray-500 dark:text-gray-400 mt-2 text-center">
+            {ideasError}
+          </Text>
+          <TouchableOpacity
+            onPress={() => refetchIdeas()}
+            className="mt-6 bg-primary rounded-xl px-6 py-3"
+          >
+            <Text className="text-white font-semibold">Try Again</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );

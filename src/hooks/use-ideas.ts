@@ -1,25 +1,46 @@
 /**
  * Custom hook for managing ideas
+ * Uses local caching to reduce API calls
  */
 
 import { useState, useEffect } from "react";
 import { Idea } from "@/types";
 import { apiClient } from "@/lib/api-client";
 import { API_ENDPOINTS } from "@/config/api";
+import { getCachedIdeas, setCachedIdeas, updateCachedIdea, removeCachedIdea } from "@/lib/ideas-cache";
 
 export function useIdeas() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchIdeas = async () => {
+  const fetchIdeas = async (useCache = true) => {
     setIsLoading(true);
     setError(null);
+    
     try {
+      // Try cache first for instant UI update
+      if (useCache) {
+        const cached = await getCachedIdeas();
+        if (cached && cached.length > 0) {
+          setIdeas(cached);
+          setIsLoading(false);
+          // Continue fetching in background to update cache
+        }
+      }
+
+      // Fetch from API
       const data = await apiClient.get<Idea[]>(API_ENDPOINTS.ideas.list);
+      
+      // Update cache and state
+      await setCachedIdeas(data);
       setIdeas(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch ideas");
+      // If API fails but we have cache, keep using cache
+      if (ideas.length > 0) {
+        console.log("[useIdeas] API failed but using cached data");
+      }
     } finally {
       setIsLoading(false);
     }
