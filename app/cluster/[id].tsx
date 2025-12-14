@@ -44,6 +44,13 @@ export default function ClusterDetailScreen() {
     }
   };
 
+  // Refresh when screen comes into focus (e.g., after deleting an idea)
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
+
   // Handle special clusters (uncategorised and favourite)
   const isUncategorised = id === "uncategorised";
   const isFavourite = id === "favourite";
