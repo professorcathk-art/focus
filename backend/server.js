@@ -30,6 +30,17 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// 404 handler for unmatched routes
+app.use((req, res, next) => {
+  console.error(`[404] Route not found: ${req.method} ${req.originalUrl}`);
+  console.error(`[404] Path: ${req.path}, Original URL: ${req.originalUrl}`);
+  res.status(404).json({
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
+    path: req.path,
+    originalUrl: req.originalUrl,
+  });
+});
+
 // Error handling
 app.use((err, req, res, next) => {
   console.error('Error:', err);
