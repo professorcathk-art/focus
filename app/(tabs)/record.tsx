@@ -37,7 +37,6 @@ export default function RecordScreen() {
   const [editableCategoryName, setEditableCategoryName] = useState<string>("");
   const [pendingIdeaId, setPendingIdeaId] = useState<string | null>(null);
   const [isAssigningCategory, setIsAssigningCategory] = useState(false);
-  const [isAssigningCategory, setIsAssigningCategory] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { ideas, createIdea, refetch } = useIdeas();
   const { clusters, createCluster, assignIdeaToCluster, refetch: refetchClusters } = useClusters();
@@ -662,18 +661,25 @@ export default function RecordScreen() {
                     </ScrollView>
                   </View>
 
-                  {/* Save Button */}
+                  {/* Save Button - Modern Apple style */}
                   <TouchableOpacity
                     onPress={handleSaveText}
-                    className="w-full py-3 rounded-full flex-row items-center justify-center"
-                    style={{ backgroundColor: "#34C759" }}
+                    className="w-full py-4 rounded-2xl flex-row items-center justify-center"
+                    style={{ 
+                      backgroundColor: "#34C759",
+                      shadowColor: "#34C759",
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.3,
+                      shadowRadius: 8,
+                      elevation: 4,
+                    }}
                     activeOpacity={0.8}
                     disabled={status === "saved" || isAssigningCategory}
                   >
                     {(status === "saved" || isAssigningCategory) ? (
                       <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
-                      <Text className="text-white font-semibold text-base">Save</Text>
+                      <Text className="text-white font-bold text-base">Save</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -704,19 +710,18 @@ export default function RecordScreen() {
                     </Text>
                   )}
 
-                  {/* Record Button - Modern colorful design */}
+                  {/* Record Button with gradient - fixed position */}
                   <TouchableOpacity
                     onPressIn={handlePressIn}
                     onPressOut={handlePressOut}
-                    className="w-28 h-28 rounded-full items-center justify-center"
+                    className="w-24 h-24 rounded-full items-center justify-center shadow-lg"
                     style={{
-                      backgroundColor: isRecording ? "#FF6B6B" : "#34C759",
-                      shadowColor: isRecording ? "#FF6B6B" : "#34C759",
-                      shadowOffset: { width: 0, height: 12 },
-                      shadowOpacity: 0.4,
-                      shadowRadius: 20,
-                      elevation: 12,
-                      transform: [{ scale: isRecording ? 1.1 : 1 }],
+                      backgroundColor: isRecording ? "#30D158" : "#34C759",
+                      shadowColor: "#34C759",
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: 0.3,
+                      shadowRadius: 16,
+                      elevation: 8,
                     }}
                     activeOpacity={1}
                     delayPressIn={0}
@@ -724,13 +729,13 @@ export default function RecordScreen() {
                   >
                     <Ionicons
                       name={isRecording ? "stop" : "mic"}
-                      size={52}
+                      size={48}
                       color="#FFFFFF"
                     />
                   </TouchableOpacity>
 
-                  <Text className="text-sm text-gray-500 dark:text-gray-400 mt-8 text-center px-4 font-medium">
-                    {isRecording ? "Release to stop" : "Hold to record"}
+                  <Text className="text-sm text-gray-500 dark:text-gray-400 mt-6 text-center px-4">
+                    Hold to record • Release when done
                   </Text>
                 </View>
               </View>
@@ -791,8 +796,10 @@ export default function RecordScreen() {
                     <View className="flex-row items-start justify-between mb-2">
                       <View className="flex-row items-center flex-1">
                         {clusterLabel && (
-                          <View className="bg-green-50 dark:bg-green-900/20 rounded-full px-3 py-1 mr-2">
-                            <Text className="text-xs font-medium text-green-600 dark:text-green-400">
+                          <View className="rounded-full px-3 py-1.5 mr-2" style={{
+                            backgroundColor: "#34C759",
+                          }}>
+                            <Text className="text-xs font-semibold text-white">
                               {clusterLabel}
                             </Text>
                           </View>
