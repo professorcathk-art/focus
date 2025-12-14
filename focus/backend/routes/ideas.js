@@ -303,46 +303,41 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         console.log('[Upload Audio] Attempting transcription with AIMLAPI Nova-3 model (via AIMLAPI)');
         console.log(`[Upload Audio] File info: size=${req.file.size}, type=${req.file.mimetype}, name=${req.file.originalname}`);
         
-        // Use AIMLAPI nova-3 specific endpoint (not OpenAI-compatible endpoint)
-        const aimlFormData = new FormData();
+        // Use AIMLAPI STT endpoint with base64-encoded audio
+        // Convert buffer to base64
+        const audioBase64 = req.file.buffer.toString('base64');
+        const audioDataUri = `data:${req.file.mimetype || 'audio/m4a'};base64,${audioBase64}`;
         
-        // Append file buffer correctly - AIMLAPI expects the file as a buffer
-        aimlFormData.append('file', req.file.buffer, {
-          filename: req.file.originalname || 'recording.m4a',
-          contentType: req.file.mimetype || 'audio/m4a',
-        });
-        
-        const aimlFormHeaders = aimlFormData.getHeaders ? aimlFormData.getHeaders() : {};
-        // AIMLAPI uses OpenAI-compatible endpoint with Deepgram Nova-3 model
         const aimlBaseUrl = 'https://api.aimlapi.com/v1';
+        const requestBody = {
+          model: 'nova-3',
+          audioData: audioDataUri,
+        };
         
-        // Add model parameter for Deepgram Nova-3 (OpenAI-compatible format)
-        aimlFormData.append('model', 'deepgram-nova-3');
-        aimlFormData.append('language', 'en'); // OpenAI format uses 'en' not 'en-US'
+        console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/stt/create with model: nova-3`);
+        console.log(`[Upload Audio] Audio size: ${req.file.size} bytes, base64 length: ${audioBase64.length}`);
         
-        console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/audio/transcriptions with model: deepgram-nova-3`);
-        console.log(`[Upload Audio] FormData headers:`, aimlFormHeaders);
-        
-        const aimlResponse = await fetch(`${aimlBaseUrl}/audio/transcriptions`, {
+        const aimlResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${aimlApiKey}`,
-            ...aimlFormHeaders,  // Includes Content-Type with boundary
+            'Content-Type': 'application/json',
           },
-          body: aimlFormData,
+          body: JSON.stringify(requestBody),
         });
         
         if (aimlResponse.ok) {
           const aimlData = await aimlResponse.json();
           console.log('[Upload Audio] AIMLAPI nova-3 transcription response:', aimlData);
           
-          // AIMLAPI returns 'text' field (OpenAI-compatible format)
-          transcript = aimlData.text || aimlData.transcription || aimlData.transcript;
+          // AIMLAPI STT returns transcription in various possible fields
+          transcript = aimlData.transcription || aimlData.text || aimlData.transcript || aimlData.result?.transcription;
           transcriptionSource = 'AIMLAPI Deepgram Nova-3';
           
           if (transcript) {
             console.log(`[Upload Audio] ✅ Success with AIMLAPI Deepgram Nova-3: "${transcript.substring(0, 100)}..."`);
           } else {
+            console.error('[Upload Audio] No transcript in response:', aimlData);
             throw new Error('No transcript returned from AIMLAPI nova-3');
           }
         } else {
