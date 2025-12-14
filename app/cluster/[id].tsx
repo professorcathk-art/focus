@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useColorScheme } from "react-native";
@@ -28,9 +28,21 @@ export default function ClusterDetailScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { cluster, isLoading: clusterLoading } = useCluster(id || "");
+  const { cluster, isLoading: clusterLoading, refetch: refetchCluster } = useCluster(id || "");
   const { ideas, isLoading: ideasLoading, refetch } = useIdeas();
   const [togglingFavoriteId, setTogglingFavoriteId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetch(), refetchCluster()]);
+    } catch (error) {
+      console.error("Error refreshing:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Handle special clusters (uncategorised and favourite)
   const isUncategorised = id === "uncategorised";
@@ -115,7 +127,12 @@ export default function ClusterDetailScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView className="flex-1 px-6">
+      <ScrollView 
+        className="flex-1 px-6"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         <View className="pt-6 pb-4">
           <Text className="text-sm text-gray-500 dark:text-gray-400">
             {clusterIdeas.length} idea{clusterIdeas.length !== 1 ? "s" : ""} in this category

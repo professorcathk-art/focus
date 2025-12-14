@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback, useMemo } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, useColorScheme, TextInput, Modal, Alert, KeyboardAvoidingView, Platform, Keyboard } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, useColorScheme, TextInput, Modal, Alert, KeyboardAvoidingView, Platform, Keyboard, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useClusters } from "@/hooks/use-clusters";
@@ -34,6 +34,18 @@ export default function InboxScreen() {
   const [editText, setEditText] = useState("");
   const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
   const [isUpdatingCategory, setIsUpdatingCategory] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchClusters(), refetchIdeas()]);
+    } catch (error) {
+      console.error("Error refreshing:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchClusters, refetchIdeas]);
 
   // Get uncategorised ideas (ideas without clusterId)
   const uncategorisedIdeas = useMemo(() => {
@@ -200,7 +212,12 @@ export default function InboxScreen() {
             </Text>
           </View>
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView 
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+          >
             {allClusters.map((cluster) => (
               <TouchableOpacity
                 key={cluster.id}

@@ -11,6 +11,14 @@ const { requireAuth } = require('../middleware/auth');
 const { assignToCluster, findBestCluster, generateClusterLabel } = require('../lib/clustering');
 const FormData = require('form-data');
 
+// Debug middleware to log all PUT requests
+router.use((req, res, next) => {
+  if (req.method === 'PUT') {
+    console.log(`[ROUTER DEBUG] PUT request: path=${req.path}, originalUrl=${req.originalUrl}, baseUrl=${req.baseUrl}`);
+  }
+  next();
+});
+
 // Configure multer for audio uploads
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -313,13 +321,17 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         }
         
         const aimlFormHeaders = aimlFormData.getHeaders ? aimlFormData.getHeaders() : {};
-        // AIMLAPI nova-3 uses a different endpoint: /nova-3/transcribe (not /v1/audio/transcriptions)
-        const aimlBaseUrl = 'https://api.aimlapi.com';
+        // AIMLAPI uses OpenAI-compatible endpoint with Deepgram Nova-3 model
+        // Try using the OpenAI-compatible endpoint with model parameter
+        const aimlBaseUrl = 'https://api.aimlapi.com/v1';
         
-        console.log(`[Upload Audio] Calling AIMLAPI nova-3 endpoint: ${aimlBaseUrl}/nova-3/transcribe`);
+        // Add model parameter for Deepgram Nova-3
+        aimlFormData.append('model', 'deepgram-nova-3');
+        
+        console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/audio/transcriptions with model: deepgram-nova-3`);
         console.log(`[Upload Audio] FormData headers:`, aimlFormHeaders);
         
-        const aimlResponse = await fetch(`${aimlBaseUrl}/nova-3/transcribe`, {
+        const aimlResponse = await fetch(`${aimlBaseUrl}/audio/transcriptions`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${aimlApiKey}`,
@@ -332,8 +344,8 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
           const aimlData = await aimlResponse.json();
           console.log('[Upload Audio] AIMLAPI nova-3 transcription response:', aimlData);
           
-          // AIMLAPI nova-3 returns 'transcription' field (not 'text' or 'transcript')
-          transcript = aimlData.transcription || aimlData.text || aimlData.transcript;
+          // AIMLAPI returns 'text' field (OpenAI-compatible format)
+          transcript = aimlData.text || aimlData.transcription || aimlData.transcript;
           transcriptionSource = 'AIMLAPI Deepgram Nova-3';
           
           if (transcript) {
