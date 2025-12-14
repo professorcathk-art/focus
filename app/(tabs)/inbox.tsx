@@ -40,6 +40,11 @@ export default function InboxScreen() {
     return ideas.filter(idea => !idea.clusterId);
   }, [ideas]);
 
+  // Get favorited ideas
+  const favoritedIdeas = useMemo(() => {
+    return ideas.filter(idea => idea.isFavorite);
+  }, [ideas]);
+
   // Create uncategorised cluster if there are uncategorised ideas
   const uncategorisedCluster: Cluster | null = useMemo(() => {
     if (uncategorisedIdeas.length === 0) return null;
@@ -53,15 +58,32 @@ export default function InboxScreen() {
     };
   }, [uncategorisedIdeas]);
 
-  // Combine clusters with uncategorised category
+  // Create favourite cluster if there are favorited ideas
+  const favouriteCluster: Cluster | null = useMemo(() => {
+    if (favoritedIdeas.length === 0) return null;
+    return {
+      id: "favourite",
+      label: "Favourite",
+      ideaIds: favoritedIdeas.map(idea => idea.id),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userId: "current-user",
+    };
+  }, [favoritedIdeas]);
+
+  // Combine clusters with uncategorised and favourite categories
   const allClusters = useMemo(() => {
     const result = [...clusters];
+    // Add favourite at the very beginning (most important)
+    if (favouriteCluster) {
+      result.unshift(favouriteCluster);
+    }
+    // Add uncategorised after favourite
     if (uncategorisedCluster) {
-      // Add uncategorised at the beginning
       result.unshift(uncategorisedCluster);
     }
     return result;
-  }, [clusters, uncategorisedCluster]);
+  }, [clusters, uncategorisedCluster, favouriteCluster]);
 
   const handleClusterPress = (cluster: Cluster) => {
     router.push({
@@ -71,8 +93,8 @@ export default function InboxScreen() {
   };
 
   const handleEditPress = (cluster: Cluster) => {
-    // Don't allow editing uncategorised category
-    if (cluster.id === "uncategorised") return;
+    // Don't allow editing uncategorised or favourite categories
+    if (cluster.id === "uncategorised" || cluster.id === "favourite") return;
     setEditingCategory({ id: cluster.id, label: cluster.label });
     setEditText(cluster.label);
   };
@@ -197,12 +219,12 @@ export default function InboxScreen() {
                 <View className="flex-1">
                   <View className="flex-row items-center mb-2">
                     <Text className="text-2xl mr-3">
-                      {cluster.id === "uncategorised" ? "📋" : getClusterEmoji(cluster.label)}
+                      {cluster.id === "uncategorised" ? "📋" : cluster.id === "favourite" ? "⭐" : getClusterEmoji(cluster.label)}
                     </Text>
                     <Text className="text-lg font-semibold text-black dark:text-white flex-1">
                       {cluster.label}
                     </Text>
-                    {cluster.id !== "uncategorised" && (
+                    {cluster.id !== "uncategorised" && cluster.id !== "favourite" && (
                       <View className="flex-row items-center gap-2">
                         <TouchableOpacity
                           onPress={() => handleEditPress(cluster)}

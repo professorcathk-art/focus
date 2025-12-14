@@ -18,7 +18,7 @@ import { useAuthStore } from "@/store/auth-store";
 import { apiClient } from "@/lib/api-client";
 import { API_ENDPOINTS } from "@/config/api";
 import { Todo } from "@/types";
-import { format, isToday, parseISO, addDays } from "date-fns";
+import { format, isToday } from "date-fns";
 
 export default function TodoScreen() {
   const colorScheme = useColorScheme();
@@ -26,8 +26,6 @@ export default function TodoScreen() {
   const { isAuthenticated } = useAuthStore();
   const [todos, setTodos] = useState<Todo[]>([]);
   const [input, setInput] = useState("");
-  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), "yyyy-MM-dd")); // Default to today
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [addingTodo, setAddingTodo] = useState(false);
   const [togglingTodoId, setTogglingTodoId] = useState<string | null>(null);
@@ -59,7 +57,7 @@ export default function TodoScreen() {
 
     const tempId = `temp-${Date.now()}`;
     const todoText = input.trim();
-    const todoDate = selectedDate;
+    const todoDate = format(new Date(), "yyyy-MM-dd"); // Always use today
     
     const tempTodo: Todo = {
       id: tempId,
@@ -72,7 +70,6 @@ export default function TodoScreen() {
     };
 
     setInput("");
-    setSelectedDate(format(new Date(), "yyyy-MM-dd")); // Reset to today
     Keyboard.dismiss();
     setAddingTodo(true);
 
@@ -82,7 +79,7 @@ export default function TodoScreen() {
     try {
       const newTodo = await apiClient.post<Todo>(API_ENDPOINTS.todos.create, {
         text: todoText,
-        date: todoDate,
+        date: todoDate, // Default to today
       });
       // Replace temp todo with real one using functional update
       setTodos(prevTodos => prevTodos.map(t => t.id === tempId ? newTodo : t));
@@ -97,11 +94,6 @@ export default function TodoScreen() {
     }
   };
 
-  const handleDateSelect = (daysOffset: number) => {
-    const newDate = addDays(new Date(), daysOffset);
-    setSelectedDate(format(newDate, "yyyy-MM-dd"));
-    setShowDatePicker(false);
-  };
 
   const handleToggleTodo = async (id: string, completed: boolean) => {
     if (!isAuthenticated || togglingTodoId === id) return;
@@ -361,91 +353,6 @@ export default function TodoScreen() {
             borderTopColor: isDark ? "#38383A" : "#E5E5EA",
           }}
         >
-          {/* Date Picker - Shows when user starts typing */}
-          {input.trim() && (
-            <View className="mb-3">
-              <TouchableOpacity
-                onPress={() => setShowDatePicker(!showDatePicker)}
-                className="flex-row items-center px-3 py-2 rounded-lg self-start"
-                style={{
-                  backgroundColor: isDark ? "#1C1C1E" : "#FFFFFF",
-                }}
-              >
-                <Ionicons
-                  name="calendar-outline"
-                  size={16}
-                  color={isDark ? "#34C759" : "#34C759"}
-                />
-                <Text
-                  className="ml-2 text-sm font-medium"
-                  style={{
-                    color: isDark ? "#FFFFFF" : "#000000",
-                  }}
-                >
-                  {isToday(parseISO(selectedDate))
-                    ? "Today"
-                    : format(parseISO(selectedDate), "MMM d")}
-                </Text>
-                <Ionicons
-                  name={showDatePicker ? "chevron-up" : "chevron-down"}
-                  size={16}
-                  color={isDark ? "#8E8E93" : "#8E8E93"}
-                  style={{ marginLeft: 4 }}
-                />
-              </TouchableOpacity>
-
-              {showDatePicker && (
-                <View
-                  className="mt-2 p-3 rounded-xl"
-                  style={{
-                    backgroundColor: isDark ? "#1C1C1E" : "#FFFFFF",
-                  }}
-                >
-                  <View className="flex-row flex-wrap gap-2">
-                    {[
-                      { label: "Today", offset: 0 },
-                      { label: "Tomorrow", offset: 1 },
-                      { label: "In 2 days", offset: 2 },
-                      { label: "In 3 days", offset: 3 },
-                      { label: "In a week", offset: 7 },
-                    ].map((option) => {
-                      const optionDate = addDays(new Date(), option.offset);
-                      const isSelected =
-                        selectedDate === format(optionDate, "yyyy-MM-dd");
-                      return (
-                        <TouchableOpacity
-                          key={option.offset}
-                          onPress={() => handleDateSelect(option.offset)}
-                          className="px-4 py-2 rounded-lg"
-                          style={{
-                            backgroundColor: isSelected
-                              ? "#34C759"
-                              : isDark
-                              ? "#2C2C2E"
-                              : "#F5F5F7",
-                          }}
-                        >
-                          <Text
-                            className="text-sm font-medium"
-                            style={{
-                              color: isSelected
-                                ? "#FFFFFF"
-                                : isDark
-                                ? "#FFFFFF"
-                                : "#000000",
-                            }}
-                          >
-                            {option.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              )}
-            </View>
-          )}
-
           <View className="flex-row items-center gap-3">
             <TextInput
               className="flex-1 bg-white dark:bg-card-dark rounded-full px-4 py-3 text-base text-black dark:text-white"

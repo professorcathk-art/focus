@@ -125,10 +125,13 @@ class ApiClient {
    * PUT request
    */
   async put<T>(endpoint: string, data?: unknown): Promise<T> {
-    return this.request<T>(endpoint, {
+    const options: RequestInit = {
       method: "PUT",
-      body: data ? JSON.stringify(data) : undefined,
-    });
+    };
+    if (data !== undefined) {
+      options.body = JSON.stringify(data);
+    }
+    return this.request<T>(endpoint, options);
   }
 
   /**

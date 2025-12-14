@@ -32,8 +32,10 @@ export default function ClusterDetailScreen() {
   const { ideas, isLoading: ideasLoading, refetch } = useIdeas();
   const [togglingFavoriteId, setTogglingFavoriteId] = useState<string | null>(null);
 
-  // Handle uncategorised cluster (special case)
+  // Handle special clusters (uncategorised and favourite)
   const isUncategorised = id === "uncategorised";
+  const isFavourite = id === "favourite";
+  
   const uncategorisedCluster = isUncategorised ? {
     id: "uncategorised",
     label: "Uncategorised",
@@ -43,11 +45,22 @@ export default function ClusterDetailScreen() {
     userId: "current-user",
   } : null;
 
-  const displayCluster = isUncategorised ? uncategorisedCluster : cluster;
+  const favouriteCluster = isFavourite ? {
+    id: "favourite",
+    label: "Favourite",
+    ideaIds: ideas.filter(idea => idea.isFavorite).map(idea => idea.id),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    userId: "current-user",
+  } : null;
+
+  const displayCluster = isUncategorised ? uncategorisedCluster : isFavourite ? favouriteCluster : cluster;
 
   const clusterIdeas = displayCluster
     ? isUncategorised
       ? ideas.filter((idea) => !idea.clusterId)
+      : isFavourite
+      ? ideas.filter((idea) => idea.isFavorite)
       : ideas.filter((idea) => displayCluster.ideaIds.includes(idea.id))
     : [];
 
@@ -93,7 +106,7 @@ export default function ClusterDetailScreen() {
         </TouchableOpacity>
         <View className="flex-row items-center">
           <Text className="text-xl mr-2">
-            {isUncategorised ? "📋" : getClusterEmoji(displayCluster.label)}
+            {isUncategorised ? "📋" : isFavourite ? "⭐" : getClusterEmoji(displayCluster.label)}
           </Text>
           <Text className="text-lg font-semibold text-black dark:text-white">
             {displayCluster.label}
