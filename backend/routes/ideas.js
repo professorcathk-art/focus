@@ -400,7 +400,7 @@ router.put('/:id/favorite', requireAuth, async (req, res) => {
       })
       .eq('id', ideaId)
       .eq('user_id', req.user.id)  // Double-check ownership
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .single();
 
     if (error) {
