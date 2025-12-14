@@ -161,8 +161,19 @@ export default function RecordScreen() {
     }
 
     // Minimum recording duration check (prevent accidental releases)
-    if (recordingTime < 1) {
-      console.log("Recording too short, ignoring release");
+    // Allow recordings >= 0.5 seconds (500ms) to account for timing delays
+    if (recordingTime < 0.5) {
+      console.log(`Recording too short (${recordingTime}s), ignoring release`);
+      setIsRecording(false);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      if (recordingRef.current) {
+        recordingRef.current.stopAndUnloadAsync().catch(console.error);
+        recordingRef.current = null;
+      }
+      setRecordingTime(0);
       return;
     }
 
@@ -241,7 +252,25 @@ export default function RecordScreen() {
 
       const idea = await response.json() as Idea;
 
-      // Clean up recording file
+      // NEW: Save audio locally for instant playback
+      // Copy recording to local cache directory before deleting original
+      if (idea.audioUrl && uri) {
+        try {
+          const cacheDir = `${FileSystem.cacheDirectory}audio/`;
+          await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+          const localPath = `${cacheDir}${idea.id}.m4a`;
+          await FileSystem.copyAsync({
+            from: uri,
+            to: localPath,
+          });
+          console.log(`[Audio Cache] Saved audio locally: ${localPath}`);
+        } catch (cacheError) {
+          console.error("[Audio Cache] Failed to cache audio locally:", cacheError);
+          // Continue anyway - audio is still in Supabase Storage
+        }
+      }
+
+      // Clean up original recording file
       await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
 
       // NEW: Recording is saved immediately (async transcription happens in background)
