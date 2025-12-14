@@ -104,6 +104,8 @@ export function useIdea(id: string) {
         transcript,
       });
       setIdea(updated);
+      // Update cache
+      await updateCachedIdea(updated);
       return updated;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to update idea";
