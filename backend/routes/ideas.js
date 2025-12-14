@@ -11,6 +11,112 @@ const { requireAuth } = require('../middleware/auth');
 const { assignToCluster, findBestCluster, generateClusterLabel } = require('../lib/clustering');
 const FormData = require('form-data');
 
+/**
+ * Async transcription function - runs in background
+ * Updates idea with transcript and embedding when complete
+ */
+async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, userId) {
+  try {
+    console.log(`[Async Transcription] 🎙️ Starting transcription for idea: ${ideaId}`);
+    
+    // Use AIMLAPI STT endpoint with multipart/form-data
+    const aimlFormData = new FormData();
+    aimlFormData.append('file', audioBuffer, {
+      filename: 'recording.m4a',
+      contentType: mimeType || 'audio/m4a',
+      knownLength: audioBuffer.length,
+    });
+    aimlFormData.append('model', '#g1_nova-2-general');
+    
+    const aimlFormHeaders = aimlFormData.getHeaders();
+    const aimlBaseUrl = 'https://api.aimlapi.com/v1';
+    
+    // Convert FormData to buffer
+    const formBuffer = await new Promise((resolve, reject) => {
+      const chunks = [];
+      aimlFormData.on('data', (chunk) => chunks.push(chunk));
+      aimlFormData.on('end', () => resolve(Buffer.concat(chunks)));
+      aimlFormData.on('error', reject);
+    });
+    
+    aimlFormHeaders['Content-Length'] = formBuffer.length.toString();
+    
+    // Add timeout (240s)
+    const TIMEOUT_MS = 240000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    
+    const aimlResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${aimlApiKey}`,
+        ...aimlFormHeaders,
+      },
+      body: formBuffer,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    
+    if (!aimlResponse.ok) {
+      throw new Error(`AIMLAPI transcription failed: ${aimlResponse.status}`);
+    }
+    
+    const aimlData = await aimlResponse.json();
+    const transcript = aimlData.transcription || aimlData.text || aimlData.transcript || 
+                       aimlData.result?.transcription || aimlData.data?.transcription;
+    
+    if (!transcript) {
+      throw new Error('No transcript returned from AIMLAPI');
+    }
+    
+    console.log(`[Async Transcription] ✅ Transcription complete for idea ${ideaId}: "${transcript.substring(0, 100)}..."`);
+    
+    // Generate embedding
+    const embeddingResponse = await aimlClient.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: transcript,
+    });
+    const embedding = embeddingResponse.data[0].embedding;
+    
+    // Update idea with transcript and embedding
+    const { error: updateError } = await supabase
+      .from('ideas')
+      .update({
+        transcript: transcript,
+        embedding: embedding,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', ideaId)
+      .eq('user_id', userId);
+    
+    if (updateError) {
+      throw new Error(`Failed to update idea: ${updateError.message}`);
+    }
+    
+    console.log(`[Async Transcription] ✅ Idea ${ideaId} updated with transcript and embedding`);
+    
+    // Try clustering (non-blocking)
+    try {
+      const { findBestCluster, generateClusterLabel } = require('../lib/clustering');
+      const existingClusterId = await findBestCluster(userId, embedding);
+      
+      if (existingClusterId) {
+        await supabase
+          .from('ideas')
+          .update({ cluster_id: existingClusterId })
+          .eq('id', ideaId);
+        console.log(`[Async Transcription] ✅ Auto-assigned idea ${ideaId} to cluster ${existingClusterId}`);
+      }
+    } catch (clusterError) {
+      console.error(`[Async Transcription] ⚠️ Clustering error (non-fatal):`, clusterError);
+    }
+  } catch (error) {
+    console.error(`[Async Transcription] ❌ Error transcribing idea ${ideaId}:`, error);
+    // Update idea with error status (optional - you could add a status field)
+    // For now, just log the error
+  }
+}
+
 // Debug middleware to log all PUT requests
 router.use((req, res, next) => {
   if (req.method === 'PUT') {
@@ -294,11 +400,92 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
 
     console.log(`[Upload Audio] File size: ${req.file.size} bytes, type: ${req.file.mimetype}`);
 
-    let transcript;
-    let transcriptionSource = 'unknown';
+    // NEW APPROACH: Save recording first, transcribe async
+    // This prevents UI from getting stuck on "transcribing"
+    
+    // STEP 1: Upload audio file to Supabase Storage
+    const ideaId = require('crypto').randomUUID();
+    const audioFileName = `${req.user.id}/${ideaId}.m4a`;
+    
+    console.log(`[Upload Audio] 📤 Uploading audio file to Supabase Storage: ${audioFileName}`);
+    
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('audio-recordings')
+      .upload(audioFileName, req.file.buffer, {
+        contentType: req.file.mimetype || 'audio/m4a',
+        upsert: false,
+      });
 
-    // Use AIMLAPI with Deepgram Nova-2 model
-    if (aimlApiKey) {
+    if (uploadError) {
+      console.error('[Upload Audio] ❌ Failed to upload audio to Supabase Storage:', uploadError);
+      return res.status(500).json({ 
+        message: `Failed to upload audio file: ${uploadError.message}` 
+      });
+    }
+
+    // Get public URL for the uploaded file
+    const { data: urlData } = supabase.storage
+      .from('audio-recordings')
+      .getPublicUrl(audioFileName);
+    const audioUrl = urlData?.publicUrl || null;
+    console.log(`[Upload Audio] ✅ Audio uploaded successfully: ${audioUrl}`);
+
+    // STEP 2: Save idea immediately with audio_url (no transcript yet)
+    const now = new Date().toISOString();
+    
+    const { data: idea, error } = await supabase
+      .from('ideas')
+      .insert({
+        id: ideaId,
+        user_id: req.user.id,
+        transcript: '', // Empty initially - will be updated by async transcription
+        audio_url: audioUrl,
+        duration: req.body.duration || null,
+        created_at: now,
+        updated_at: now,
+      })
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .single();
+
+    if (error) {
+      console.error('Create idea error:', error);
+      return res.status(500).json({ message: 'Failed to save idea' });
+    }
+
+    console.log(`[Upload Audio] ✅ Idea saved immediately with audio URL: ${ideaId}`);
+
+    // STEP 3: Start async transcription (don't wait for it)
+    console.log(`[Upload Audio] ⏳ Starting async transcription for idea: ${ideaId}`);
+    transcribeAudioAsync(ideaId, req.file.buffer, req.file.mimetype, aimlApiKey, req.user.id)
+      .catch(err => console.error(`[Upload Audio] ⚠️ Async transcription failed for ${ideaId}:`, err));
+
+    // Return success immediately - transcription happens in background
+    res.json({
+      id: idea.id,
+      userId: idea.user_id,
+      transcript: idea.transcript || '', // Empty initially
+      audioUrl: idea.audio_url,
+      duration: idea.duration,
+      createdAt: idea.created_at,
+      updatedAt: idea.updated_at,
+      clusterId: idea.cluster_id || null,
+      isFavorite: idea.is_favorite || false,
+      suggestedClusterLabel: null, // Will be set by async transcription if needed
+    });
+  } catch (error) {
+    console.error('Upload audio error:', error);
+    console.error('Upload audio error stack:', error.stack);
+    const errorMessage = error.message || 'Internal server error';
+    res.status(500).json({ 
+      message: `Failed to process audio: ${errorMessage}`,
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+/**
+ * Update idea
+ */
       try {
         console.log('[Upload Audio] Attempting transcription with AIMLAPI Nova-2 model (via AIMLAPI)');
         console.log(`[Upload Audio] File info: size=${req.file.size}, type=${req.file.mimetype}, name=${req.file.originalname}`);
@@ -462,28 +649,45 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       });
     }
     
-    console.log(`[Upload Audio] ✅ Final transcript (${transcriptionSource}): "${transcript.substring(0, 100)}..."`);
-
-    // Generate embedding
-    const embeddingResponse = await aimlClient.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: transcript,
-    });
-
-    const embedding = embeddingResponse.data[0].embedding;
-
-    // Upload audio to Supabase Storage (optional)
-    // For now, we'll just store the transcript
+    // STEP 1: Upload audio file to Supabase Storage first
     const ideaId = require('crypto').randomUUID();
-    const now = new Date().toISOString();
+    const audioFileName = `${req.user.id}/${ideaId}.m4a`;
+    
+    console.log(`[Upload Audio] 📤 Uploading audio file to Supabase Storage: ${audioFileName}`);
+    
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('audio-recordings')
+      .upload(audioFileName, req.file.buffer, {
+        contentType: req.file.mimetype || 'audio/m4a',
+        upsert: false,
+      });
 
+    if (uploadError) {
+      console.error('[Upload Audio] ❌ Failed to upload audio to Supabase Storage:', uploadError);
+      // Continue anyway - we'll save without audio_url
+    }
+
+    // Get public URL for the uploaded file
+    let audioUrl = null;
+    if (uploadData) {
+      const { data: urlData } = supabase.storage
+        .from('audio-recordings')
+        .getPublicUrl(audioFileName);
+      audioUrl = urlData?.publicUrl || null;
+      console.log(`[Upload Audio] ✅ Audio uploaded successfully: ${audioUrl}`);
+    }
+
+    // STEP 2: Save idea immediately with audio_url (transcript will be added later)
+    const now = new Date().toISOString();
+    
+    // Save idea with empty transcript initially - will be updated when transcription completes
     const { data: idea, error } = await supabase
       .from('ideas')
       .insert({
         id: ideaId,
         user_id: req.user.id,
-        transcript,
-        embedding,
+        transcript: transcript || '', // Empty if transcription not done yet
+        audio_url: audioUrl,
         duration: req.body.duration || null,
         created_at: now,
         updated_at: now,
@@ -494,6 +698,47 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     if (error) {
       console.error('Create idea error:', error);
       return res.status(500).json({ message: 'Failed to save idea' });
+    }
+
+    console.log(`[Upload Audio] ✅ Idea saved immediately with audio URL: ${ideaId}`);
+
+    // STEP 3: If transcription completed, generate embedding and update idea
+    let embedding = null;
+    if (transcript && transcript.trim()) {
+      console.log(`[Upload Audio] ✅ Final transcript (${transcriptionSource}): "${transcript.substring(0, 100)}..."`);
+      
+      try {
+        // Generate embedding
+        const embeddingResponse = await aimlClient.embeddings.create({
+          model: 'text-embedding-3-small',
+          input: transcript,
+        });
+        embedding = embeddingResponse.data[0].embedding;
+
+        // Update idea with transcript and embedding
+        const { error: updateError } = await supabase
+          .from('ideas')
+          .update({
+            transcript: transcript,
+            embedding: embedding,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', ideaId);
+
+        if (updateError) {
+          console.error('[Upload Audio] ⚠️ Failed to update idea with transcript:', updateError);
+        } else {
+          console.log(`[Upload Audio] ✅ Idea updated with transcript and embedding: ${ideaId}`);
+        }
+      } catch (embedError) {
+        console.error('[Upload Audio] ⚠️ Error generating embedding:', embedError);
+        // Continue - idea is saved with audio_url
+      }
+    } else {
+      // No transcript yet - start async transcription
+      console.log(`[Upload Audio] ⏳ Starting async transcription for idea: ${ideaId}`);
+      transcribeAudioAsync(ideaId, req.file.buffer, req.file.mimetype, aimlApiKey, req.user.id)
+        .catch(err => console.error(`[Upload Audio] ⚠️ Async transcription failed for ${ideaId}:`, err));
     }
 
     // Check for similar clusters synchronously (same as text input)
