@@ -216,26 +216,38 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     if (aimlApiKey) {
       try {
         console.log('[Upload Audio] Attempting transcription with AIMLAPI Deepgram Nova-3 model');
+        console.log(`[Upload Audio] File info: size=${req.file.size}, type=${req.file.mimetype}, name=${req.file.originalname}`);
         
         // Use OpenAI SDK client configured for AIMLAPI
         const aimlClient = require('../lib/aiml-client');
         
-        // Create a File-like object from buffer (Node.js compatible)
-        // OpenAI SDK accepts File, Blob, or ReadableStream
-        const { Readable } = require('stream');
-        const audioStream = Readable.from(req.file.buffer);
+        // OpenAI SDK for Node.js accepts File, Blob, or Buffer
+        // In Node.js 18+, File is available globally, otherwise use Buffer
+        let audioFile;
         
-        // Create File-like object for OpenAI SDK
-        // In Node.js, we need to use a File polyfill or pass the buffer directly
-        const audioFile = {
-          name: req.file.originalname || 'audio.m4a',
-          type: req.file.mimetype || 'audio/m4a',
-          stream: () => audioStream,
-          arrayBuffer: async () => req.file.buffer,
-          size: req.file.size,
-        };
+        // Try to use File class if available (Node.js 18+)
+        if (typeof File !== 'undefined') {
+          audioFile = new File(
+            [req.file.buffer],
+            req.file.originalname || 'audio.m4a',
+            { type: req.file.mimetype || 'audio/m4a' }
+          );
+        } else {
+          // Fallback: Create File-like object compatible with OpenAI SDK
+          // The SDK accepts objects with name, type, and stream/arrayBuffer methods
+          const { Readable } = require('stream');
+          audioFile = {
+            name: req.file.originalname || 'audio.m4a',
+            type: req.file.mimetype || 'audio/m4a',
+            size: req.file.size,
+            stream: () => Readable.from(req.file.buffer),
+            arrayBuffer: async () => req.file.buffer,
+            [Symbol.toStringTag]: 'File',
+          };
+        }
         
         console.log(`[Upload Audio] Calling AIMLAPI with model: nova-3, baseURL: https://api.aimlapi.com/v1`);
+        console.log(`[Upload Audio] Audio file type: ${typeof audioFile}, name: ${audioFile.name}`);
         
         // Use OpenAI SDK format with AIMLAPI base URL
         const transcription = await aimlClient.audio.transcriptions.create({
@@ -254,11 +266,26 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         }
       } catch (aimlError) {
         console.error('[Upload Audio] AIMLAPI Deepgram Nova-3 transcription error:', aimlError);
+        console.error('[Upload Audio] Error details:', {
+          message: aimlError.message,
+          status: aimlError.status,
+          statusText: aimlError.statusText,
+          response: aimlError.response?.data || aimlError.response?.body,
+        });
         
         // If it's an authentication error, don't fallback
         if (aimlError.status === 401 || aimlError.message?.includes('401') || aimlError.message?.includes('Unauthorized')) {
           return res.status(500).json({ 
             message: `AIMLAPI authentication failed (401). Please check AIML_API_KEY is set correctly in backend/.env. Error: ${aimlError.message}`,
+          });
+        }
+        
+        // If it's a bad request (400), provide more details
+        if (aimlError.status === 400 || aimlError.message?.includes('400') || aimlError.message?.includes('Bad Request')) {
+          const errorDetails = aimlError.response?.data || aimlError.message || 'Unknown error';
+          console.error('[Upload Audio] Bad Request details:', errorDetails);
+          return res.status(500).json({ 
+            message: `AIMLAPI Bad Request (400). This might be due to unsupported file format or model. Error: ${JSON.stringify(errorDetails)}`,
           });
         }
         
