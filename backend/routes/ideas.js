@@ -29,9 +29,10 @@ const upload = multer({
  */
 router.get('/', requireAuth, async (req, res) => {
   try {
+    // Select specific columns to avoid JSON parsing issues with vector/embedding type
     const { data: ideas, error } = await supabase
       .from('ideas')
-      .select('*')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .eq('user_id', req.user.id)
       .order('created_at', { ascending: false });
 
@@ -49,7 +50,6 @@ router.get('/', requireAuth, async (req, res) => {
       createdAt: idea.created_at,
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
-      embedding: idea.embedding,
       isFavorite: idea.is_favorite || false,
     }));
 
@@ -65,9 +65,10 @@ router.get('/', requireAuth, async (req, res) => {
  */
 router.get('/:id', requireAuth, async (req, res) => {
   try {
+    // Select specific columns to avoid JSON parsing issues with vector/embedding type
     const { data: idea, error } = await supabase
       .from('ideas')
-      .select('*')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .eq('id', req.params.id)
       .eq('user_id', req.user.id)
       .single();
@@ -85,7 +86,6 @@ router.get('/:id', requireAuth, async (req, res) => {
       createdAt: idea.created_at,
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
-      embedding: idea.embedding,
       isFavorite: idea.is_favorite || false,
     });
   } catch (error) {
@@ -133,7 +133,7 @@ router.post('/', requireAuth, async (req, res) => {
         created_at: now,
         updated_at: now,
       })
-      .select('*')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .single();
 
     if (error) {
@@ -314,25 +314,31 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       try {
         console.log('[Upload Audio] Using OpenAI Whisper as fallback');
         
-        // Create FormData for OpenAI
+        // Create FormData for OpenAI - use form-data package correctly
         const openaiFormData = new FormData();
+        
+        // Append file buffer with proper options
         openaiFormData.append('file', req.file.buffer, {
           filename: req.file.originalname || 'audio.m4a',
           contentType: req.file.mimetype || 'audio/m4a',
         });
+        
+        // Append model and language as form fields
         openaiFormData.append('model', 'whisper-1');
         openaiFormData.append('language', 'en');
 
-        const openaiFormHeaders = openaiFormData.getHeaders ? openaiFormData.getHeaders() : {};
+        // Get headers from form-data (important for multipart/form-data)
+        const openaiFormHeaders = openaiFormData.getHeaders();
         const openaiBaseUrl = 'https://api.openai.com/v1';
         
         console.log(`[Upload Audio] Calling OpenAI: ${openaiBaseUrl}/audio/transcriptions`);
+        console.log(`[Upload Audio] FormData headers:`, openaiFormHeaders);
 
         const openaiResponse = await fetch(`${openaiBaseUrl}/audio/transcriptions`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${openaiApiKey}`,
-            ...openaiFormHeaders,
+            ...openaiFormHeaders,  // This includes Content-Type with boundary
           },
           body: openaiFormData,
         });
@@ -417,7 +423,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         created_at: now,
         updated_at: now,
       })
-      .select('*')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .single();
 
     if (error) {
@@ -471,17 +477,21 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
  * Toggle favorite status (must come before /:id route)
  * Route: PUT /api/ideas/:id/favorite
  * IMPORTANT: This route MUST be defined before router.put('/:id') to work correctly
+ * This is a simple boolean toggle - no AI needed
  */
 router.put('/:id/favorite', requireAuth, async (req, res) => {
-  console.log(`[FAVORITE ROUTE] PUT /:id/favorite hit with id: ${req.params.id}`);
+  const ideaId = req.params.id;
+  console.log(`[FAVORITE ROUTE] PUT /:id/favorite hit with id: ${ideaId}`);
+  console.log(`[FAVORITE ROUTE] Request method: ${req.method}, path: ${req.path}, params:`, req.params);
+  
   try {
-    console.log(`[Toggle Favorite] Request received for idea ${req.params.id}`);
+    console.log(`[Toggle Favorite] Request received for idea ${ideaId}, user: ${req.user.id}`);
     
-    // Check ownership
+    // Check ownership and get current favorite status
     const { data: existingIdea, error: checkError } = await supabase
       .from('ideas')
       .select('is_favorite')
-      .eq('id', req.params.id)
+      .eq('id', ideaId)
       .eq('user_id', req.user.id)
       .single();
 
@@ -493,14 +503,16 @@ router.put('/:id/favorite', requireAuth, async (req, res) => {
     const newFavoriteStatus = !existingIdea.is_favorite;
     console.log(`[Toggle Favorite] Toggling favorite from ${existingIdea.is_favorite} to ${newFavoriteStatus}`);
 
+    // Update favorite status (simple boolean toggle)
     const { data: idea, error } = await supabase
       .from('ideas')
       .update({ 
         is_favorite: newFavoriteStatus,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', req.params.id)
-      .select('*')
+      .eq('id', ideaId)
+      .eq('user_id', req.user.id)  // Double-check ownership
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .single();
 
     if (error) {
@@ -508,7 +520,12 @@ router.put('/:id/favorite', requireAuth, async (req, res) => {
       return res.status(500).json({ message: 'Failed to toggle favorite' });
     }
 
-    console.log(`[Toggle Favorite] Successfully toggled favorite for idea ${req.params.id}`);
+    if (!idea) {
+      console.error('[Toggle Favorite] No idea returned after update');
+      return res.status(404).json({ message: 'Idea not found' });
+    }
+
+    console.log(`[Toggle Favorite] ✅ Successfully toggled favorite for idea ${ideaId} to ${newFavoriteStatus}`);
     res.json({
       id: idea.id,
       userId: idea.user_id,
@@ -518,11 +535,11 @@ router.put('/:id/favorite', requireAuth, async (req, res) => {
       createdAt: idea.created_at,
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
-      embedding: idea.embedding,
       isFavorite: idea.is_favorite || false,
     });
   } catch (error) {
     console.error('[Toggle Favorite] Unexpected error:', error);
+    console.error('[Toggle Favorite] Error stack:', error.stack);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -568,7 +585,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       .from('ideas')
       .update(updateData)
       .eq('id', req.params.id)
-      .select('*')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .single();
 
     if (error) {
