@@ -312,21 +312,13 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
           contentType: req.file.mimetype || 'audio/m4a',
         });
         
-        // AIMLAPI nova-3 endpoint uses different form fields (no 'model' field)
-        aimlFormData.append('language', 'en-US'); // Use en-US format
-        // Optional: append format if we can detect it
-        const fileExtension = req.file.originalname?.split('.').pop()?.toLowerCase() || 'm4a';
-        if (fileExtension === 'm4a') {
-          aimlFormData.append('format', 'm4a');
-        }
-        
         const aimlFormHeaders = aimlFormData.getHeaders ? aimlFormData.getHeaders() : {};
         // AIMLAPI uses OpenAI-compatible endpoint with Deepgram Nova-3 model
-        // Try using the OpenAI-compatible endpoint with model parameter
         const aimlBaseUrl = 'https://api.aimlapi.com/v1';
         
-        // Add model parameter for Deepgram Nova-3
+        // Add model parameter for Deepgram Nova-3 (OpenAI-compatible format)
         aimlFormData.append('model', 'deepgram-nova-3');
+        aimlFormData.append('language', 'en'); // OpenAI format uses 'en' not 'en-US'
         
         console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/audio/transcriptions with model: deepgram-nova-3`);
         console.log(`[Upload Audio] FormData headers:`, aimlFormHeaders);
@@ -386,7 +378,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
             console.error('[Upload Audio] Error details:', {
               status: aimlResponse.status,
               error: errorText,
-              url: `${aimlBaseUrl}/nova-3/transcribe`,
+              url: `${aimlBaseUrl}/audio/transcriptions`,
             });
             return res.status(500).json({ 
               message: `AIMLAPI Bad Request (400) with nova-3. Error: ${errorMsg}. Please check: 1) AIML_API_KEY is set correctly in Vercel environment variables, 2) Audio file format is supported (MP3, WAV, M4A), 3) File size is within limits, 4) FormData is formatted correctly.`,

@@ -378,7 +378,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
             console.error('[Upload Audio] Error details:', {
               status: aimlResponse.status,
               error: errorText,
-              url: `${aimlBaseUrl}/nova-3/transcribe`,
+              url: `${aimlBaseUrl}/audio/transcriptions`,
             });
             return res.status(500).json({ 
               message: `AIMLAPI Bad Request (400) with nova-3. Error: ${errorMsg}. Please check: 1) AIML_API_KEY is set correctly in Vercel environment variables, 2) Audio file format is supported (MP3, WAV, M4A), 3) File size is within limits, 4) FormData is formatted correctly.`,
