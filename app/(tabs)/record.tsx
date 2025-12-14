@@ -702,12 +702,25 @@ export default function RecordScreen() {
                         })}
                       </Text>
                     </View>
-                    <Text
-                      className="text-base text-black dark:text-white"
-                      numberOfLines={2}
-                    >
-                      {idea.transcript}
-                    </Text>
+                    {idea.audioUrl && !idea.transcript ? (
+                      <View className="flex-row items-center">
+                        <Ionicons name="musical-notes-outline" size={16} color="#34C759" />
+                        <Text className="text-sm text-gray-500 dark:text-gray-400 ml-2 italic">
+                          Audio recording (transcribing...)
+                        </Text>
+                      </View>
+                    ) : idea.transcript ? (
+                      <Text
+                        className="text-base text-black dark:text-white"
+                        numberOfLines={2}
+                      >
+                        {idea.transcript}
+                      </Text>
+                    ) : (
+                      <Text className="text-sm text-gray-400 dark:text-gray-500 italic">
+                        Empty note
+                      </Text>
+                    )}
                   </TouchableOpacity>
                 );
               })}

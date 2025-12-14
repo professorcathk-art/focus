@@ -273,11 +273,11 @@ export default function IdeaDetailScreen() {
       </View>
 
       <ScrollView className="flex-1 px-6">
-        {/* Category Badge */}
+        {/* Category Badge - Always visible and clickable, even for audio notes */}
         <View className="pt-6 pb-2">
           <TouchableOpacity
             onPress={() => setShowCategoryPicker(true)}
-            className="self-start px-4 py-2 rounded-full"
+            className="self-start px-4 py-2 rounded-full flex-row items-center"
             style={{ backgroundColor: isDark ? "#1C1C1E" : "#E8F5E9" }}
             activeOpacity={0.7}
             delayPressIn={0}
@@ -285,6 +285,11 @@ export default function IdeaDetailScreen() {
             <Text className="text-sm font-medium" style={{ color: "#34C759" }}>
               📁 {getClusterLabel(idea.clusterId)}
             </Text>
+            {idea.audioUrl && !idea.transcript && (
+              <Text className="text-xs ml-2" style={{ color: "#34C759" }}>
+                (tap to set category)
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
 
