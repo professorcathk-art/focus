@@ -423,6 +423,7 @@ router.put('/:id/favorite', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       isFavorite: idea.is_favorite || false,
+      transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
     console.error('[Toggle Favorite] Unexpected error:', error);
