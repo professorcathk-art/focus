@@ -9,6 +9,7 @@ import {
   Platform,
   Keyboard,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "react-native";
@@ -63,23 +64,25 @@ export default function TodoScreen() {
       updatedAt: new Date().toISOString(),
     };
 
-    // Optimistic update
-    setTodos([...todos, tempTodo]);
+    const todoText = input.trim();
     setInput("");
     Keyboard.dismiss();
     setAddingTodo(true);
 
+    // Optimistic update
+    setTodos(prevTodos => [...prevTodos, tempTodo]);
+
     try {
       const newTodo = await apiClient.post<Todo>(API_ENDPOINTS.todos.create, {
-        text: tempTodo.text,
+        text: todoText,
       });
-      // Replace temp todo with real one
-      setTodos(todos.map(t => t.id === tempId ? newTodo : t));
+      // Replace temp todo with real one using functional update
+      setTodos(prevTodos => prevTodos.map(t => t.id === tempId ? newTodo : t));
     } catch (error) {
       console.error("Add todo error:", error);
       // Revert optimistic update
-      setTodos(todos.filter(t => t.id !== tempId));
-      setInput(tempTodo.text);
+      setTodos(prevTodos => prevTodos.filter(t => t.id !== tempId));
+      setInput(todoText);
       Alert.alert("Error", "Failed to add todo");
     } finally {
       setAddingTodo(false);
@@ -91,7 +94,7 @@ export default function TodoScreen() {
 
     // Optimistic update
     const newCompleted = !completed;
-    setTodos(todos.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t)));
+    setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t)));
     setTogglingTodoId(id);
 
     try {
@@ -99,11 +102,11 @@ export default function TodoScreen() {
         API_ENDPOINTS.todos.update(id),
         { completed: newCompleted }
       );
-      setTodos(todos.map((t) => (t.id === id ? updatedTodo : t)));
+      setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? updatedTodo : t)));
     } catch (error) {
       console.error("Toggle todo error:", error);
       // Revert optimistic update
-      setTodos(todos.map((t) => (t.id === id ? { ...t, completed } : t)));
+      setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? { ...t, completed } : t)));
       Alert.alert("Error", "Failed to update todo");
     } finally {
       setTogglingTodoId(null);
@@ -122,9 +125,11 @@ export default function TodoScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            // Optimistic update
+            // Store deleted todo for potential revert
             const deletedTodo = todos.find(t => t.id === id);
-            setTodos(todos.filter((t) => t.id !== id));
+            
+            // Optimistic update - remove from list
+            setTodos(prevTodos => prevTodos.filter((t) => t.id !== id));
             setDeletingTodoId(id);
 
             try {
@@ -133,7 +138,7 @@ export default function TodoScreen() {
               console.error("Delete todo error:", error);
               // Revert optimistic update
               if (deletedTodo) {
-                setTodos([...todos]);
+                setTodos(prevTodos => [...prevTodos, deletedTodo]);
               }
               Alert.alert("Error", "Failed to delete todo");
             } finally {

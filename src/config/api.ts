@@ -34,6 +34,7 @@ export const API_ENDPOINTS = {
     update: (id: string) => `/ideas/${id}`,
     delete: (id: string) => `/ideas/${id}`,
     uploadAudio: "/ideas/upload-audio",
+    toggleFavorite: (id: string) => `/ideas/${id}/favorite`,
   },
   // Clusters
   clusters: {

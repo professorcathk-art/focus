@@ -50,6 +50,7 @@ router.get('/', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
     }));
 
     res.json(formattedIdeas);
@@ -85,6 +86,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
     });
   } catch (error) {
     console.error('Get idea error:', error);
@@ -176,6 +178,7 @@ router.post('/', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id || existingClusterId || null,
       embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
       suggestedClusterLabel: suggestedClusterLabel, // Include suggested label if no match found
     });
   } catch (error) {
@@ -438,10 +441,63 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id || existingClusterId || null,
       embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
       suggestedClusterLabel: suggestedClusterLabel, // Include suggested label if no match found
     });
   } catch (error) {
     console.error('Upload audio error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
+ * Toggle favorite status (must come before /:id route)
+ */
+router.put('/:id/favorite', requireAuth, async (req, res) => {
+  try {
+    // Check ownership
+    const { data: existingIdea } = await supabase
+      .from('ideas')
+      .select('is_favorite')
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (!existingIdea) {
+      return res.status(404).json({ message: 'Idea not found' });
+    }
+
+    const newFavoriteStatus = !existingIdea.is_favorite;
+
+    const { data: idea, error } = await supabase
+      .from('ideas')
+      .update({ 
+        is_favorite: newFavoriteStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Toggle favorite error:', error);
+      return res.status(500).json({ message: 'Failed to toggle favorite' });
+    }
+
+    res.json({
+      id: idea.id,
+      userId: idea.user_id,
+      transcript: idea.transcript,
+      audioUrl: idea.audio_url,
+      duration: idea.duration,
+      createdAt: idea.created_at,
+      updatedAt: idea.updated_at,
+      clusterId: idea.cluster_id,
+      embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
+    });
+  } catch (error) {
+    console.error('Toggle favorite error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -468,7 +524,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     // Update transcript and regenerate embedding if changed
     let updateData = { updated_at: new Date().toISOString() };
     
-    if (transcript) {
+    if (transcript !== undefined) {
       updateData.transcript = transcript.trim();
       
       // Regenerate embedding
@@ -477,6 +533,10 @@ router.put('/:id', requireAuth, async (req, res) => {
         input: transcript.trim(),
       });
       updateData.embedding = embeddingResponse.data[0].embedding;
+    }
+    
+    if (clusterId !== undefined) {
+      updateData.cluster_id = clusterId || null;
     }
 
     const { data: idea, error } = await supabase
@@ -501,6 +561,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
     });
   } catch (error) {
     console.error('Update idea error:', error);

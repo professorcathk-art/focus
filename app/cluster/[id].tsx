@@ -2,7 +2,8 @@
  * Cluster detail view - Shows all ideas in a cluster
  */
 
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
+import { useState, useCallback } from "react";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useColorScheme } from "react-native";
@@ -10,6 +11,8 @@ import { useCluster } from "@/hooks/use-clusters";
 import { useIdeas } from "@/hooks/use-ideas";
 import { Ionicons } from "@expo/vector-icons";
 import { formatDistanceToNow } from "date-fns";
+import { apiClient } from "@/lib/api-client";
+import { API_ENDPOINTS } from "@/config/api";
 
 const getClusterEmoji = (label: string): string => {
   const lower = label.toLowerCase();
@@ -26,7 +29,8 @@ export default function ClusterDetailScreen() {
   const colorScheme = useColorScheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { cluster, isLoading: clusterLoading } = useCluster(id || "");
-  const { ideas, isLoading: ideasLoading } = useIdeas();
+  const { ideas, isLoading: ideasLoading, refetch } = useIdeas();
+  const [togglingFavoriteId, setTogglingFavoriteId] = useState<string | null>(null);
 
   // Handle uncategorised cluster (special case)
   const isUncategorised = id === "uncategorised";
@@ -114,37 +118,72 @@ export default function ClusterDetailScreen() {
           </View>
         ) : (
           <View className="pb-8">
-            {clusterIdeas.map((idea) => (
-              <TouchableOpacity
-                key={idea.id}
-                onPress={() =>
-                  router.push({
-                    pathname: "/idea/[id]",
-                    params: { id: idea.id },
-                  })
+            {clusterIdeas.map((idea) => {
+              const handleToggleFavorite = async (e: any) => {
+                e.stopPropagation();
+                if (togglingFavoriteId === idea.id) return;
+                
+                setTogglingFavoriteId(idea.id);
+                try {
+                  await apiClient.put(API_ENDPOINTS.ideas.toggleFavorite(idea.id));
+                  await refetch();
+                } catch (err) {
+                  Alert.alert("Error", err instanceof Error ? err.message : "Failed to toggle favorite");
+                } finally {
+                  setTogglingFavoriteId(null);
                 }
-                className="bg-card dark:bg-card-dark rounded-xl p-4 mb-3 border border-gray-200 dark:border-gray-800"
-                style={{
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.05,
-                  shadowRadius: 4,
-                  elevation: 2,
-                }}
-              >
-                <Text
-                  className="text-base text-black dark:text-white mb-2"
-                  numberOfLines={3}
+              };
+
+              return (
+                <TouchableOpacity
+                  key={idea.id}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/idea/[id]",
+                      params: { id: idea.id },
+                    })
+                  }
+                  className="bg-card dark:bg-card-dark rounded-xl p-4 mb-3 border border-gray-200 dark:border-gray-800"
+                  style={{
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.05,
+                    shadowRadius: 4,
+                    elevation: 2,
+                  }}
                 >
-                  {idea.transcript}
-                </Text>
-                <Text className="text-xs text-gray-500 dark:text-gray-400">
-                  {formatDistanceToNow(new Date(idea.createdAt), {
-                    addSuffix: true,
-                  })}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <View className="flex-row items-start justify-between mb-2">
+                    <Text
+                      className="text-base text-black dark:text-white flex-1"
+                      numberOfLines={3}
+                    >
+                      {idea.transcript}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={handleToggleFavorite}
+                      className="ml-2 p-1"
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      disabled={togglingFavoriteId === idea.id}
+                    >
+                      {togglingFavoriteId === idea.id ? (
+                        <ActivityIndicator size="small" color="#FFD700" />
+                      ) : (
+                        <Ionicons
+                          name={idea.isFavorite ? "star" : "star-outline"}
+                          size={20}
+                          color={idea.isFavorite ? "#FFD700" : "#8E8E93"}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                  <Text className="text-xs text-gray-500 dark:text-gray-400">
+                    {formatDistanceToNow(new Date(idea.createdAt), {
+                      addSuffix: true,
+                    })}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
       </ScrollView>

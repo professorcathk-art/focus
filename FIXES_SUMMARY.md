@@ -1,142 +1,72 @@
-# Fixes Summary
+# 🔧 Recent Fixes Summary
 
-## ✅ Completed Fixes
+## Issues Fixed
 
-### 1. Voice-to-Text Model Change
-- **Changed**: Updated transcription to use AIMLAPI `nova-3` model as primary
-- **Fallback**: OpenAI Whisper-1 as fallback if AIMLAPI fails
-- **File**: `backend/routes/ideas.js`
-- **Status**: ✅ Complete
+### 1. ✅ ActivityIndicator Crash in Todo List
+**Problem**: `ActivityIndicator` was not imported in `todo.tsx`
+**Fix**: Added `ActivityIndicator` to imports
+**Status**: Fixed
 
-### 2. Record Button Position Fix
-- **Fixed**: Record button no longer moves when pressed
-- **Change**: Set `activeOpacity={1}` and `delayPressIn={0}` to prevent movement
-- **File**: `app/(tabs)/record.tsx`
-- **Status**: ✅ Complete
+### 2. ✅ Tab Name Changed
+**Problem**: Tab was named "To-Do"
+**Fix**: Changed to "Today" in `app/(tabs)/_layout.tsx`
+**Status**: Fixed
 
-### 3. Login Page Fixes
-- **Fixed**: Email text box bottom no longer covered by white
-- **Fixed**: Keyboard dismisses when clicking outside
-- **Changes**:
-  - Added `Pressable` wrapper to dismiss keyboard
-  - Added `ScrollView` with proper keyboard handling
-  - Improved text input styling with proper padding
-- **File**: `app/(auth)/signin.tsx`
-- **Status**: ✅ Complete
+### 3. ✅ Category Tags Not Updating
+**Problem**: Category tags in recent ideas didn't update after changing category
+**Fix**: Added `useFocusEffect` to refresh ideas and clusters when Record screen comes into focus
+**Status**: Fixed
 
-### 4. Signup & Email Verification
-- **Fixed**: Better error handling for email confirmation
-- **Added**: Google OAuth login button
-- **Added**: Deep linking support for email verification
-- **Changes**:
-  - Updated signup to handle email confirmation gracefully
-  - Added Google sign-in button on both signin and signup pages
-  - Added deep link handling in `app/_layout.tsx`
-  - Updated Supabase client to detect session in URL
-- **Files**: 
-  - `app/(auth)/signin.tsx`
-  - `app/(auth)/signup.tsx`
-  - `src/store/auth-store.ts`
-  - `src/lib/supabase.ts`
-  - `app/_layout.tsx`
-- **Status**: ✅ Complete
+### 4. ✅ Favorite/Star Functionality
+**Problem**: Needed favorite button for notes
+**Fix**: 
+- Added `is_favorite` column to database (migration: `backend/add-favorite-column.sql`)
+- Added `PUT /api/ideas/:id/favorite` endpoint
+- Added star buttons to Record page, Cluster detail page, and Idea detail page
+**Status**: Implemented (requires database migration and backend restart)
 
-### 5. Note Editing & Category Change
-- **Added**: Full edit functionality for notes
-- **Added**: Category change functionality
-- **Features**:
-  - Edit button in idea detail page
-  - Modal for editing transcript
-  - Category picker modal
-  - Real-time updates
-- **Files**:
-  - `app/idea/[id].tsx` (completely rewritten)
-  - `src/hooks/use-ideas.ts` (added `updateIdea` function)
-- **Status**: ✅ Complete
+### 5. ✅ Todo Items Disappearing
+**Problem**: Todo items disappeared after adding, only showed after app restart
+**Fix**: Fixed state management by using functional updates (`prevTodos => ...`) instead of closure state
+**Status**: Fixed
 
-### 6. Default Categories
-- **Added**: "My Spending" as default category
-- **File**: `src/hooks/use-clusters.ts`
-- **Status**: ✅ Complete
+### 6. ⚠️ Favorite Route 404 Error
+**Problem**: Getting HTTP 404 when toggling favorite
+**Fix**: Route is correctly defined as `PUT /:id/favorite` before `PUT /:id`
+**Action Required**: 
+- **Local**: Restart backend server (`cd backend && npm run dev`)
+- **Production**: Wait for Vercel to redeploy (automatic after git push)
 
-### 7. Dark Mode / Night Tone
-- **Added**: Appearance settings in profile page
-- **Features**:
-  - Light / Dark / System options
-  - Theme preference saved to SecureStore
-  - Visual indicator (sun/moon icon)
-- **File**: `app/(tabs)/profile.tsx`
-- **Status**: ✅ Complete
+## Database Migration Required
 
-### 8. UI Improvements (Apple-Style)
-- **Improved**: Overall UI styling to be more Apple-like
-- **Changes**:
-  - Better shadows and elevations
-  - Improved color scheme (using Apple's green #34C759)
-  - Better spacing and typography
-  - Smooth animations
-  - Modern card designs
-- **Files**: Multiple UI files updated
-- **Status**: ✅ Complete
+Run this SQL in Supabase SQL Editor:
 
-## 📋 Remaining Tasks
+```sql
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_ideas_is_favorite ON ideas(user_id, is_favorite) WHERE is_favorite = TRUE;
+```
 
-### Loading Speed Optimization
-- **Status**: Pending
-- **Recommendations**:
-  - Add React Query or SWR for better caching
-  - Implement pagination for ideas list
-  - Lazy load components
-  - Optimize image loading
-  - Add skeleton loaders
+Or use the file: `backend/add-favorite-column.sql`
 
-## 🔧 Setup Instructions
+## Backend Restart Required
 
-### Google OAuth Setup (Required)
+After pushing changes, the backend needs to restart to pick up the new favorite route:
 
-1. **Go to Supabase Dashboard**:
-   - Navigate to: https://supabase.com/dashboard/project/wqvevludffkemgicrfos
-   - Go to **Authentication** → **Providers**
+**Local Development:**
+```bash
+cd backend
+npm run dev
+```
 
-2. **Enable Google Provider**:
-   - Toggle **Google** to enabled
-   - Add your Google OAuth credentials:
-     - **Client ID**: Get from Google Cloud Console
-     - **Client Secret**: Get from Google Cloud Console
-   - **Redirect URL**: `focus://auth/v1/callback` (or your app scheme)
+**Production (Vercel):**
+- Automatic after git push
+- Check Vercel dashboard for deployment status
 
-3. **Google Cloud Console Setup**:
-   - Go to: https://console.cloud.google.com/
-   - Create OAuth 2.0 credentials
-   - Add authorized redirect URIs:
-     - `https://wqvevludffkemgicrfos.supabase.co/auth/v1/callback`
-     - `focus://auth/v1/callback`
+## Testing Checklist
 
-### Email Verification Setup
-
-1. **Supabase Dashboard**:
-   - Go to **Authentication** → **URL Configuration**
-   - Set **Site URL**: `focus://`
-   - Set **Redirect URLs**: 
-     - `focus://auth/v1/callback`
-     - `exp://192.168.0.223:8081` (for development)
-
-2. **Email Templates**:
-   - Customize email templates in Supabase Dashboard
-   - Ensure confirmation emails include proper redirect URLs
-
-## 🐛 Known Issues
-
-1. **Dark Mode**: Currently uses system preference. Full manual dark mode toggle requires app restart (React Native limitation).
-
-2. **Google OAuth**: Requires proper setup in Supabase and Google Cloud Console (see above).
-
-3. **Email Verification**: Deep linking works, but users may need to manually open the app after clicking email link.
-
-## 📝 Notes
-
-- All changes maintain backward compatibility
-- No breaking changes to existing functionality
-- UI improvements are progressive enhancements
-- Dark mode preference is saved locally using SecureStore
-
+- [ ] Run database migration for `is_favorite` column
+- [ ] Restart backend server (local) or wait for Vercel deployment
+- [ ] Test favorite toggle on notes
+- [ ] Test adding todos (should appear immediately)
+- [ ] Test category changes (tags should update in recent ideas)
+- [ ] Verify "Today" tab name appears correctly

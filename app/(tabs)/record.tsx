@@ -2,12 +2,12 @@
  * Record tab - Main capture interface
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform, Keyboard, Alert, Modal, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import { useIdeas } from "@/hooks/use-ideas";
@@ -40,6 +40,14 @@ export default function RecordScreen() {
   const [isAssigningCategory, setIsAssigningCategory] = useState(false);
   const { ideas, createIdea, refetch } = useIdeas();
   const { clusters, createCluster, assignIdeaToCluster, refetch: refetchClusters } = useClusters();
+  
+  // Refresh data when screen comes into focus (e.g., after changing category)
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+      refetchClusters();
+    }, [refetch, refetchClusters])
+  );
   
   // Helper to get actual cluster ID (handles local category IDs)
   const getActualClusterId = (clusterId: string | null): string | null => {
@@ -581,6 +589,17 @@ export default function RecordScreen() {
             <ScrollView showsVerticalScrollIndicator={false}>
               {(showAllIdeas ? ideas : recentIdeas).map((idea) => {
                 const clusterLabel = getClusterLabel(idea);
+                const handleToggleFavorite = async (e: any) => {
+                  e.stopPropagation();
+                  try {
+                    await apiClient.put(API_ENDPOINTS.ideas.toggleFavorite(idea.id));
+                    await refetch();
+                    await refetchClusters();
+                  } catch (err) {
+                    console.error("Toggle favorite error:", err);
+                  }
+                };
+
                 return (
                   <TouchableOpacity
                     key={idea.id}
@@ -598,14 +617,27 @@ export default function RecordScreen() {
                     }}
                   >
                     <View className="flex-row items-start justify-between mb-2">
-                      {clusterLabel && (
-                        <View className="bg-green-50 dark:bg-green-900/20 rounded-full px-3 py-1 mr-2">
-                          <Text className="text-xs font-medium text-green-600 dark:text-green-400">
-                            {clusterLabel}
-                          </Text>
-                        </View>
-                      )}
-                      <Text className="text-xs text-gray-500 dark:text-gray-400 flex-1 text-right">
+                      <View className="flex-row items-center flex-1">
+                        {clusterLabel && (
+                          <View className="bg-green-50 dark:bg-green-900/20 rounded-full px-3 py-1 mr-2">
+                            <Text className="text-xs font-medium text-green-600 dark:text-green-400">
+                              {clusterLabel}
+                            </Text>
+                          </View>
+                        )}
+                        <TouchableOpacity
+                          onPress={handleToggleFavorite}
+                          className="p-1"
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Ionicons
+                            name={idea.isFavorite ? "star" : "star-outline"}
+                            size={16}
+                            color={idea.isFavorite ? "#FFD700" : "#8E8E93"}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                      <Text className="text-xs text-gray-500 dark:text-gray-400">
                         {formatDistanceToNow(new Date(idea.createdAt), {
                           addSuffix: true,
                         })}

@@ -41,6 +41,7 @@ export default function IdeaDetailScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isChangingCategory, setIsChangingCategory] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
 
   const handleCopy = async () => {
     if (idea?.transcript) {
@@ -163,6 +164,20 @@ export default function IdeaDetailScreen() {
     );
   }, [idea, router]);
 
+  const handleToggleFavorite = useCallback(async () => {
+    if (!idea || isTogglingFavorite) return;
+
+    setIsTogglingFavorite(true);
+    try {
+      await apiClient.put(API_ENDPOINTS.ideas.toggleFavorite(idea.id));
+      await refetch();
+    } catch (err) {
+      Alert.alert("Error", err instanceof Error ? err.message : "Failed to toggle favorite");
+    } finally {
+      setIsTogglingFavorite(false);
+    }
+  }, [idea, refetch, isTogglingFavorite]);
+
   const getClusterLabel = (clusterId: string | null): string => {
     if (!clusterId) return "Uncategorized";
     const cluster = clusters.find(c => c.id === clusterId);
@@ -213,6 +228,23 @@ export default function IdeaDetailScreen() {
           Idea Details
         </Text>
         <View className="flex-row items-center gap-3">
+          <TouchableOpacity
+            onPress={handleToggleFavorite}
+            activeOpacity={0.7}
+            delayPressIn={0}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            disabled={isTogglingFavorite}
+          >
+            {isTogglingFavorite ? (
+              <ActivityIndicator size="small" color="#FFD700" />
+            ) : (
+              <Ionicons 
+                name={idea?.isFavorite ? "star" : "star-outline"} 
+                size={24} 
+                color={idea?.isFavorite ? "#FFD700" : "#8E8E93"} 
+              />
+            )}
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={handleEdit}
             activeOpacity={0.7}

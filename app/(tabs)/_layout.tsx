@@ -60,7 +60,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="todo"
         options={{
-          title: "To-Do",
+          title: "Today",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="checkmark-circle" size={size} color={color} />
           ),
