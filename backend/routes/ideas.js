@@ -282,7 +282,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       return res.status(400).json({ message: 'Audio file is required' });
     }
 
-    // Use AIMLAPI nova-3 model ONLY - no OpenAI fallback
+    // Use AIMLAPI Nova-2 model ONLY - no OpenAI fallback
     const aimlApiKey = process.env.AIML_API_KEY;
 
     if (!aimlApiKey) {
@@ -300,7 +300,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     // Use AIMLAPI with Deepgram Nova-2 model
     if (aimlApiKey) {
       try {
-        console.log('[Upload Audio] Attempting transcription with AIMLAPI Nova-3 model (via AIMLAPI)');
+        console.log('[Upload Audio] Attempting transcription with AIMLAPI Nova-2 model (via AIMLAPI)');
         console.log(`[Upload Audio] File info: size=${req.file.size}, type=${req.file.mimetype}, name=${req.file.originalname}`);
         
         // Use AIMLAPI STT endpoint with multipart/form-data
@@ -320,27 +320,29 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         const aimlFormHeaders = aimlFormData.getHeaders();
         const aimlBaseUrl = 'https://api.aimlapi.com/v1';
         
-        // Set Content-Length header if available
-        if (aimlFormData.getLengthSync) {
-          try {
-            const length = aimlFormData.getLengthSync();
-            aimlFormHeaders['Content-Length'] = length.toString();
-          } catch (e) {
-            // getLengthSync might fail for streams, that's okay
-          }
-        }
+        // Convert FormData stream to buffer for proper handling with fetch()
+        // form-data package returns a stream, but fetch() in Node.js needs a buffer
+        const formBuffer = await new Promise((resolve, reject) => {
+          const chunks = [];
+          aimlFormData.on('data', (chunk) => chunks.push(chunk));
+          aimlFormData.on('end', () => resolve(Buffer.concat(chunks)));
+          aimlFormData.on('error', reject);
+        });
+        
+        // Get Content-Length from buffer
+        aimlFormHeaders['Content-Length'] = formBuffer.length.toString();
         
         console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/stt/create with model: #g1_nova-2-general`);
         console.log(`[Upload Audio] FormData headers:`, aimlFormHeaders);
-        console.log(`[Upload Audio] File buffer size: ${req.file.buffer.length} bytes`);
+        console.log(`[Upload Audio] File buffer size: ${req.file.buffer.length} bytes, FormData size: ${formBuffer.length} bytes`);
         
         const aimlResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${aimlApiKey}`,
-            ...aimlFormHeaders,  // Includes Content-Type with boundary
+            ...aimlFormHeaders,  // Includes Content-Type with boundary and Content-Length
           },
-          body: aimlFormData,
+          body: formBuffer, // Use buffer instead of stream
         });
         
         if (aimlResponse.ok) {
