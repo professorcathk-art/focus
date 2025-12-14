@@ -563,20 +563,12 @@ export default function RecordScreen() {
             marginHorizontal: -24,
             paddingHorizontal: 24,
           }}>
-            {(() => {
-              const { user } = useAuthStore.getState();
-              const userName = user?.name || user?.email?.split("@")[0] || "there";
-              return (
-                <>
-                  <Text className="text-lg text-gray-500 dark:text-gray-400 font-medium">
-                    Hi {userName}
-                  </Text>
-                  <Text className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-                    Record or type your thoughts
-                  </Text>
-                </>
-              );
-            })()}
+            <Text className="text-lg text-gray-500 dark:text-gray-400 font-medium">
+              Hi {user?.name || user?.email?.split("@")[0] || "there"}
+            </Text>
+            <Text className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+              Record or type your thoughts
+            </Text>
           </View>
 
           {/* Text Input Section */}
