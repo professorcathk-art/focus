@@ -68,12 +68,14 @@ export default function ClusterDetailScreen() {
 
   const displayCluster = isUncategorised ? uncategorisedCluster : isFavourite ? favouriteCluster : cluster;
 
+  // Filter ideas: only include ideas that actually exist and match the cluster
+  // This prevents showing deleted ideas that might still be in ideaIds array
   const clusterIdeas = displayCluster
     ? isUncategorised
-      ? ideas.filter((idea) => !idea.clusterId)
+      ? ideas.filter((idea) => idea && !idea.clusterId)
       : isFavourite
-      ? ideas.filter((idea) => idea.isFavorite)
-      : ideas.filter((idea) => displayCluster.ideaIds.includes(idea.id))
+      ? ideas.filter((idea) => idea && idea.isFavorite)
+      : ideas.filter((idea) => idea && displayCluster.ideaIds.includes(idea.id))
     : [];
 
   if (clusterLoading || ideasLoading) {
@@ -149,6 +151,9 @@ export default function ClusterDetailScreen() {
         ) : (
           <View className="pb-8">
             {clusterIdeas.map((idea) => {
+              // Skip if idea is null/undefined (shouldn't happen due to filter, but safety check)
+              if (!idea || !idea.id) return null;
+
               const handleToggleFavorite = async (e: any) => {
                 e.stopPropagation();
                 if (togglingFavoriteId === idea.id) return;
@@ -164,15 +169,23 @@ export default function ClusterDetailScreen() {
                 }
               };
 
+              const handlePress = () => {
+                if (!idea || !idea.id) {
+                  Alert.alert("Error", "This note is no longer available");
+                  // Refresh to remove deleted ideas
+                  refetch();
+                  return;
+                }
+                router.push({
+                  pathname: "/idea/[id]",
+                  params: { id: idea.id },
+                });
+              };
+
               return (
                 <TouchableOpacity
                   key={idea.id}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/idea/[id]",
-                      params: { id: idea.id },
-                    })
-                  }
+                  onPress={handlePress}
                   className="bg-card dark:bg-card-dark rounded-xl p-4 mb-3 border border-gray-200 dark:border-gray-800"
                   style={{
                     shadowColor: "#000",
@@ -187,7 +200,7 @@ export default function ClusterDetailScreen() {
                       className="text-base text-black dark:text-white flex-1"
                       numberOfLines={3}
                     >
-                      {idea.transcript}
+                      {idea.transcript || idea.audioUrl ? (idea.audioUrl && !idea.transcript ? "Audio recording (transcribing...)" : idea.transcript) : "Empty note"}
                     </Text>
                     <TouchableOpacity
                       onPress={handleToggleFavorite}
@@ -206,11 +219,13 @@ export default function ClusterDetailScreen() {
                       )}
                     </TouchableOpacity>
                   </View>
-                  <Text className="text-xs text-gray-500 dark:text-gray-400">
-                    {formatDistanceToNow(new Date(idea.createdAt), {
-                      addSuffix: true,
-                    })}
-                  </Text>
+                  {idea.createdAt && (
+                    <Text className="text-xs text-gray-500 dark:text-gray-400">
+                      {formatDistanceToNow(new Date(idea.createdAt), {
+                        addSuffix: true,
+                      })}
+                    </Text>
+                  )}
                 </TouchableOpacity>
               );
             })}

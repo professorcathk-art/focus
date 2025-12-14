@@ -64,7 +64,12 @@ export function useIdea(id: string) {
       const data = await apiClient.get<Idea>(API_ENDPOINTS.ideas.get(id));
       setIdea(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch idea");
+      // If 404, set idea to null (idea was deleted or doesn't exist)
+      const errorMessage = err instanceof Error ? err.message : "Failed to fetch idea";
+      if (errorMessage.includes("404") || errorMessage.includes("not found")) {
+        setIdea(null);
+      }
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

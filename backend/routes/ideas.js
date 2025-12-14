@@ -115,7 +115,7 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
     console.log(`[Async Transcription] Generating embedding...`);
     const embeddingResponse = await aimlClient.embeddings.create({
       model: 'text-embedding-3-small',
-      input: transcript,
+      input: trimmedTranscript,
     });
     const embedding = embeddingResponse.data[0].embedding;
     console.log(`[Async Transcription] Embedding generated (${embedding.length} dimensions)`);

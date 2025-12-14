@@ -289,7 +289,7 @@ export default function IdeaDetailScreen() {
             setIsDeleting(true);
             try {
               await apiClient.delete(API_ENDPOINTS.ideas.delete(idea.id));
-              Alert.alert("Success", "Note deleted successfully");
+              // Navigate back immediately - the parent views will refresh
               router.back();
             } catch (err) {
               Alert.alert("Error", err instanceof Error ? err.message : "Failed to delete note");
