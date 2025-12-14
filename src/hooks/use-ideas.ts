@@ -52,6 +52,8 @@ export function useIdeas() {
         transcript,
       });
       setIdeas((prev) => [newIdea, ...prev]);
+      // Update cache
+      await updateCachedIdea(newIdea);
       return newIdea;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to create idea";
@@ -78,17 +80,37 @@ export function useIdea(id: string) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchIdea = async () => {
+  const fetchIdea = async (useCache = true) => {
     setIsLoading(true);
     setError(null);
+    
     try {
+      // Try cache first for instant UI update
+      if (useCache) {
+        const cached = await getCachedIdeas();
+        if (cached) {
+          const cachedIdea = cached.find((i) => i.id === id);
+          if (cachedIdea) {
+            setIdea(cachedIdea);
+            setIsLoading(false);
+            // Continue fetching in background to update cache
+          }
+        }
+      }
+
+      // Fetch from API
       const data = await apiClient.get<Idea>(API_ENDPOINTS.ideas.get(id));
       setIdea(data);
+      
+      // Update cache
+      await updateCachedIdea(data);
     } catch (err) {
       // If 404, set idea to null (idea was deleted or doesn't exist)
       const errorMessage = err instanceof Error ? err.message : "Failed to fetch idea";
       if (errorMessage.includes("404") || errorMessage.includes("not found")) {
         setIdea(null);
+        // Remove from cache if deleted
+        await removeCachedIdea(id);
       }
       setError(errorMessage);
     } finally {

@@ -56,16 +56,16 @@ export default function IdeaDetailScreen() {
   };
 
   // Auto-refresh transcript when it's empty but audio exists (transcription in progress)
-  // Poll less frequently (every 10 seconds) to avoid annoying refreshes
+  // Poll much less frequently (every 30 seconds) to reduce API calls and costs
   useEffect(() => {
-    if (idea && idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '')) {
-      // Poll every 10 seconds for transcript updates (less annoying)
+    if (idea && idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '') && !idea.transcriptionError) {
+      // Poll every 30 seconds for transcript updates (reduced from 10s to save costs)
       transcriptionPollingRef.current = setInterval(() => {
         console.log(`[Transcription Poll] Checking for transcript update for idea ${idea.id}`);
         refetch();
-      }, 10000); // Changed from 3000 to 10000 (10 seconds)
+      }, 30000); // 30 seconds - much less frequent to reduce API calls
     } else {
-      // Clear polling when transcript is available or no audio
+      // Clear polling when transcript is available, no audio, or there's an error
       if (transcriptionPollingRef.current) {
         clearInterval(transcriptionPollingRef.current);
         transcriptionPollingRef.current = null;
@@ -77,7 +77,7 @@ export default function IdeaDetailScreen() {
         clearInterval(transcriptionPollingRef.current);
       }
     };
-  }, [idea?.transcript, idea?.audioUrl, refetch, idea?.id]);
+  }, [idea?.transcript, idea?.audioUrl, idea?.transcriptionError, refetch, idea?.id]);
 
   // Cleanup audio on unmount
   useEffect(() => {

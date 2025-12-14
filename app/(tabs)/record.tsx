@@ -40,13 +40,9 @@ export default function RecordScreen() {
   const { ideas, createIdea, refetch } = useIdeas();
   const { clusters, createCluster, assignIdeaToCluster, refetch: refetchClusters } = useClusters();
   
-  // Refresh data when screen comes into focus (e.g., after changing category)
-  useFocusEffect(
-    useCallback(() => {
-      refetch();
-      refetchClusters();
-    }, [refetch, refetchClusters])
-  );
+  // DON'T auto-refresh on focus - reduces API calls
+  // Data is cached locally, so it's already available
+  // Users can manually refresh if needed
   
   // Helper to get actual cluster ID (handles local category IDs)
   const getActualClusterId = (clusterId: string | null): string | null => {

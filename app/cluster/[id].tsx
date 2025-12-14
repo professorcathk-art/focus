@@ -57,12 +57,9 @@ export default function ClusterDetailScreen() {
     }
   };
 
-  // Refresh when screen comes into focus (e.g., after deleting an idea)
-  useFocusEffect(
-    useCallback(() => {
-      refetch();
-    }, [refetch])
-  );
+  // DON'T auto-refresh on focus - only refresh manually or when needed
+  // This reduces API calls significantly
+  // Users can pull-to-refresh if they want fresh data
   
   const uncategorisedCluster = isUncategorised ? {
     id: "uncategorised",
@@ -192,12 +189,21 @@ export default function ClusterDetailScreen() {
               };
 
               const handlePress = async () => {
+                // Safety check - ensure idea exists before navigating
                 if (!idea || !idea.id) {
                   Alert.alert("Error", "This note is no longer available");
-                  // Refresh to remove deleted ideas
-                  await refetch();
+                  // Refresh to remove deleted ideas (non-blocking)
+                  refetch().catch(err => console.error("Error refetching:", err));
                   return;
                 }
+                
+                // Additional validation for uncategorised ideas
+                if (isUncategorised && idea.clusterId) {
+                  // Idea was categorized, refresh list
+                  refetch().catch(err => console.error("Error refetching:", err));
+                  return;
+                }
+                
                 router.push({
                   pathname: "/idea/[id]",
                   params: { id: idea.id },
