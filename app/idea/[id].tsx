@@ -2,7 +2,7 @@
  * Idea detail view - View full transcript, play audio, copy text, edit
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import * as Clipboard from "expo-clipboard";
 import { formatDistanceToNow } from "date-fns";
 import { apiClient } from "@/lib/api-client";
 import { API_ENDPOINTS } from "@/config/api";
+import { Audio } from "expo-av";
 
 export default function IdeaDetailScreen() {
   const router = useRouter();
@@ -53,11 +54,78 @@ export default function IdeaDetailScreen() {
     }
   };
 
-  const handlePlayAudio = () => {
-    // TODO: Implement audio playback
-    setIsPlaying(!isPlaying);
-    Alert.alert("Audio", "Audio playback will be implemented");
-  };
+  // Auto-refresh transcript when it's empty but audio exists (transcription in progress)
+  useEffect(() => {
+    if (idea && idea.audioUrl && !idea.transcript) {
+      // Poll every 3 seconds for transcript updates
+      transcriptionPollingRef.current = setInterval(() => {
+        refetch();
+      }, 3000);
+    } else {
+      // Clear polling when transcript is available or no audio
+      if (transcriptionPollingRef.current) {
+        clearInterval(transcriptionPollingRef.current);
+        transcriptionPollingRef.current = null;
+      }
+    }
+
+    return () => {
+      if (transcriptionPollingRef.current) {
+        clearInterval(transcriptionPollingRef.current);
+      }
+    };
+  }, [idea?.transcript, idea?.audioUrl, refetch]);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(console.error);
+      }
+    };
+  }, []);
+
+  const handlePlayAudio = useCallback(async () => {
+    if (!idea?.audioUrl) return;
+
+    try {
+      if (soundRef.current) {
+        // Already loaded - toggle play/pause
+        const status = await soundRef.current.getStatusAsync();
+        if (status.isLoaded) {
+          if (status.isPlaying) {
+            await soundRef.current.pauseAsync();
+            setIsPlaying(false);
+          } else {
+            await soundRef.current.playAsync();
+            setIsPlaying(true);
+          }
+        }
+      } else {
+        // Load and play audio
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: idea.audioUrl },
+          { shouldPlay: true }
+        );
+        soundRef.current = sound;
+        setIsPlaying(true);
+
+        // Set up status listener
+        sound.setOnPlaybackStatusUpdate((status) => {
+          setPlaybackStatus(status);
+          if (status.isLoaded) {
+            if (status.didJustFinish) {
+              setIsPlaying(false);
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error playing audio:", error);
+      Alert.alert("Error", "Failed to play audio. Please try again.");
+      setIsPlaying(false);
+    }
+  }, [idea?.audioUrl]);
 
   const handleEdit = () => {
     if (idea) {
