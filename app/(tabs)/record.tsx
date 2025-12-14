@@ -93,9 +93,26 @@ export default function RecordScreen() {
       return;
     }
 
+    // IMMEDIATELY set recording state and start timer to ensure UI responds instantly
+    setIsRecording(true);
+    setStatus("recording");
+    setRecordingTime(0);
+    
+    // Start timer immediately (before async operations)
+    timerRef.current = setInterval(() => {
+      setRecordingTime((prev) => prev + 1);
+    }, 1000);
+
     try {
       // Check authentication
       if (!isAuthenticated) {
+        // Reset if not authenticated
+        setIsRecording(false);
+        setStatus("idle");
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
         Alert.alert(
           "Sign In Required",
           "Please sign in to record ideas.",
@@ -113,6 +130,13 @@ export default function RecordScreen() {
       // Request permissions
       const { status } = await Audio.requestPermissionsAsync();
       if (status !== 'granted') {
+        // Reset if permission denied
+        setIsRecording(false);
+        setStatus("idle");
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
         Alert.alert(
           "Permission Required",
           "Microphone permission is required to record audio.",
@@ -133,20 +157,18 @@ export default function RecordScreen() {
       );
       
       recordingRef.current = recording;
-      setIsRecording(true);
-      setStatus("recording");
-      setRecordingTime(0);
-
-      // Start timer
-      timerRef.current = setInterval(() => {
-        setRecordingTime((prev) => prev + 1);
-      }, 1000);
+      // State already set above, timer already started
     } catch (error) {
       console.error("Error starting recording:", error);
-      Alert.alert("Error", "Failed to start recording. Please try again.");
+      // Reset on error
       setIsRecording(false);
       setStatus("idle");
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       recordingRef.current = null;
+      Alert.alert("Error", "Failed to start recording. Please try again.");
     }
   };
 
@@ -482,6 +504,14 @@ export default function RecordScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ flexGrow: 1 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={isDark ? "#FFFFFF" : "#34C759"}
+              colors={["#34C759"]}
+            />
+          }
         >
         <TouchableOpacity 
           activeOpacity={1} 
@@ -489,17 +519,12 @@ export default function RecordScreen() {
           className="flex-1"
         >
         <View className="flex-1 px-6">
-          {/* Header with gradient background */}
-          <View className="pt-6 pb-6" style={{
-            backgroundColor: isDark ? "#000000" : "#E8F5E9",
+          {/* Header - Clean minimalist design */}
+          <View className="pt-8 pb-4" style={{
             marginHorizontal: -24,
             paddingHorizontal: 24,
-            paddingTop: 24,
           }}>
-            <Text className="text-3xl font-bold text-black dark:text-white mb-2">
-              Capture Idea
-            </Text>
-            <Text className="text-base text-gray-600 dark:text-gray-400">
+            <Text className="text-base text-gray-500 dark:text-gray-400 font-medium">
               Record or type your thoughts
             </Text>
           </View>
@@ -540,46 +565,55 @@ export default function RecordScreen() {
                       showsHorizontalScrollIndicator={false}
                       contentContainerStyle={{ paddingRight: 8 }}
                     >
-                      {/* Auto-categorize (Default) */}
+                      {/* Auto-categorize (Default) - Colorful gradient style */}
                       <TouchableOpacity
                         onPress={() => setSelectedClusterId(null)}
-                        className="px-4 py-2.5 rounded-full mr-2"
+                        className="px-5 py-3 rounded-full mr-3"
                         style={{
-                          backgroundColor: selectedClusterId === null ? "#34C759" : (isDark ? "#2C2C2E" : "#F2F2F7"),
+                          backgroundColor: selectedClusterId === null ? "#34C759" : (isDark ? "#1C1C1E" : "#F5F5F7"),
                         }}
                         activeOpacity={0.7}
                       >
                         <Text
-                          className="text-sm font-medium"
+                          className="text-sm font-semibold"
                           style={{
                             color: selectedClusterId === null ? "#FFFFFF" : (isDark ? "#FFFFFF" : "#000000"),
                           }}
                         >
-                          ✨ Auto-categorize
+                          ✨ Auto
                         </Text>
                       </TouchableOpacity>
 
-                      {/* Category Options */}
-                      {clusters.slice(0, 10).map((cluster) => (
-                        <TouchableOpacity
-                          key={cluster.id}
-                          onPress={() => setSelectedClusterId(cluster.id)}
-                          className="px-4 py-2.5 rounded-full mr-2"
-                          style={{
-                            backgroundColor: selectedClusterId === cluster.id ? "#34C759" : (isDark ? "#2C2C2E" : "#F2F2F7"),
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text
-                            className="text-sm font-medium"
+                      {/* Category Options - Colorful pills */}
+                      {clusters.slice(0, 10).map((cluster, index) => {
+                        const colors = [
+                          "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", 
+                          "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E2"
+                        ];
+                        const color = colors[index % colors.length];
+                        const isSelected = selectedClusterId === cluster.id;
+                        
+                        return (
+                          <TouchableOpacity
+                            key={cluster.id}
+                            onPress={() => setSelectedClusterId(cluster.id)}
+                            className="px-5 py-3 rounded-full mr-3"
                             style={{
-                              color: selectedClusterId === cluster.id ? "#FFFFFF" : (isDark ? "#FFFFFF" : "#000000"),
+                              backgroundColor: isSelected ? color : (isDark ? "#1C1C1E" : "#F5F5F7"),
                             }}
+                            activeOpacity={0.7}
                           >
-                            {cluster.label}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                            <Text
+                              className="text-sm font-semibold"
+                              style={{
+                                color: isSelected ? "#FFFFFF" : (isDark ? "#FFFFFF" : "#000000"),
+                              }}
+                            >
+                              {cluster.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </ScrollView>
                   </View>
 
@@ -605,11 +639,11 @@ export default function RecordScreen() {
           {/* Voice Recording */}
           {true && (
             <>
-              {/* Divider */}
-              <View className="flex-row items-center mb-6">
-                <View className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
-                <Text className="mx-4 text-xs text-gray-500 dark:text-gray-400 font-medium">OR</Text>
-                <View className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+              {/* Divider - Minimalist */}
+              <View className="flex-row items-center mb-8">
+                <View className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                <Text className="mx-4 text-xs text-gray-400 dark:text-gray-500 font-medium">OR</Text>
+                <View className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
               </View>
 
               {/* Record Button Container */}
@@ -697,13 +731,15 @@ export default function RecordScreen() {
                       pathname: "/idea/[id]",
                       params: { id: idea.id },
                     })}
-                    className="bg-white dark:bg-card-dark rounded-xl p-4 mb-3"
+                    className="bg-white dark:bg-gray-900 rounded-2xl p-5 mb-3"
                     style={{
-                      shadowColor: "#000",
-                      shadowOffset: { width: 0, height: 1 },
-                      shadowOpacity: 0.05,
-                      shadowRadius: 4,
-                      elevation: 2,
+                      shadowColor: isDark ? "#000" : "#34C759",
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: isDark ? 0.3 : 0.08,
+                      shadowRadius: 8,
+                      elevation: 3,
+                      borderWidth: isDark ? 1 : 0,
+                      borderColor: isDark ? "#2C2C2E" : "transparent",
                     }}
                   >
                     <View className="flex-row items-start justify-between mb-2">
@@ -735,15 +771,16 @@ export default function RecordScreen() {
                     </View>
                     {idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '') ? (
                       <View className="flex-row items-center">
-                        <Ionicons name="musical-notes-outline" size={16} color="#34C759" />
-                        <Text className="text-sm text-gray-500 dark:text-gray-400 ml-2 italic">
-                          Audio recording (transcribing...)
+                        <Ionicons name="musical-notes" size={18} color="#FF6B6B" />
+                        <Text className="text-sm text-gray-500 dark:text-gray-400 ml-2 font-medium">
+                          {idea.transcriptionError ? `Error: ${idea.transcriptionError.substring(0, 50)}...` : "Transcribing audio..."}
                         </Text>
                       </View>
                     ) : idea.transcript && idea.transcript.trim() ? (
                       <Text
-                        className="text-base text-black dark:text-white"
+                        className="text-base text-black dark:text-white leading-6"
                         numberOfLines={2}
+                        style={{ fontWeight: '500' }}
                       >
                         {idea.transcript}
                       </Text>
