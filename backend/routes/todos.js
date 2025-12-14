@@ -26,7 +26,19 @@ router.get('/today', requireAuth, async (req, res) => {
       return res.status(500).json({ message: 'Failed to fetch todos' });
     }
 
-    res.json(todos || []);
+    // Format response to match Todo interface
+    const formattedTodos = (todos || []).map(todo => ({
+      id: todo.id,
+      userId: todo.user_id,
+      text: todo.text,
+      completed: todo.completed,
+      date: todo.date,
+      dueDate: todo.date, // Use date as dueDate
+      createdAt: todo.created_at,
+      updatedAt: todo.updated_at,
+    }));
+
+    res.json(formattedTodos);
   } catch (error) {
     console.error('Get todos error:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -67,7 +79,17 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(500).json({ message: 'Failed to create todo' });
     }
 
-    res.json(todo);
+    // Format response to match Todo interface
+    res.json({
+      id: todo.id,
+      userId: todo.user_id,
+      text: todo.text,
+      completed: todo.completed,
+      date: todo.date,
+      dueDate: todo.date, // Use date as dueDate
+      createdAt: todo.created_at,
+      updatedAt: todo.updated_at,
+    });
   } catch (error) {
     console.error('Create todo error:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -111,7 +133,17 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ message: 'Todo not found' });
     }
 
-    res.json(todo);
+    // Format response to match Todo interface
+    res.json({
+      id: todo.id,
+      userId: todo.user_id,
+      text: todo.text,
+      completed: todo.completed,
+      date: todo.date,
+      dueDate: todo.date, // Use date as dueDate
+      createdAt: todo.created_at,
+      updatedAt: todo.updated_at,
+    });
   } catch (error) {
     console.error('Update todo error:', error);
     res.status(500).json({ message: 'Internal server error' });

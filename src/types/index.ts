@@ -52,6 +52,7 @@ export interface Todo {
   text: string;
   completed: boolean;
   date: string;
+  dueDate?: string; // Optional deadline date
   createdAt: string;
   updatedAt: string;
 }

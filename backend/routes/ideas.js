@@ -452,22 +452,27 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
 
 /**
  * Toggle favorite status (must come before /:id route)
+ * Route: PUT /api/ideas/:id/favorite
  */
 router.put('/:id/favorite', requireAuth, async (req, res) => {
   try {
+    console.log(`[Toggle Favorite] Request received for idea ${req.params.id}`);
+    
     // Check ownership
-    const { data: existingIdea } = await supabase
+    const { data: existingIdea, error: checkError } = await supabase
       .from('ideas')
       .select('is_favorite')
       .eq('id', req.params.id)
       .eq('user_id', req.user.id)
       .single();
 
-    if (!existingIdea) {
+    if (checkError || !existingIdea) {
+      console.error('[Toggle Favorite] Idea not found or error:', checkError);
       return res.status(404).json({ message: 'Idea not found' });
     }
 
     const newFavoriteStatus = !existingIdea.is_favorite;
+    console.log(`[Toggle Favorite] Toggling favorite from ${existingIdea.is_favorite} to ${newFavoriteStatus}`);
 
     const { data: idea, error } = await supabase
       .from('ideas')
@@ -480,10 +485,11 @@ router.put('/:id/favorite', requireAuth, async (req, res) => {
       .single();
 
     if (error) {
-      console.error('Toggle favorite error:', error);
+      console.error('[Toggle Favorite] Update error:', error);
       return res.status(500).json({ message: 'Failed to toggle favorite' });
     }
 
+    console.log(`[Toggle Favorite] Successfully toggled favorite for idea ${req.params.id}`);
     res.json({
       id: idea.id,
       userId: idea.user_id,
@@ -497,7 +503,7 @@ router.put('/:id/favorite', requireAuth, async (req, res) => {
       isFavorite: idea.is_favorite || false,
     });
   } catch (error) {
-    console.error('Toggle favorite error:', error);
+    console.error('[Toggle Favorite] Unexpected error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
