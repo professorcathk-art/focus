@@ -207,9 +207,19 @@ export default function RecordScreen() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: `HTTP ${response.status}: ${response.statusText}`,
-        }));
+        let errorData;
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          try {
+            const text = await response.text();
+            errorData = text ? JSON.parse(text) : { message: `HTTP ${response.status}: ${response.statusText}` };
+          } catch {
+            errorData = { message: `HTTP ${response.status}: ${response.statusText}` };
+          }
+        } else {
+          const text = await response.text();
+          errorData = { message: text || `HTTP ${response.status}: ${response.statusText}` };
+        }
         throw new Error(errorData.message || "Upload failed");
       }
 
@@ -227,15 +237,17 @@ export default function RecordScreen() {
         setStatus("idle");
       } else if (idea.clusterId) {
         // Auto-assigned to existing cluster
-        await refetch();
-        await refetchClusters();
         setStatus("saved");
+        // Refetch in background - don't block on errors
+        refetch().catch(err => console.error("Error refetching ideas:", err));
+        refetchClusters().catch(err => console.error("Error refetching clusters:", err));
         setTimeout(() => setStatus("idle"), 2000);
       } else {
         // No assignment
-        await refetch();
-        await refetchClusters();
         setStatus("saved");
+        // Refetch in background - don't block on errors
+        refetch().catch(err => console.error("Error refetching ideas:", err));
+        refetchClusters().catch(err => console.error("Error refetching clusters:", err));
         setTimeout(() => setStatus("idle"), 2000);
       }
 

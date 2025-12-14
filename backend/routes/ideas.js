@@ -478,26 +478,41 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     }
 
     // Check for similar clusters synchronously (same as text input)
-    const { findBestCluster, generateClusterLabel } = require('../lib/clustering');
-    const existingClusterId = await findBestCluster(req.user.id, embedding);
+    // Wrap in try-catch to prevent crashes if clustering fails
+    let existingClusterId = null;
     let suggestedClusterLabel = null;
+    
+    try {
+      const { findBestCluster, generateClusterLabel } = require('../lib/clustering');
+      existingClusterId = await findBestCluster(req.user.id, embedding);
 
-    if (existingClusterId) {
-      // Similar cluster found - auto-assign immediately
-      console.log(`[Upload Audio] ✅ Found similar cluster: ${existingClusterId}`);
-      const { error: updateError } = await supabase
-        .from('ideas')
-        .update({ cluster_id: existingClusterId })
-        .eq('id', ideaId);
-      
-      if (!updateError) {
-        console.log(`[Upload Audio] ✅ Auto-assigned idea ${ideaId} to cluster ${existingClusterId}`);
+      if (existingClusterId) {
+        // Similar cluster found - auto-assign immediately
+        console.log(`[Upload Audio] ✅ Found similar cluster: ${existingClusterId}`);
+        const { error: updateError } = await supabase
+          .from('ideas')
+          .update({ cluster_id: existingClusterId })
+          .eq('id', ideaId);
+        
+        if (!updateError) {
+          console.log(`[Upload Audio] ✅ Auto-assigned idea ${ideaId} to cluster ${existingClusterId}`);
+        } else {
+          console.error(`[Upload Audio] ⚠️ Error updating cluster:`, updateError);
+        }
+      } else {
+        // No similar cluster found - generate suggested label
+        console.log(`[Upload Audio] ⚠️  No similar cluster found, generating suggestion...`);
+        try {
+          suggestedClusterLabel = await generateClusterLabel(transcript);
+          console.log(`[Upload Audio] 💡 Suggested category: "${suggestedClusterLabel}"`);
+        } catch (labelError) {
+          console.error(`[Upload Audio] ⚠️ Error generating cluster label:`, labelError);
+          // Continue without suggested label - idea is still saved
+        }
       }
-    } else {
-      // No similar cluster found - generate suggested label
-      console.log(`[Upload Audio] ⚠️  No similar cluster found, generating suggestion...`);
-      suggestedClusterLabel = await generateClusterLabel(transcript);
-      console.log(`[Upload Audio] 💡 Suggested category: "${suggestedClusterLabel}"`);
+    } catch (clusteringError) {
+      console.error(`[Upload Audio] ⚠️ Clustering error (non-fatal):`, clusteringError);
+      // Continue without clustering - idea is still saved successfully
     }
 
     res.json({
@@ -515,7 +530,13 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     });
   } catch (error) {
     console.error('Upload audio error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Upload audio error stack:', error.stack);
+    // Return more detailed error message
+    const errorMessage = error.message || 'Internal server error';
+    res.status(500).json({ 
+      message: `Failed to process audio: ${errorMessage}`,
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
