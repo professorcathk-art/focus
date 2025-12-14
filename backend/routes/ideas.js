@@ -292,9 +292,14 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
           // If 400 Bad Request, provide detailed error and don't fallback
           if (aimlResponse.status === 400) {
             const errorMsg = errorJson?.message || errorJson?.error?.message || errorText || 'Bad Request';
-            console.error('[Upload Audio] AIMLAPI 400 Bad Request - stopping, not falling back to OpenAI');
+            console.error('[Upload Audio] AIMLAPI 400 Bad Request - FormData parsing issue');
+            console.error('[Upload Audio] Error details:', {
+              status: aimlResponse.status,
+              error: errorText,
+              url: `${aimlBaseUrl}/nova-3/transcribe`,
+            });
             return res.status(500).json({ 
-              message: `AIMLAPI Bad Request (400) with nova-3 model. Error: ${errorMsg}. Please check: 1) AIML_API_KEY is set correctly in Vercel environment variables, 2) Audio file format is supported (MP3, WAV, M4A), 3) File size is within limits.`,
+              message: `AIMLAPI Bad Request (400) with nova-3. Error: ${errorMsg}. Please check: 1) AIML_API_KEY is set correctly in Vercel environment variables, 2) Audio file format is supported (MP3, WAV, M4A), 3) File size is within limits, 4) FormData is formatted correctly.`,
             });
           }
           
@@ -322,80 +327,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       }
     }
 
-    // Fallback to OpenAI Whisper if AIMLAPI failed or not configured
-    if (!transcript && openaiApiKey) {
-      try {
-        console.log('[Upload Audio] Using OpenAI Whisper as fallback');
-        
-        // Create FormData for OpenAI - use form-data package correctly
-        const openaiFormData = new FormData();
-        
-        // Append file buffer with proper options
-        openaiFormData.append('file', req.file.buffer, {
-          filename: req.file.originalname || 'audio.m4a',
-          contentType: req.file.mimetype || 'audio/m4a',
-        });
-        
-        // Append model and language as form fields
-        openaiFormData.append('model', 'whisper-1');
-        openaiFormData.append('language', 'en');
-
-        // Get headers from form-data (important for multipart/form-data)
-        const openaiFormHeaders = openaiFormData.getHeaders();
-        const openaiBaseUrl = 'https://api.openai.com/v1';
-        
-        console.log(`[Upload Audio] Calling OpenAI: ${openaiBaseUrl}/audio/transcriptions`);
-        console.log(`[Upload Audio] FormData headers:`, openaiFormHeaders);
-
-        const openaiResponse = await fetch(`${openaiBaseUrl}/audio/transcriptions`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openaiApiKey}`,
-            ...openaiFormHeaders,  // This includes Content-Type with boundary
-          },
-          body: openaiFormData,
-        });
-
-        if (!openaiResponse.ok) {
-          const errorText = await openaiResponse.text();
-          console.error('[Upload Audio] OpenAI transcription error:', {
-            status: openaiResponse.status,
-            statusText: openaiResponse.statusText,
-            error: errorText,
-          });
-          
-          // Provide clearer error message for common issues
-          let errorMessage = `Failed to transcribe audio: ${openaiResponse.statusText}`;
-          if (openaiResponse.status === 400) {
-            const errorDetails = errorText || 'Bad Request';
-            errorMessage = `Failed to transcribe audio: Bad Request (400). ${errorDetails}. This might be due to unsupported file format. Please check audio file format (MP3, WAV, M4A supported).`;
-          } else if (openaiResponse.status === 401) {
-            errorMessage = 'Failed to transcribe audio: Authentication failed. Please check OPENAI_API_KEY is set correctly in Vercel environment variables.';
-          } else if (openaiResponse.status === 429) {
-            errorMessage = 'Failed to transcribe audio: Rate limit exceeded. Please try again later.';
-          }
-          
-          return res.status(500).json({ 
-            message: errorMessage,
-          });
-        }
-
-        const openaiData = await openaiResponse.json();
-        console.log('[Upload Audio] OpenAI transcription response:', openaiData);
-        
-        transcript = openaiData.text || openaiData.transcript;
-        transcriptionSource = 'OpenAI Whisper';
-        
-        if (transcript) {
-          console.log(`[Upload Audio] ✅ Success with OpenAI Whisper: "${transcript.substring(0, 100)}..."`);
-        }
-      } catch (openaiError) {
-        console.error('[Upload Audio] OpenAI transcription error:', openaiError);
-        return res.status(500).json({ 
-          message: `Failed to transcribe audio: ${openaiError.message || 'Unknown error'}`,
-        });
-      }
-    }
+    // NO OpenAI fallback - only use AIMLAPI nova-3
 
     if (!transcript) {
       console.error('[Upload Audio] No transcript received from any service');
