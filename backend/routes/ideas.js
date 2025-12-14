@@ -218,76 +218,91 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         console.log('[Upload Audio] Attempting transcription with AIMLAPI Deepgram Nova-3 model');
         console.log(`[Upload Audio] File info: size=${req.file.size}, type=${req.file.mimetype}, name=${req.file.originalname}`);
         
-        // Use OpenAI SDK client configured for AIMLAPI
-        const aimlClient = require('../lib/aiml-client');
+        // Use FormData approach (more reliable than OpenAI SDK File object in Node.js)
+        const aimlFormData = new FormData();
+        aimlFormData.append('file', req.file.buffer, {
+          filename: req.file.originalname || 'audio.m4a',
+          contentType: req.file.mimetype || 'audio/m4a',
+        });
+        aimlFormData.append('model', 'nova-3');  // Deepgram Nova-3 model
+        aimlFormData.append('language', 'en');
         
-        // OpenAI SDK for Node.js accepts File, Blob, or Buffer
-        // In Node.js 18+, File is available globally, otherwise use Buffer
-        let audioFile;
+        const aimlFormHeaders = aimlFormData.getHeaders ? aimlFormData.getHeaders() : {};
+        const aimlBaseUrl = 'https://api.aimlapi.com/v1';
         
-        // Try to use File class if available (Node.js 18+)
-        if (typeof File !== 'undefined') {
-          audioFile = new File(
-            [req.file.buffer],
-            req.file.originalname || 'audio.m4a',
-            { type: req.file.mimetype || 'audio/m4a' }
-          );
-        } else {
-          // Fallback: Create File-like object compatible with OpenAI SDK
-          // The SDK accepts objects with name, type, and stream/arrayBuffer methods
-          const { Readable } = require('stream');
-          audioFile = {
-            name: req.file.originalname || 'audio.m4a',
-            type: req.file.mimetype || 'audio/m4a',
-            size: req.file.size,
-            stream: () => Readable.from(req.file.buffer),
-            arrayBuffer: async () => req.file.buffer,
-            [Symbol.toStringTag]: 'File',
-          };
-        }
+        console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/audio/transcriptions with model: nova-3`);
         
-        console.log(`[Upload Audio] Calling AIMLAPI with model: nova-3, baseURL: https://api.aimlapi.com/v1`);
-        console.log(`[Upload Audio] Audio file type: ${typeof audioFile}, name: ${audioFile.name}`);
-        
-        // Use OpenAI SDK format with AIMLAPI base URL
-        const transcription = await aimlClient.audio.transcriptions.create({
-          file: audioFile,
-          model: "nova-3",  // Deepgram Nova-3 model
-          language: "en",
+        const aimlResponse = await fetch(`${aimlBaseUrl}/audio/transcriptions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${aimlApiKey}`,
+            ...aimlFormHeaders,
+          },
+          body: aimlFormData,
         });
         
-        transcript = transcription.text;
-        transcriptionSource = 'AIMLAPI Deepgram Nova-3';
-        
-        if (transcript) {
-          console.log(`[Upload Audio] ✅ Success with AIMLAPI Deepgram Nova-3: "${transcript.substring(0, 100)}..."`);
+        if (aimlResponse.ok) {
+          const aimlData = await aimlResponse.json();
+          console.log('[Upload Audio] AIMLAPI transcription response:', aimlData);
+          
+          transcript = aimlData.text || aimlData.transcript;
+          transcriptionSource = 'AIMLAPI Deepgram Nova-3';
+          
+          if (transcript) {
+            console.log(`[Upload Audio] ✅ Success with AIMLAPI Deepgram Nova-3: "${transcript.substring(0, 100)}..."`);
+          } else {
+            throw new Error('No transcript returned from AIMLAPI');
+          }
         } else {
-          throw new Error('No transcript returned from AIMLAPI');
+          const errorText = await aimlResponse.text();
+          let errorJson = null;
+          try {
+            errorJson = JSON.parse(errorText);
+          } catch (e) {
+            // Not JSON, use as text
+          }
+          
+          console.error('[Upload Audio] AIMLAPI transcription failed:', {
+            status: aimlResponse.status,
+            statusText: aimlResponse.statusText,
+            error: errorText,
+            errorJson: errorJson,
+            url: `${aimlBaseUrl}/audio/transcriptions`,
+            model: 'nova-3',
+          });
+          
+          // If AIMLAPI fails with 401, it's an auth issue - don't try OpenAI fallback
+          if (aimlResponse.status === 401) {
+            const errorMsg = errorJson?.message || errorJson?.error?.message || errorText || 'Unauthorized';
+            return res.status(500).json({ 
+              message: `AIMLAPI authentication failed (401). Please check AIML_API_KEY is set correctly in backend/.env. Error: ${errorMsg}`,
+            });
+          }
+          
+          // If 400 Bad Request, provide detailed error
+          if (aimlResponse.status === 400) {
+            const errorMsg = errorJson?.message || errorJson?.error?.message || errorText || 'Bad Request';
+            return res.status(500).json({ 
+              message: `AIMLAPI Bad Request (400). This might be due to unsupported file format or model. Error: ${errorMsg}. Please check if AIMLAPI supports nova-3 model for audio transcription.`,
+            });
+          }
+          
+          // If 404, endpoint might not exist
+          if (aimlResponse.status === 404) {
+            return res.status(500).json({ 
+              message: 'AIMLAPI audio transcription endpoint not found (404). Please check if AIMLAPI supports audio transcription with nova-3 model.',
+            });
+          }
+          
+          // For other errors, log but continue to fallback if OpenAI key available
+          console.warn('[Upload Audio] AIMLAPI failed with status', aimlResponse.status, '- will try OpenAI fallback if available');
         }
       } catch (aimlError) {
         console.error('[Upload Audio] AIMLAPI Deepgram Nova-3 transcription error:', aimlError);
         console.error('[Upload Audio] Error details:', {
           message: aimlError.message,
-          status: aimlError.status,
-          statusText: aimlError.statusText,
-          response: aimlError.response?.data || aimlError.response?.body,
+          stack: aimlError.stack,
         });
-        
-        // If it's an authentication error, don't fallback
-        if (aimlError.status === 401 || aimlError.message?.includes('401') || aimlError.message?.includes('Unauthorized')) {
-          return res.status(500).json({ 
-            message: `AIMLAPI authentication failed (401). Please check AIML_API_KEY is set correctly in backend/.env. Error: ${aimlError.message}`,
-          });
-        }
-        
-        // If it's a bad request (400), provide more details
-        if (aimlError.status === 400 || aimlError.message?.includes('400') || aimlError.message?.includes('Bad Request')) {
-          const errorDetails = aimlError.response?.data || aimlError.message || 'Unknown error';
-          console.error('[Upload Audio] Bad Request details:', errorDetails);
-          return res.status(500).json({ 
-            message: `AIMLAPI Bad Request (400). This might be due to unsupported file format or model. Error: ${JSON.stringify(errorDetails)}`,
-          });
-        }
         
         // Log error but continue to fallback if OpenAI key available
         console.warn('[Upload Audio] AIMLAPI failed, will try OpenAI fallback if available:', aimlError.message);
