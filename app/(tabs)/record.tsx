@@ -37,12 +37,52 @@ export default function RecordScreen() {
   const [editableCategoryName, setEditableCategoryName] = useState<string>("");
   const [pendingIdeaId, setPendingIdeaId] = useState<string | null>(null);
   const [isAssigningCategory, setIsAssigningCategory] = useState(false);
+  const [isAssigningCategory, setIsAssigningCategory] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const { ideas, createIdea, refetch } = useIdeas();
   const { clusters, createCluster, assignIdeaToCluster, refetch: refetchClusters } = useClusters();
   
-  // DON'T auto-refresh on focus - reduces API calls
-  // Data is cached locally, so it's already available
-  // Users can manually refresh if needed
+  // Polling for audio notes that are still transcribing (every 30 seconds)
+  const transcriptionPollingRef = useRef<NodeJS.Timeout | null>(null);
+  
+  useEffect(() => {
+    // Check if there are any audio notes still transcribing
+    const hasTranscribingAudio = ideas.some(
+      idea => idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '') && !idea.transcriptionError
+    );
+    
+    if (hasTranscribingAudio) {
+      // Poll every 30 seconds to check for transcript updates
+      transcriptionPollingRef.current = setInterval(() => {
+        console.log('[Record Screen] Polling for transcript updates...');
+        refetch().catch(err => console.error('Error polling for transcripts:', err));
+      }, 30000); // 30 seconds
+    } else {
+      // Clear polling when no transcribing audio
+      if (transcriptionPollingRef.current) {
+        clearInterval(transcriptionPollingRef.current);
+        transcriptionPollingRef.current = null;
+      }
+    }
+    
+    return () => {
+      if (transcriptionPollingRef.current) {
+        clearInterval(transcriptionPollingRef.current);
+      }
+    };
+  }, [ideas, refetch]);
+  
+  // Pull-to-refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetch(), refetchClusters()]);
+    } catch (error) {
+      console.error('Error refreshing:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch, refetchClusters]);
   
   // Helper to get actual cluster ID (handles local category IDs)
   const getActualClusterId = (clusterId: string | null): string | null => {
@@ -519,12 +559,17 @@ export default function RecordScreen() {
           className="flex-1"
         >
         <View className="flex-1 px-6">
-          {/* Header - Clean minimalist design */}
-          <View className="pt-8 pb-4" style={{
+          {/* Header with gradient background */}
+          <View className="pt-6 pb-6" style={{
+            backgroundColor: isDark ? "#000000" : "#E8F5E9",
             marginHorizontal: -24,
             paddingHorizontal: 24,
+            paddingTop: 24,
           }}>
-            <Text className="text-base text-gray-500 dark:text-gray-400 font-medium">
+            <Text className="text-3xl font-bold text-black dark:text-white mb-2">
+              Capture Idea
+            </Text>
+            <Text className="text-base text-gray-600 dark:text-gray-400">
               Record or type your thoughts
             </Text>
           </View>
@@ -659,18 +704,19 @@ export default function RecordScreen() {
                     </Text>
                   )}
 
-                  {/* Record Button with gradient - fixed position */}
+                  {/* Record Button - Modern colorful design */}
                   <TouchableOpacity
                     onPressIn={handlePressIn}
                     onPressOut={handlePressOut}
-                    className="w-24 h-24 rounded-full items-center justify-center shadow-lg"
+                    className="w-28 h-28 rounded-full items-center justify-center"
                     style={{
-                      backgroundColor: isRecording ? "#30D158" : "#34C759",
-                      shadowColor: "#34C759",
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: 0.3,
-                      shadowRadius: 16,
-                      elevation: 8,
+                      backgroundColor: isRecording ? "#FF6B6B" : "#34C759",
+                      shadowColor: isRecording ? "#FF6B6B" : "#34C759",
+                      shadowOffset: { width: 0, height: 12 },
+                      shadowOpacity: 0.4,
+                      shadowRadius: 20,
+                      elevation: 12,
+                      transform: [{ scale: isRecording ? 1.1 : 1 }],
                     }}
                     activeOpacity={1}
                     delayPressIn={0}
@@ -678,13 +724,13 @@ export default function RecordScreen() {
                   >
                     <Ionicons
                       name={isRecording ? "stop" : "mic"}
-                      size={48}
+                      size={52}
                       color="#FFFFFF"
                     />
                   </TouchableOpacity>
 
-                  <Text className="text-sm text-gray-500 dark:text-gray-400 mt-6 text-center px-4">
-                    Hold to record • Release when done
+                  <Text className="text-sm text-gray-500 dark:text-gray-400 mt-8 text-center px-4 font-medium">
+                    {isRecording ? "Release to stop" : "Hold to record"}
                   </Text>
                 </View>
               </View>
