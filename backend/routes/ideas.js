@@ -360,7 +360,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
             error: errorText,
             errorJson: errorJson,
             url: `${aimlBaseUrl}/audio/transcriptions`,
-            model: 'nova-3',
+            model: 'deepgram-nova-3',
           });
           
           // If AIMLAPI fails with 401, it's an auth issue - don't try OpenAI fallback
