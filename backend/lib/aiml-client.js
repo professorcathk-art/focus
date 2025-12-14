@@ -1,7 +1,10 @@
 /**
  * AIMLAPI Client - Drop-in replacement for OpenAI
  * Uses the same OpenAI SDK syntax but points to AIMLAPI
- * Configured for Deepgram Nova-3 transcription
+ * Used for embeddings and chat completions (not transcription)
+ * 
+ * Note: Transcription uses direct fetch() calls to /v1/stt/create
+ * with two-step polling (see backend/routes/ideas.js)
  */
 
 const OpenAI = require('openai');
