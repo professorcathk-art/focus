@@ -195,6 +195,7 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
       .update({
         transcript: trimmedTranscript,
         embedding: embedding,
+        transcription_error: null, // Clear any previous errors
         updated_at: new Date().toISOString(),
       })
       .eq('id', ideaId)
@@ -239,8 +240,25 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
   } catch (error) {
     console.error(`[Async Transcription] ❌ Error transcribing idea ${ideaId}:`, error);
     console.error(`[Async Transcription] Error stack:`, error.stack);
-    // Update idea with error status (optional - you could add a status field)
-    // For now, just log the error
+    
+    // Store error in database so user can see what went wrong
+    const errorMessage = error.message || 'Unknown transcription error';
+    const errorDetails = `${errorMessage}${error.stack ? `\n\nStack: ${error.stack.substring(0, 500)}` : ''}`;
+    
+    try {
+      await supabase
+        .from('ideas')
+        .update({
+          transcription_error: errorDetails.substring(0, 1000), // Limit to 1000 chars
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ideaId)
+        .eq('user_id', userId);
+      
+      console.error(`[Async Transcription] Error saved to database for idea ${ideaId}`);
+    } catch (dbError) {
+      console.error(`[Async Transcription] Failed to save error to database:`, dbError);
+    }
   }
 }
 
@@ -273,7 +291,7 @@ router.get('/', requireAuth, async (req, res) => {
     // Select specific columns to avoid JSON parsing issues with vector/embedding type
     const { data: ideas, error } = await supabase
       .from('ideas')
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .eq('user_id', req.user.id)
       .order('created_at', { ascending: false });
 
@@ -309,7 +327,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     // Select specific columns to avoid JSON parsing issues with vector/embedding type
     const { data: idea, error } = await supabase
       .from('ideas')
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .eq('id', req.params.id)
       .eq('user_id', req.user.id)
       .single();
