@@ -547,8 +547,8 @@ export default function RecordScreen() {
             </View>
           </View>
 
-          {/* Voice Recording - Hidden for now (Phase 2) */}
-          {false && (
+          {/* Voice Recording */}
+          {true && (
             <>
               {/* Divider */}
               <View className="flex-row items-center mb-6">

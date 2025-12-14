@@ -212,83 +212,58 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     let transcript;
     let transcriptionSource = 'unknown';
 
-    // Try AIMLAPI nova-3 model first
+    // Use AIMLAPI with Deepgram Nova-3 model
     if (aimlApiKey) {
       try {
-        console.log('[Upload Audio] Attempting transcription with AIMLAPI nova-3 model');
+        console.log('[Upload Audio] Attempting transcription with AIMLAPI Deepgram Nova-3 model');
         
-        // Create FormData for AIMLAPI
-        const aimlFormData = new FormData();
-        aimlFormData.append('file', req.file.buffer, {
-          filename: req.file.originalname || 'audio.m4a',
-          contentType: req.file.mimetype || 'audio/m4a',
-        });
-        // Use nova-3 for speech-to-text transcription
-        aimlFormData.append('model', 'nova-3');
-        aimlFormData.append('language', 'en');
-
-        const aimlFormHeaders = aimlFormData.getHeaders ? aimlFormData.getHeaders() : {};
-        const aimlBaseUrl = process.env.AIML_API_BASE_URL || 'https://api.aimlapi.com/v1';
+        // Use OpenAI SDK client configured for AIMLAPI
+        const aimlClient = require('../lib/aiml-client');
         
-        console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/audio/transcriptions`);
-
-        const aimlResponse = await fetch(`${aimlBaseUrl}/audio/transcriptions`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${aimlApiKey}`,
-            ...aimlFormHeaders,
-          },
-          body: aimlFormData,
+        // Create a File-like object from buffer (Node.js compatible)
+        // OpenAI SDK accepts File, Blob, or ReadableStream
+        const { Readable } = require('stream');
+        const audioStream = Readable.from(req.file.buffer);
+        
+        // Create File-like object for OpenAI SDK
+        // In Node.js, we need to use a File polyfill or pass the buffer directly
+        const audioFile = {
+          name: req.file.originalname || 'audio.m4a',
+          type: req.file.mimetype || 'audio/m4a',
+          stream: () => audioStream,
+          arrayBuffer: async () => req.file.buffer,
+          size: req.file.size,
+        };
+        
+        console.log(`[Upload Audio] Calling AIMLAPI with model: nova-3, baseURL: https://api.aimlapi.com/v1`);
+        
+        // Use OpenAI SDK format with AIMLAPI base URL
+        const transcription = await aimlClient.audio.transcriptions.create({
+          file: audioFile,
+          model: "nova-3",  // Deepgram Nova-3 model
+          language: "en",
         });
-
-        if (aimlResponse.ok) {
-          const aimlData = await aimlResponse.json();
-          console.log('[Upload Audio] AIMLAPI transcription response:', aimlData);
-          
-          transcript = aimlData.text || aimlData.transcript;
-          transcriptionSource = 'AIMLAPI nova-3';
-          
-          if (transcript) {
-            console.log(`[Upload Audio] ✅ Success with AIMLAPI nova-3: "${transcript.substring(0, 100)}..."`);
-          }
+        
+        transcript = transcription.text;
+        transcriptionSource = 'AIMLAPI Deepgram Nova-3';
+        
+        if (transcript) {
+          console.log(`[Upload Audio] ✅ Success with AIMLAPI Deepgram Nova-3: "${transcript.substring(0, 100)}..."`);
         } else {
-          const errorText = await aimlResponse.text();
-          let errorJson = null;
-          try {
-            errorJson = JSON.parse(errorText);
-          } catch (e) {
-            // Not JSON, use as text
-          }
-          
-          console.error('[Upload Audio] AIMLAPI transcription failed:', {
-            status: aimlResponse.status,
-            statusText: aimlResponse.statusText,
-            error: errorText,
-            errorJson: errorJson,
-            url: `${aimlBaseUrl}/audio/transcriptions`,
-            model: 'nova-3',
-          });
-          
-          // If AIMLAPI fails with 401, it's an auth issue - don't try OpenAI fallback
-          if (aimlResponse.status === 401) {
-            const errorMsg = errorJson?.message || errorJson?.error?.message || errorText || 'Unauthorized';
-            return res.status(500).json({ 
-              message: `AIMLAPI authentication failed (401). Please check AIML_API_KEY is set correctly in backend/.env. Error: ${errorMsg}`,
-            });
-          }
-          
-          // If 404, endpoint might not exist
-          if (aimlResponse.status === 404) {
-            return res.status(500).json({ 
-              message: 'AIMLAPI audio transcription endpoint not found (404). Please check if AIMLAPI supports audio transcription with nova-3 model.',
-            });
-          }
-          
-          // For other errors, log but continue to fallback if OpenAI key available
-          console.warn('[Upload Audio] AIMLAPI failed with status', aimlResponse.status, '- will try OpenAI fallback if available');
+          throw new Error('No transcript returned from AIMLAPI');
         }
       } catch (aimlError) {
-        console.warn('[Upload Audio] AIMLAPI transcription error, will try OpenAI fallback:', aimlError.message);
+        console.error('[Upload Audio] AIMLAPI Deepgram Nova-3 transcription error:', aimlError);
+        
+        // If it's an authentication error, don't fallback
+        if (aimlError.status === 401 || aimlError.message?.includes('401') || aimlError.message?.includes('Unauthorized')) {
+          return res.status(500).json({ 
+            message: `AIMLAPI authentication failed (401). Please check AIML_API_KEY is set correctly in backend/.env. Error: ${aimlError.message}`,
+          });
+        }
+        
+        // Log error but continue to fallback if OpenAI key available
+        console.warn('[Upload Audio] AIMLAPI failed, will try OpenAI fallback if available:', aimlError.message);
       }
     }
 
@@ -453,8 +428,10 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
 /**
  * Toggle favorite status (must come before /:id route)
  * Route: PUT /api/ideas/:id/favorite
+ * IMPORTANT: This route MUST be defined before router.put('/:id') to work correctly
  */
 router.put('/:id/favorite', requireAuth, async (req, res) => {
+  console.log(`[FAVORITE ROUTE] PUT /:id/favorite hit with id: ${req.params.id}`);
   try {
     console.log(`[Toggle Favorite] Request received for idea ${req.params.id}`);
     
