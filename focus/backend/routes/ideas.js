@@ -300,7 +300,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     // Use AIMLAPI with Deepgram Nova-2 model
     if (aimlApiKey) {
       try {
-        console.log('[Upload Audio] Attempting transcription with AIMLAPI Nova-3 model (via AIMLAPI)');
+        console.log('[Upload Audio] Attempting transcription with AIMLAPI Nova-2 model (via AIMLAPI)');
         console.log(`[Upload Audio] File info: size=${req.file.size}, type=${req.file.mimetype}, name=${req.file.originalname}`);
         
         // Use AIMLAPI STT endpoint with multipart/form-data
