@@ -11,13 +11,48 @@ const { requireAuth } = require('../middleware/auth');
 const { assignToCluster, findBestCluster, generateClusterLabel } = require('../lib/clustering');
 const FormData = require('form-data');
 
+// Import Vercel's waitUntil for background tasks
+let waitUntil;
+try {
+  waitUntil = require('@vercel/functions').waitUntil;
+} catch (e) {
+  // Fallback if @vercel/functions is not available (local dev)
+  waitUntil = (promise) => {
+    promise.catch(err => console.error('[waitUntil] Background task error:', err));
+  };
+}
+
 /**
  * Async transcription function - runs in background
  * Updates idea with transcript and embedding when complete
  */
 async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, userId) {
+  // Add initial validation and logging
+  console.log(`[Async Transcription] 🎙️ Starting transcription for idea: ${ideaId}`);
+  console.log(`[Async Transcription] Parameters:`, {
+    ideaId,
+    audioBufferSize: audioBuffer?.length || 0,
+    mimeType: mimeType || 'unknown',
+    aimlApiKeyPresent: !!aimlApiKey,
+    userId,
+  });
+  
+  if (!audioBuffer || audioBuffer.length === 0) {
+    const errorMsg = 'Audio buffer is empty or missing';
+    console.error(`[Async Transcription] ❌ ${errorMsg}`);
+    await supabase
+      .from('ideas')
+      .update({
+        transcription_error: errorMsg,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', ideaId)
+      .eq('user_id', userId)
+      .catch(err => console.error(`[Async Transcription] Failed to save error:`, err));
+    return;
+  }
+  
   try {
-    console.log(`[Async Transcription] 🎙️ Starting transcription for idea: ${ideaId}`);
     console.log(`[Async Transcription] Audio buffer size: ${audioBuffer.length} bytes, mimeType: ${mimeType}`);
     console.log(`[Async Transcription] AIMLAPI key present: ${!!aimlApiKey}`);
     
