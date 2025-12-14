@@ -11,6 +11,14 @@ const { requireAuth } = require('../middleware/auth');
 const { assignToCluster, findBestCluster, generateClusterLabel } = require('../lib/clustering');
 const FormData = require('form-data');
 
+// Debug middleware to log all PUT requests
+router.use((req, res, next) => {
+  if (req.method === 'PUT') {
+    console.log(`[ROUTER DEBUG] PUT request: path=${req.path}, originalUrl=${req.originalUrl}, baseUrl=${req.baseUrl}`);
+  }
+  next();
+});
+
 // Configure multer for audio uploads
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -29,9 +37,10 @@ const upload = multer({
  */
 router.get('/', requireAuth, async (req, res) => {
   try {
+    // Select specific columns to avoid JSON parsing issues with vector/embedding type
     const { data: ideas, error } = await supabase
       .from('ideas')
-      .select('*')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .eq('user_id', req.user.id)
       .order('created_at', { ascending: false });
 
@@ -49,7 +58,7 @@ router.get('/', requireAuth, async (req, res) => {
       createdAt: idea.created_at,
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
-      embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
     }));
 
     res.json(formattedIdeas);
@@ -64,9 +73,10 @@ router.get('/', requireAuth, async (req, res) => {
  */
 router.get('/:id', requireAuth, async (req, res) => {
   try {
+    // Select specific columns to avoid JSON parsing issues with vector/embedding type
     const { data: idea, error } = await supabase
       .from('ideas')
-      .select('*')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .eq('id', req.params.id)
       .eq('user_id', req.user.id)
       .single();
@@ -84,10 +94,88 @@ router.get('/:id', requireAuth, async (req, res) => {
       createdAt: idea.created_at,
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
-      embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
     });
   } catch (error) {
     console.error('Get idea error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
+ * Toggle favorite status (must come before /:id route)
+ * Route: PUT /api/ideas/:id/favorite
+ * IMPORTANT: This route MUST be defined before router.put('/:id') to work correctly
+ * This is a simple boolean toggle - no AI needed
+ */
+router.put('/:id/favorite', requireAuth, async (req, res) => {
+  // Double-check this is a favorite request
+  if (!req.path.endsWith('/favorite') && !req.originalUrl.includes('/favorite')) {
+    console.error(`[FAVORITE ROUTE] ⚠️ Path doesn't end with /favorite: ${req.path}`);
+    return res.status(404).json({ message: 'Route not found' });
+  }
+  
+  const ideaId = req.params.id;
+  console.log(`[FAVORITE ROUTE] ✅ PUT /:id/favorite MATCHED with id: ${ideaId}`);
+  console.log(`[FAVORITE ROUTE] Request method: ${req.method}, path: ${req.path}, originalUrl: ${req.originalUrl}, params:`, req.params);
+  console.log(`[FAVORITE ROUTE] Full URL: ${req.protocol}://${req.get('host')}${req.originalUrl}`);
+  
+  try {
+    console.log(`[Toggle Favorite] Request received for idea ${ideaId}, user: ${req.user.id}`);
+    
+    // Check ownership and get current favorite status
+    const { data: existingIdea, error: checkError } = await supabase
+      .from('ideas')
+      .select('is_favorite')
+      .eq('id', ideaId)
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (checkError || !existingIdea) {
+      console.error('[Toggle Favorite] Idea not found or error:', checkError);
+      return res.status(404).json({ message: 'Idea not found' });
+    }
+
+    const newFavoriteStatus = !existingIdea.is_favorite;
+    console.log(`[Toggle Favorite] Toggling favorite from ${existingIdea.is_favorite} to ${newFavoriteStatus}`);
+
+    // Update favorite status (simple boolean toggle)
+    const { data: idea, error } = await supabase
+      .from('ideas')
+      .update({ 
+        is_favorite: newFavoriteStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', ideaId)
+      .eq('user_id', req.user.id)  // Double-check ownership
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .single();
+
+    if (error) {
+      console.error('[Toggle Favorite] Update error:', error);
+      return res.status(500).json({ message: 'Failed to toggle favorite' });
+    }
+
+    if (!idea) {
+      console.error('[Toggle Favorite] No idea returned after update');
+      return res.status(404).json({ message: 'Idea not found' });
+    }
+
+    console.log(`[Toggle Favorite] ✅ Successfully toggled favorite for idea ${ideaId} to ${newFavoriteStatus}`);
+    res.json({
+      id: idea.id,
+      userId: idea.user_id,
+      transcript: idea.transcript,
+      audioUrl: idea.audio_url,
+      duration: idea.duration,
+      createdAt: idea.created_at,
+      updatedAt: idea.updated_at,
+      clusterId: idea.cluster_id,
+      isFavorite: idea.is_favorite || false,
+    });
+  } catch (error) {
+    console.error('[Toggle Favorite] Unexpected error:', error);
+    console.error('[Toggle Favorite] Error stack:', error.stack);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -131,7 +219,7 @@ router.post('/', requireAuth, async (req, res) => {
         created_at: now,
         updated_at: now,
       })
-      .select('*')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .single();
 
     if (error) {
@@ -176,6 +264,7 @@ router.post('/', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id || existingClusterId || null,
       embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
       suggestedClusterLabel: suggestedClusterLabel, // Include suggested label if no match found
     });
   } catch (error) {
@@ -193,80 +282,156 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       return res.status(400).json({ message: 'Audio file is required' });
     }
 
-    // AIMLAPI doesn't support Whisper - use OpenAI directly for transcription
-    // But keep using AIMLAPI for embeddings and chat
-    const openaiApiKey = process.env.OPENAI_API_KEY || process.env.AIML_API_KEY;
+    // Use AIMLAPI nova-3 model ONLY - no OpenAI fallback
+    const aimlApiKey = process.env.AIML_API_KEY;
 
-    if (!openaiApiKey) {
-      console.error('[Upload Audio] No API key found. Set OPENAI_API_KEY or AIML_API_KEY');
+    if (!aimlApiKey) {
+      console.error('[Upload Audio] AIML_API_KEY not found. Set AIML_API_KEY in environment variables');
       return res.status(500).json({ 
-        message: 'Transcription service not configured. Please set OPENAI_API_KEY in backend/.env' 
+        message: 'Transcription service not configured. Please set AIML_API_KEY in Vercel environment variables' 
       });
     }
 
-    console.log(`[Upload Audio] Using OpenAI for Whisper transcription (AIMLAPI doesn't support it)`);
     console.log(`[Upload Audio] File size: ${req.file.size} bytes, type: ${req.file.mimetype}`);
 
-    // Use OpenAI directly for Whisper transcription
     let transcript;
-    try {
-      // Create FormData for OpenAI
-      const formData = new FormData();
-      formData.append('file', req.file.buffer, {
-        filename: req.file.originalname || 'audio.m4a',
-        contentType: req.file.mimetype || 'audio/m4a',
-      });
-      formData.append('model', 'whisper-1');
-      formData.append('language', 'en');
+    let transcriptionSource = 'unknown';
 
-      const formHeaders = formData.getHeaders ? formData.getHeaders() : {};
-      const openaiBaseUrl = 'https://api.openai.com/v1';
-      
-      console.log(`[Upload Audio] Calling OpenAI: ${openaiBaseUrl}/audio/transcriptions`);
-
-      // Use OpenAI directly for Whisper transcription
-      const transcriptionResponse = await fetch(`${openaiBaseUrl}/audio/transcriptions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openaiApiKey}`,
-          ...formHeaders,
-        },
-        body: formData,
-      });
-
-      if (!transcriptionResponse.ok) {
-        const errorText = await transcriptionResponse.text();
-        console.error('[Upload Audio] OpenAI transcription error:', {
-          status: transcriptionResponse.status,
-          statusText: transcriptionResponse.statusText,
-          error: errorText,
+    // Use AIMLAPI with Deepgram Nova-3 model
+    if (aimlApiKey) {
+      try {
+        console.log('[Upload Audio] Attempting transcription with AIMLAPI Nova-3 model (via AIMLAPI)');
+        console.log(`[Upload Audio] File info: size=${req.file.size}, type=${req.file.mimetype}, name=${req.file.originalname}`);
+        
+        // Use AIMLAPI nova-3 specific endpoint (not OpenAI-compatible endpoint)
+        const aimlFormData = new FormData();
+        
+        // Append file buffer correctly - AIMLAPI expects the file as a buffer
+        aimlFormData.append('file', req.file.buffer, {
+          filename: req.file.originalname || 'recording.m4a',
+          contentType: req.file.mimetype || 'audio/m4a',
         });
+        
+        // AIMLAPI nova-3 endpoint uses different form fields (no 'model' field)
+        aimlFormData.append('language', 'en-US'); // Use en-US format
+        // Optional: append format if we can detect it
+        const fileExtension = req.file.originalname?.split('.').pop()?.toLowerCase() || 'm4a';
+        if (fileExtension === 'm4a') {
+          aimlFormData.append('format', 'm4a');
+        }
+        
+        const aimlFormHeaders = aimlFormData.getHeaders ? aimlFormData.getHeaders() : {};
+        // AIMLAPI nova-3 uses a different endpoint: /nova-3/transcribe (not /v1/audio/transcriptions)
+        const aimlBaseUrl = 'https://api.aimlapi.com';
+        
+        console.log(`[Upload Audio] Calling AIMLAPI nova-3 endpoint: ${aimlBaseUrl}/nova-3/transcribe`);
+        console.log(`[Upload Audio] FormData headers:`, aimlFormHeaders);
+        
+        const aimlResponse = await fetch(`${aimlBaseUrl}/nova-3/transcribe`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${aimlApiKey}`,
+            ...aimlFormHeaders,  // Includes Content-Type with boundary
+          },
+          body: aimlFormData,
+        });
+        
+        if (aimlResponse.ok) {
+          const aimlData = await aimlResponse.json();
+          console.log('[Upload Audio] AIMLAPI nova-3 transcription response:', aimlData);
+          
+          // AIMLAPI nova-3 returns 'transcription' field (not 'text' or 'transcript')
+          transcript = aimlData.transcription || aimlData.text || aimlData.transcript;
+          transcriptionSource = 'AIMLAPI Deepgram Nova-3';
+          
+          if (transcript) {
+            console.log(`[Upload Audio] ✅ Success with AIMLAPI Deepgram Nova-3: "${transcript.substring(0, 100)}..."`);
+          } else {
+            throw new Error('No transcript returned from AIMLAPI nova-3');
+          }
+        } else {
+          const errorText = await aimlResponse.text();
+          let errorJson = null;
+          try {
+            errorJson = JSON.parse(errorText);
+          } catch (e) {
+            // Not JSON, use as text
+          }
+          
+          console.error('[Upload Audio] AIMLAPI transcription failed:', {
+            status: aimlResponse.status,
+            statusText: aimlResponse.statusText,
+            error: errorText,
+            errorJson: errorJson,
+            url: `${aimlBaseUrl}/audio/transcriptions`,
+            model: 'nova-3',
+          });
+          
+          // If AIMLAPI fails with 401, it's an auth issue - don't try OpenAI fallback
+          if (aimlResponse.status === 401) {
+            const errorMsg = errorJson?.message || errorJson?.error?.message || errorText || 'Unauthorized';
+            return res.status(500).json({ 
+              message: `AIMLAPI authentication failed (401). Please check AIML_API_KEY is set correctly in backend/.env. Error: ${errorMsg}`,
+            });
+          }
+          
+          // If 400 Bad Request, provide detailed error and don't fallback
+          if (aimlResponse.status === 400) {
+            const errorMsg = errorJson?.message || errorJson?.error?.message || errorText || 'Bad Request';
+            console.error('[Upload Audio] AIMLAPI 400 Bad Request - FormData parsing issue');
+            console.error('[Upload Audio] Error details:', {
+              status: aimlResponse.status,
+              error: errorText,
+              url: `${aimlBaseUrl}/nova-3/transcribe`,
+            });
+            return res.status(500).json({ 
+              message: `AIMLAPI Bad Request (400) with nova-3. Error: ${errorMsg}. Please check: 1) AIML_API_KEY is set correctly in Vercel environment variables, 2) Audio file format is supported (MP3, WAV, M4A), 3) File size is within limits, 4) FormData is formatted correctly.`,
+            });
+          }
+          
+          // If 404, endpoint might not exist
+          if (aimlResponse.status === 404) {
+            return res.status(500).json({ 
+              message: 'AIMLAPI audio transcription endpoint not found (404). Please check if AIMLAPI supports audio transcription endpoint.',
+            });
+          }
+          
+          // For other errors, fail immediately - no fallback
+          console.error('[Upload Audio] AIMLAPI failed with status', aimlResponse.status);
+        }
+      } catch (aimlError) {
+        console.error('[Upload Audio] AIMLAPI Nova-3 transcription error:', aimlError);
+        console.error('[Upload Audio] Error details:', {
+          message: aimlError.message,
+          stack: aimlError.stack,
+        });
+        
+        // Fail immediately - no fallback
         return res.status(500).json({ 
-          message: `Failed to transcribe audio: ${transcriptionResponse.statusText}. Make sure OPENAI_API_KEY is set correctly.`,
+          message: `AIMLAPI Nova-3 transcription failed: ${aimlError.message || 'Unknown error'}`,
         });
       }
+    }
 
-      const transcriptionData = await transcriptionResponse.json();
-      console.log('[Upload Audio] Transcription response:', transcriptionData);
+    // NO OpenAI fallback - only use AIMLAPI nova-3
+
+    if (!transcript) {
+      console.error('[Upload Audio] No transcript received from any service');
+      let errorMessage = 'Transcription failed: AIMLAPI (nova-3) transcription failed.';
       
-      transcript = transcriptionData.text || transcriptionData.transcript;
-      
-      if (!transcript) {
-        console.error('[Upload Audio] No transcript in response:', transcriptionData);
-        return res.status(500).json({ message: 'Transcription returned empty result' });
+      // Provide helpful guidance
+      if (!aimlApiKey) {
+        errorMessage = 'Transcription failed: AIML_API_KEY not configured. Please set AIML_API_KEY in Vercel environment variables.';
+      } else {
+        errorMessage = 'Transcription failed: AIMLAPI (nova-3) transcription failed. Please check: 1) AIML_API_KEY is valid in Vercel environment variables, 2) Audio file format is supported (MP3, WAV, M4A), 3) File size is within limits.';
       }
       
-      console.log(`[Upload Audio] Transcript received: "${transcript.substring(0, 100)}..."`);
-    } catch (transcriptionError) {
-      console.error('[Upload Audio] Transcription error:', transcriptionError);
-      console.error('[Upload Audio] Error details:', {
-        message: transcriptionError.message,
-        stack: transcriptionError.stack,
-      });
       return res.status(500).json({ 
-        message: `Failed to transcribe audio: ${transcriptionError.message || 'Unknown error'}`,
+        message: errorMessage,
       });
     }
+    
+    console.log(`[Upload Audio] ✅ Final transcript (${transcriptionSource}): "${transcript.substring(0, 100)}..."`);
 
     // Generate embedding
     const embeddingResponse = await aimlClient.embeddings.create({
@@ -292,7 +457,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         created_at: now,
         updated_at: now,
       })
-      .select('*')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .single();
 
     if (error) {
@@ -333,6 +498,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id || existingClusterId || null,
       embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
       suggestedClusterLabel: suggestedClusterLabel, // Include suggested label if no match found
     });
   } catch (error) {
@@ -345,8 +511,14 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
  * Update idea
  */
 router.put('/:id', requireAuth, async (req, res) => {
+  // Log to ensure this route isn't catching favorite requests
+  if (req.path.includes('favorite')) {
+    console.error(`[UPDATE IDEA ROUTE] ⚠️ WARNING: /:id route caught a favorite request! Path: ${req.path}`);
+  }
+  console.log(`[UPDATE IDEA ROUTE] PUT /:id hit with id: ${req.params.id}, path: ${req.path}`);
+  
   try {
-    const { transcript } = req.body;
+    const { transcript, clusterId } = req.body;
 
     // Check ownership
     const { data: existingIdea } = await supabase
@@ -363,7 +535,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     // Update transcript and regenerate embedding if changed
     let updateData = { updated_at: new Date().toISOString() };
     
-    if (transcript) {
+    if (transcript !== undefined) {
       updateData.transcript = transcript.trim();
       
       // Regenerate embedding
@@ -373,12 +545,16 @@ router.put('/:id', requireAuth, async (req, res) => {
       });
       updateData.embedding = embeddingResponse.data[0].embedding;
     }
+    
+    if (clusterId !== undefined) {
+      updateData.cluster_id = clusterId || null;
+    }
 
     const { data: idea, error } = await supabase
       .from('ideas')
       .update(updateData)
       .eq('id', req.params.id)
-      .select('*')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
       .single();
 
     if (error) {
@@ -395,7 +571,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       createdAt: idea.created_at,
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
-      embedding: idea.embedding,
+      isFavorite: idea.is_favorite || false,
     });
   } catch (error) {
     console.error('Update idea error:', error);
