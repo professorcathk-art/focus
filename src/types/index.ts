@@ -22,6 +22,7 @@ export interface Idea {
   embedding?: number[]; // Vector embedding for semantic search
   suggestedClusterLabel?: string; // AI-suggested category label
   isFavorite?: boolean; // Favorite status
+  transcriptionError?: string | null; // Error message if transcription failed
 }
 
 export interface Cluster {

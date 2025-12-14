@@ -439,7 +439,22 @@ export default function IdeaDetailScreen() {
 
         {/* Transcript */}
         <View className="mb-6">
-          {idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '') ? (
+          {idea.transcriptionError ? (
+            <View className="py-6 px-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
+              <View className="flex-row items-center mb-2">
+                <Ionicons name="alert-circle" size={20} color="#EF4444" />
+                <Text className="text-base font-semibold text-red-600 dark:text-red-400 ml-2">
+                  Transcription Failed
+                </Text>
+              </View>
+              <Text className="text-sm text-red-700 dark:text-red-300 mt-2">
+                {idea.transcriptionError.split('\n')[0]} {/* Show first line of error */}
+              </Text>
+              <Text className="text-xs text-red-600 dark:text-red-400 mt-2 italic">
+                Check Vercel logs for details. Idea ID: {idea.id}
+              </Text>
+            </View>
+          ) : idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '') ? (
             <View className="py-8 items-center">
               <ActivityIndicator size="large" color="#34C759" />
               <Text className="text-base text-gray-500 dark:text-gray-400 mt-4">
@@ -447,6 +462,9 @@ export default function IdeaDetailScreen() {
               </Text>
               <Text className="text-sm text-gray-400 dark:text-gray-500 mt-2">
                 This may take a few moments
+              </Text>
+              <Text className="text-xs text-gray-400 dark:text-gray-500 mt-4">
+                Check Vercel logs if this takes too long
               </Text>
             </View>
           ) : idea.transcript && idea.transcript.trim() ? (

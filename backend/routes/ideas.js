@@ -589,7 +589,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         created_at: now,
         updated_at: now,
       })
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .single();
 
     if (error) {
@@ -616,6 +616,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       clusterId: idea.cluster_id || null,
       isFavorite: idea.is_favorite || false,
       suggestedClusterLabel: null, // Will be set by async transcription if needed
+      transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
     console.error('Upload audio error:', error);
