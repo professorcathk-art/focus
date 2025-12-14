@@ -217,26 +217,31 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         console.log('[Upload Audio] Attempting transcription with AIMLAPI Nova-3 model (via AIMLAPI)');
         console.log(`[Upload Audio] File info: size=${req.file.size}, type=${req.file.mimetype}, name=${req.file.originalname}`);
         
-        // Use FormData approach for AIMLAPI with Nova-3 model
+        // Use AIMLAPI nova-3 specific endpoint (not OpenAI-compatible endpoint)
         const aimlFormData = new FormData();
         
-        // Append file buffer correctly
+        // Append file buffer correctly - AIMLAPI expects the file as a buffer
         aimlFormData.append('file', req.file.buffer, {
           filename: req.file.originalname || 'recording.m4a',
           contentType: req.file.mimetype || 'audio/m4a',
         });
         
-        // Use nova-3 model via AIMLAPI (Deepgram Nova-3)
-        aimlFormData.append('model', 'nova-3');
-        aimlFormData.append('language', 'en');
+        // AIMLAPI nova-3 endpoint uses different form fields (no 'model' field)
+        aimlFormData.append('language', 'en-US'); // Use en-US format
+        // Optional: append format if we can detect it
+        const fileExtension = req.file.originalname?.split('.').pop()?.toLowerCase() || 'm4a';
+        if (fileExtension === 'm4a') {
+          aimlFormData.append('format', 'm4a');
+        }
         
         const aimlFormHeaders = aimlFormData.getHeaders ? aimlFormData.getHeaders() : {};
-        const aimlBaseUrl = 'https://api.aimlapi.com/v1';
+        // AIMLAPI nova-3 uses a different endpoint: /nova-3/transcribe (not /v1/audio/transcriptions)
+        const aimlBaseUrl = 'https://api.aimlapi.com';
         
-        console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/audio/transcriptions with model: nova-3 (via AIMLAPI)`);
+        console.log(`[Upload Audio] Calling AIMLAPI nova-3 endpoint: ${aimlBaseUrl}/nova-3/transcribe`);
         console.log(`[Upload Audio] FormData headers:`, aimlFormHeaders);
         
-        const aimlResponse = await fetch(`${aimlBaseUrl}/audio/transcriptions`, {
+        const aimlResponse = await fetch(`${aimlBaseUrl}/nova-3/transcribe`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${aimlApiKey}`,
@@ -247,15 +252,16 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         
         if (aimlResponse.ok) {
           const aimlData = await aimlResponse.json();
-          console.log('[Upload Audio] AIMLAPI transcription response:', aimlData);
+          console.log('[Upload Audio] AIMLAPI nova-3 transcription response:', aimlData);
           
-          transcript = aimlData.text || aimlData.transcript;
+          // AIMLAPI nova-3 returns 'transcription' field (not 'text' or 'transcript')
+          transcript = aimlData.transcription || aimlData.text || aimlData.transcript;
           transcriptionSource = 'AIMLAPI Deepgram Nova-3';
           
           if (transcript) {
             console.log(`[Upload Audio] ✅ Success with AIMLAPI Deepgram Nova-3: "${transcript.substring(0, 100)}..."`);
           } else {
-            throw new Error('No transcript returned from AIMLAPI');
+            throw new Error('No transcript returned from AIMLAPI nova-3');
           }
         } else {
           const errorText = await aimlResponse.text();
