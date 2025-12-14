@@ -676,7 +676,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       .from('ideas')
       .update(updateData)
       .eq('id', req.params.id)
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .single();
 
     if (error) {
@@ -694,6 +694,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       isFavorite: idea.is_favorite || false,
+      transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
     console.error('Update idea error:', error);
