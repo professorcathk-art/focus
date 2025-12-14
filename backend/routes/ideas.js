@@ -639,9 +639,22 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     console.log(`[Upload Audio] ✅ Idea saved immediately with audio URL: ${ideaId}`);
 
     // STEP 3: Start async transcription (don't wait for it)
+    // CRITICAL: Use waitUntil to ensure transcription continues after response is sent
+    // Vercel serverless functions terminate after response, so we need waitUntil
     console.log(`[Upload Audio] ⏳ Starting async transcription for idea: ${ideaId}`);
-    transcribeAudioAsync(ideaId, req.file.buffer, req.file.mimetype, aimlApiKey, req.user.id)
-      .catch(err => console.error(`[Upload Audio] ⚠️ Async transcription failed for ${ideaId}:`, err));
+    console.log(`[Upload Audio] Audio buffer available: ${!!req.file.buffer}, size: ${req.file.buffer?.length || 0} bytes`);
+    console.log(`[Upload Audio] AIMLAPI key available: ${!!aimlApiKey}`);
+    
+    waitUntil(
+      transcribeAudioAsync(ideaId, req.file.buffer, req.file.mimetype, aimlApiKey, req.user.id)
+        .then(() => {
+          console.log(`[Upload Audio] ✅ Async transcription completed for idea: ${ideaId}`);
+        })
+        .catch(err => {
+          console.error(`[Upload Audio] ⚠️ Async transcription failed for ${ideaId}:`, err);
+          console.error(`[Upload Audio] Error stack:`, err.stack);
+        })
+    );
 
     // Return success immediately - transcription happens in background
     res.json({
