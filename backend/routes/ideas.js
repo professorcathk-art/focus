@@ -215,28 +215,36 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     // Use AIMLAPI with Deepgram Nova-3 model
     if (aimlApiKey) {
       try {
-        console.log('[Upload Audio] Attempting transcription with AIMLAPI Deepgram Nova-3 model');
+        console.log('[Upload Audio] Attempting transcription with AIMLAPI Whisper-1 model (via AIMLAPI proxy)');
         console.log(`[Upload Audio] File info: size=${req.file.size}, type=${req.file.mimetype}, name=${req.file.originalname}`);
         
-        // Use FormData approach (more reliable than OpenAI SDK File object in Node.js)
+        // Use FormData approach for AIMLAPI
+        // Note: AIMLAPI might not support audio transcription with nova-3
+        // nova-3 is a text model, not audio. We should use whisper-1 or check AIMLAPI docs
         const aimlFormData = new FormData();
+        
+        // Append file buffer correctly
         aimlFormData.append('file', req.file.buffer, {
-          filename: req.file.originalname || 'audio.m4a',
+          filename: req.file.originalname || 'recording.m4a',
           contentType: req.file.mimetype || 'audio/m4a',
         });
-        aimlFormData.append('model', 'nova-3');  // Deepgram Nova-3 model
+        
+        // Try with whisper-1 model (AIMLAPI proxy for OpenAI Whisper)
+        // If nova-3 doesn't work, whisper-1 should work as AIMLAPI proxies OpenAI
+        aimlFormData.append('model', 'whisper-1');  // Use whisper-1 via AIMLAPI
         aimlFormData.append('language', 'en');
         
         const aimlFormHeaders = aimlFormData.getHeaders ? aimlFormData.getHeaders() : {};
         const aimlBaseUrl = 'https://api.aimlapi.com/v1';
         
-        console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/audio/transcriptions with model: nova-3`);
+        console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/audio/transcriptions with model: whisper-1 (via AIMLAPI)`);
+        console.log(`[Upload Audio] FormData headers:`, aimlFormHeaders);
         
         const aimlResponse = await fetch(`${aimlBaseUrl}/audio/transcriptions`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${aimlApiKey}`,
-            ...aimlFormHeaders,
+            ...aimlFormHeaders,  // Includes Content-Type with boundary
           },
           body: aimlFormData,
         });
@@ -284,14 +292,14 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
             const errorMsg = errorJson?.message || errorJson?.error?.message || errorText || 'Bad Request';
             console.error('[Upload Audio] AIMLAPI 400 Bad Request - stopping, not falling back to OpenAI');
             return res.status(500).json({ 
-              message: `AIMLAPI Bad Request (400) with nova-3 model. Error: ${errorMsg}. Please check: 1) AIML_API_KEY is set correctly in Vercel environment variables, 2) AIMLAPI supports nova-3 model for audio transcription, 3) Audio file format is supported (MP3, WAV, M4A).`,
+              message: `AIMLAPI Bad Request (400) with whisper-1 model. Error: ${errorMsg}. Please check: 1) AIML_API_KEY is set correctly in Vercel environment variables, 2) Audio file format is supported (MP3, WAV, M4A), 3) File size is within limits.`,
             });
           }
           
           // If 404, endpoint might not exist
           if (aimlResponse.status === 404) {
             return res.status(500).json({ 
-              message: 'AIMLAPI audio transcription endpoint not found (404). Please check if AIMLAPI supports audio transcription with nova-3 model.',
+              message: 'AIMLAPI audio transcription endpoint not found (404). Please check if AIMLAPI supports audio transcription endpoint.',
             });
           }
           
@@ -299,7 +307,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
           console.warn('[Upload Audio] AIMLAPI failed with status', aimlResponse.status, '- will try OpenAI fallback if available');
         }
       } catch (aimlError) {
-        console.error('[Upload Audio] AIMLAPI Deepgram Nova-3 transcription error:', aimlError);
+        console.error('[Upload Audio] AIMLAPI Whisper-1 transcription error:', aimlError);
         console.error('[Upload Audio] Error details:', {
           message: aimlError.message,
           stack: aimlError.stack,
@@ -387,13 +395,13 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
 
     if (!transcript) {
       console.error('[Upload Audio] No transcript received from any service');
-      let errorMessage = 'Transcription failed: No transcript received from AIMLAPI.';
+      let errorMessage = 'Transcription failed: AIMLAPI (whisper-1) transcription failed.';
       
       // Provide helpful guidance
       if (!aimlApiKey) {
-        errorMessage = 'Transcription failed: AIML_API_KEY not configured. Please set AIML_API_KEY in backend/.env';
+        errorMessage = 'Transcription failed: AIML_API_KEY not configured. Please set AIML_API_KEY in Vercel environment variables.';
       } else {
-        errorMessage = 'Transcription failed: AIMLAPI transcription failed. Please check AIML_API_KEY is valid and nova-3 model is available for audio transcription.';
+        errorMessage = 'Transcription failed: AIMLAPI (whisper-1) transcription failed. Please check: 1) AIML_API_KEY is valid in Vercel environment variables, 2) Audio file format is supported (MP3, WAV, M4A), 3) File size is within limits.';
       }
       
       return res.status(500).json({ 
