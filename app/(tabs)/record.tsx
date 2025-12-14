@@ -9,7 +9,7 @@ import { useColorScheme } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { useIdeas } from "@/hooks/use-ideas";
 import { useClusters } from "@/hooks/use-clusters";
 import { useAuthStore } from "@/store/auth-store";
@@ -737,14 +737,14 @@ export default function RecordScreen() {
                         })}
                       </Text>
                     </View>
-                    {idea.audioUrl && !idea.transcript ? (
+                    {idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '') ? (
                       <View className="flex-row items-center">
                         <Ionicons name="musical-notes-outline" size={16} color="#34C759" />
                         <Text className="text-sm text-gray-500 dark:text-gray-400 ml-2 italic">
                           Audio recording (transcribing...)
                         </Text>
                       </View>
-                    ) : idea.transcript ? (
+                    ) : idea.transcript && idea.transcript.trim() ? (
                       <Text
                         className="text-base text-black dark:text-white"
                         numberOfLines={2}

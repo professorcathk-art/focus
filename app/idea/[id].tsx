@@ -27,7 +27,7 @@ import { formatDistanceToNow } from "date-fns";
 import { apiClient } from "@/lib/api-client";
 import { API_ENDPOINTS } from "@/config/api";
 import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 export default function IdeaDetailScreen() {
   const router = useRouter();
@@ -58,7 +58,7 @@ export default function IdeaDetailScreen() {
   // Auto-refresh transcript when it's empty but audio exists (transcription in progress)
   // Poll less frequently (every 10 seconds) to avoid annoying refreshes
   useEffect(() => {
-    if (idea && idea.audioUrl && !idea.transcript) {
+    if (idea && idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '')) {
       // Poll every 10 seconds for transcript updates (less annoying)
       transcriptionPollingRef.current = setInterval(() => {
         console.log(`[Transcription Poll] Checking for transcript update for idea ${idea.id}`);
@@ -420,7 +420,7 @@ export default function IdeaDetailScreen() {
             <Text className="text-sm font-medium" style={{ color: "#34C759" }}>
               📁 {getClusterLabel(idea.clusterId)}
             </Text>
-            {idea.audioUrl && !idea.transcript && (
+            {idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '') && (
               <Text className="text-xs ml-2" style={{ color: "#34C759" }}>
                 (tap to set category)
               </Text>
@@ -439,7 +439,7 @@ export default function IdeaDetailScreen() {
 
         {/* Transcript */}
         <View className="mb-6">
-          {idea.audioUrl && !idea.transcript ? (
+          {idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '') ? (
             <View className="py-8 items-center">
               <ActivityIndicator size="large" color="#34C759" />
               <Text className="text-base text-gray-500 dark:text-gray-400 mt-4">
@@ -449,7 +449,7 @@ export default function IdeaDetailScreen() {
                 This may take a few moments
               </Text>
             </View>
-          ) : idea.transcript ? (
+          ) : idea.transcript && idea.transcript.trim() ? (
             <Text className="text-lg text-black dark:text-white leading-7">
               {idea.transcript}
             </Text>

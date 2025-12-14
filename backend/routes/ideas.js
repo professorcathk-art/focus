@@ -98,28 +98,36 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
     const transcript = aimlData.transcription || aimlData.text || aimlData.transcript || 
                        aimlData.result?.transcription || aimlData.data?.transcription;
     
-    if (!transcript) {
+    if (!transcript || typeof transcript !== 'string') {
       console.error(`[Async Transcription] No transcript in response:`, JSON.stringify(aimlData));
       throw new Error('No transcript returned from AIMLAPI');
     }
     
-    console.log(`[Async Transcription] ✅ Transcription complete for idea ${ideaId}: "${transcript.substring(0, 100)}..."`);
+    const trimmedTranscript = transcript.trim();
+    if (!trimmedTranscript) {
+      console.error(`[Async Transcription] Transcript is empty after trimming`);
+      throw new Error('Transcript is empty');
+    }
+    
+    console.log(`[Async Transcription] ✅ Transcription complete for idea ${ideaId}: "${trimmedTranscript.substring(0, 100)}..."`);
     
     // Generate embedding
     console.log(`[Async Transcription] Generating embedding...`);
     const embeddingResponse = await aimlClient.embeddings.create({
       model: 'text-embedding-3-small',
-      input: transcript,
+      input: trimmedTranscript,
     });
     const embedding = embeddingResponse.data[0].embedding;
     console.log(`[Async Transcription] Embedding generated (${embedding.length} dimensions)`);
     
     // Update idea with transcript and embedding
     console.log(`[Async Transcription] Updating idea ${ideaId} in database...`);
+    console.log(`[Async Transcription] Transcript length: ${trimmedTranscript.length} characters`);
+    
     const { error: updateError } = await supabase
       .from('ideas')
       .update({
-        transcript: transcript,
+        transcript: trimmedTranscript,
         embedding: embedding,
         updated_at: new Date().toISOString(),
       })
