@@ -50,14 +50,14 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
     console.log(`[Async Transcription] Calling AIMLAPI: ${aimlBaseUrl}/stt/create`);
     console.log(`[Async Transcription] FormData size: ${formBuffer.length} bytes`);
     
-    // Add timeout (240s)
-    const TIMEOUT_MS = 240000;
+    // STEP 1: Create transcription task (returns generation_id)
+    const TIMEOUT_MS = 60000; // 60s for initial request
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
     
-    let aimlResponse;
+    let createResponse;
     try {
-      aimlResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
+      createResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${aimlApiKey}`,
@@ -70,37 +70,103 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
     } catch (fetchError) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
-        throw new Error('AIMLAPI request timed out after 240 seconds');
+        throw new Error('AIMLAPI request timed out after 60 seconds');
       }
       throw new Error(`AIMLAPI fetch error: ${fetchError.message}`);
     }
     
-    if (!aimlResponse.ok) {
-      const errorText = await aimlResponse.text();
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
       let errorJson = null;
       try {
         errorJson = JSON.parse(errorText);
       } catch (e) {
         // Not JSON
       }
-      console.error(`[Async Transcription] AIMLAPI error response:`, {
-        status: aimlResponse.status,
-        statusText: aimlResponse.statusText,
+      console.error(`[Async Transcription] AIMLAPI create error response:`, {
+        status: createResponse.status,
+        statusText: createResponse.statusText,
         error: errorText,
         errorJson: errorJson,
       });
-      throw new Error(`AIMLAPI transcription failed: ${aimlResponse.status} - ${errorText.substring(0, 200)}`);
+      throw new Error(`AIMLAPI transcription failed: ${createResponse.status} - ${errorText.substring(0, 200)}`);
     }
     
-    const aimlData = await aimlResponse.json();
-    console.log(`[Async Transcription] AIMLAPI response:`, JSON.stringify(aimlData).substring(0, 500));
+    const createData = await createResponse.json();
+    console.log(`[Async Transcription] Create response:`, JSON.stringify(createData).substring(0, 500));
     
-    const transcript = aimlData.transcription || aimlData.text || aimlData.transcript || 
-                       aimlData.result?.transcription || aimlData.data?.transcription;
+    // Extract generation_id from response
+    const generationId = createData.generation_id || createData.id || createData.generationId;
+    if (!generationId) {
+      console.error(`[Async Transcription] No generation_id in response:`, JSON.stringify(createData));
+      throw new Error('No generation_id returned from AIMLAPI');
+    }
+    
+    console.log(`[Async Transcription] Generation ID: ${generationId}, polling for result...`);
+    
+    // STEP 2: Poll for transcription result (up to 5 minutes)
+    const POLL_TIMEOUT_MS = 300000; // 5 minutes total
+    const POLL_INTERVAL_MS = 3000; // Poll every 3 seconds
+    const startTime = Date.now();
+    let transcript = null;
+    let aimlData = null;
+    
+    while (Date.now() - startTime < POLL_TIMEOUT_MS) {
+      try {
+        const pollResponse = await fetch(`${aimlBaseUrl}/stt/${generationId}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${aimlApiKey}`,
+          },
+        });
+        
+        if (!pollResponse.ok) {
+          const errorText = await pollResponse.text();
+          console.error(`[Async Transcription] Poll error: ${pollResponse.status} - ${errorText}`);
+          if (pollResponse.status === 404) {
+            // Not ready yet, continue polling
+            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+            continue;
+          }
+          throw new Error(`Poll failed: ${pollResponse.status} - ${errorText.substring(0, 200)}`);
+        }
+        
+        aimlData = await pollResponse.json();
+        console.log(`[Async Transcription] Poll response:`, JSON.stringify(aimlData).substring(0, 500));
+        
+        // Check if transcription is ready
+        transcript = aimlData.transcription || aimlData.text || aimlData.transcript || 
+                     aimlData.result?.transcription || aimlData.data?.transcription ||
+                     aimlData.result?.text || aimlData.data?.text;
+        
+        if (transcript && typeof transcript === 'string' && transcript.trim()) {
+          console.log(`[Async Transcription] ✅ Transcription received!`);
+          break;
+        }
+        
+        // Check status - if completed but no transcript, might be an error
+        const status = aimlData.status || aimlData.state;
+        if (status === 'completed' || status === 'done') {
+          if (!transcript) {
+            console.error(`[Async Transcription] Status completed but no transcript:`, JSON.stringify(aimlData));
+            throw new Error('Transcription completed but no transcript found');
+          }
+        }
+        
+        // Wait before next poll
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+      } catch (pollError) {
+        if (pollError.message?.includes('Poll failed') && !pollError.message?.includes('404')) {
+          throw pollError;
+        }
+        // For 404 or other transient errors, continue polling
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+      }
+    }
     
     if (!transcript || typeof transcript !== 'string') {
-      console.error(`[Async Transcription] No transcript in response:`, JSON.stringify(aimlData));
-      throw new Error('No transcript returned from AIMLAPI');
+      console.error(`[Async Transcription] No transcript after polling:`, JSON.stringify(aimlData));
+      throw new Error('No transcript returned from AIMLAPI after polling');
     }
     
     const trimmedTranscript = transcript.trim();
