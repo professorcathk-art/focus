@@ -282,7 +282,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       return res.status(400).json({ message: 'Audio file is required' });
     }
 
-    // Use AIMLAPI Nova-2 model ONLY - no OpenAI fallback
+    // Use AIMLAPI nova-3 model ONLY - no OpenAI fallback
     const aimlApiKey = process.env.AIML_API_KEY;
 
     if (!aimlApiKey) {
@@ -297,7 +297,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     let transcript;
     let transcriptionSource = 'unknown';
 
-    // Use AIMLAPI with Deepgram Nova-3 model
+    // Use AIMLAPI with Deepgram Nova-2 model
     if (aimlApiKey) {
       try {
         console.log('[Upload Audio] Attempting transcription with AIMLAPI Nova-3 model (via AIMLAPI)');
@@ -307,20 +307,32 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         // AIMLAPI expects 'file' field and model format like '#g1_nova-2-general' or '#g1_whisper-large'
         const aimlFormData = new FormData();
         
-        // Append file buffer
+        // Append file buffer - ensure proper options for form-data package
         aimlFormData.append('file', req.file.buffer, {
           filename: req.file.originalname || 'recording.m4a',
           contentType: req.file.mimetype || 'audio/m4a',
+          knownLength: req.file.size, // Provide known length for proper form encoding
         });
         
         // Use nova-2-general model (nova-3 not available, use latest nova-2)
         aimlFormData.append('model', '#g1_nova-2-general');
         
-        const aimlFormHeaders = aimlFormData.getHeaders ? aimlFormData.getHeaders() : {};
+        const aimlFormHeaders = aimlFormData.getHeaders();
         const aimlBaseUrl = 'https://api.aimlapi.com/v1';
+        
+        // Set Content-Length header if available
+        if (aimlFormData.getLengthSync) {
+          try {
+            const length = aimlFormData.getLengthSync();
+            aimlFormHeaders['Content-Length'] = length.toString();
+          } catch (e) {
+            // getLengthSync might fail for streams, that's okay
+          }
+        }
         
         console.log(`[Upload Audio] Calling AIMLAPI: ${aimlBaseUrl}/stt/create with model: #g1_nova-2-general`);
         console.log(`[Upload Audio] FormData headers:`, aimlFormHeaders);
+        console.log(`[Upload Audio] File buffer size: ${req.file.buffer.length} bytes`);
         
         const aimlResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
           method: 'POST',
@@ -333,7 +345,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         
         if (aimlResponse.ok) {
           const aimlData = await aimlResponse.json();
-          console.log('[Upload Audio] AIMLAPI nova-3 transcription response:', aimlData);
+          console.log('[Upload Audio] AIMLAPI Nova-2 transcription response:', aimlData);
           
           // AIMLAPI STT returns transcription in various possible fields
           transcript = aimlData.transcription || aimlData.text || aimlData.transcript || aimlData.result?.transcription || aimlData.data?.transcription;
@@ -360,7 +372,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
             error: errorText,
             errorJson: errorJson,
             url: `${aimlBaseUrl}/stt/create`,
-            model: 'nova-3',
+            model: '#g1_nova-2-general',
           });
           
           // If AIMLAPI fails with 401, it's an auth issue - don't try OpenAI fallback
@@ -398,7 +410,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
           console.error('[Upload Audio] AIMLAPI failed with status', aimlResponse.status);
         }
       } catch (aimlError) {
-        console.error('[Upload Audio] AIMLAPI Nova-3 transcription error:', aimlError);
+        console.error('[Upload Audio] AIMLAPI Nova-2 transcription error:', aimlError);
         console.error('[Upload Audio] Error details:', {
           message: aimlError.message,
           stack: aimlError.stack,
@@ -406,22 +418,22 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         
         // Fail immediately - no fallback
         return res.status(500).json({ 
-          message: `AIMLAPI Nova-3 transcription failed: ${aimlError.message || 'Unknown error'}`,
+          message: `AIMLAPI Nova-2 transcription failed: ${aimlError.message || 'Unknown error'}`,
         });
       }
     }
 
-    // NO OpenAI fallback - only use AIMLAPI nova-3
+    // NO OpenAI fallback - only use AIMLAPI Nova-2
 
     if (!transcript) {
       console.error('[Upload Audio] No transcript received from any service');
-      let errorMessage = 'Transcription failed: AIMLAPI (nova-3) transcription failed.';
+      let errorMessage = 'Transcription failed: AIMLAPI Nova-2 transcription failed.';
       
       // Provide helpful guidance
       if (!aimlApiKey) {
         errorMessage = 'Transcription failed: AIML_API_KEY not configured. Please set AIML_API_KEY in Vercel environment variables.';
       } else {
-        errorMessage = 'Transcription failed: AIMLAPI (nova-3) transcription failed. Please check: 1) AIML_API_KEY is valid in Vercel environment variables, 2) Audio file format is supported (MP3, WAV, M4A), 3) File size is within limits.';
+        errorMessage = 'Transcription failed: AIMLAPI Nova-2 transcription failed. Please check: 1) AIML_API_KEY is valid in Vercel environment variables, 2) Audio file format is supported (MP3, WAV, M4A), 3) File size is within limits.';
       }
       
       return res.status(500).json({ 
