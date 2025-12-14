@@ -216,6 +216,8 @@ export default function RecordScreen() {
       
       let response;
       try {
+        console.log(`[Upload Audio] Uploading to: ${API_BASE_URL}${API_ENDPOINTS.ideas.uploadAudio}`);
+        console.log(`[Upload Audio] Recording duration: ${duration}s, file URI: ${uri}`);
         response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.ideas.uploadAudio}`, {
           method: "POST",
           headers: {
@@ -227,8 +229,12 @@ export default function RecordScreen() {
         clearTimeout(timeoutId);
       } catch (fetchError) {
         clearTimeout(timeoutId);
+        console.error(`[Upload Audio] Fetch error:`, fetchError);
         if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
-          throw new Error("Transcription request timed out. Please try a shorter recording or try again later.");
+          throw new Error("Upload request timed out. Please try a shorter recording or try again later.");
+        }
+        if (fetchError.message?.includes('Network') || fetchError.message?.includes('connection')) {
+          throw new Error("Network connection lost. Please check your internet and try again.");
         }
         throw fetchError;
       }

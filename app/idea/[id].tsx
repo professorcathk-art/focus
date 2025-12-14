@@ -94,7 +94,7 @@ export default function IdeaDetailScreen() {
       return;
     }
 
-    console.log(`[Audio Playback] Attempting to play audio: ${idea.audioUrl}`);
+    console.log(`[Audio Playback] Attempting to play audio for idea ${idea.id}`);
 
     try {
       // Request audio permissions
@@ -128,10 +128,26 @@ export default function IdeaDetailScreen() {
       }
       
       if (!soundRef.current) {
+        // Try local cache first, then fall back to remote URL
+        let audioUri = idea.audioUrl;
+        const localPath = `${FileSystem.cacheDirectory}audio/${idea.id}.m4a`;
+        
+        try {
+          const localInfo = await FileSystem.getInfoAsync(localPath);
+          if (localInfo.exists) {
+            audioUri = localPath;
+            console.log(`[Audio Playback] Using cached audio: ${localPath}`);
+          } else {
+            console.log(`[Audio Playback] No local cache, using remote URL: ${idea.audioUrl}`);
+          }
+        } catch (cacheCheckError) {
+          console.log(`[Audio Playback] Cache check failed, using remote URL:`, cacheCheckError);
+        }
+
         // Load and play audio
-        console.log(`[Audio Playback] Loading audio from: ${idea.audioUrl}`);
+        console.log(`[Audio Playback] Loading audio from: ${audioUri}`);
         const { sound } = await Audio.Sound.createAsync(
-          { uri: idea.audioUrl },
+          { uri: audioUri },
           { 
             shouldPlay: true,
             isLooping: false,
@@ -154,6 +170,10 @@ export default function IdeaDetailScreen() {
               Alert.alert("Error", `Audio playback error: ${status.error}`);
               setIsPlaying(false);
             }
+          } else if (status.error) {
+            console.error(`[Audio Playback] Load error:`, status.error);
+            Alert.alert("Error", `Failed to load audio: ${status.error}`);
+            setIsPlaying(false);
           }
         });
       }
@@ -172,7 +192,7 @@ export default function IdeaDetailScreen() {
         soundRef.current = null;
       }
     }
-  }, [idea?.audioUrl]);
+  }, [idea?.audioUrl, idea?.id]);
 
   const handleEdit = () => {
     if (idea) {
