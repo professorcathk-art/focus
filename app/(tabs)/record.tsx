@@ -244,26 +244,23 @@ export default function RecordScreen() {
       // Clean up recording file
       await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
 
-      // Handle suggested category if present
-      if (idea.suggestedClusterLabel && !idea.clusterId) {
+      // NEW: Recording is saved immediately (async transcription happens in background)
+      // Show "saved" status immediately - transcript will be empty initially
+      setStatus("saved");
+      
+      // Refetch in background - don't block on errors
+      refetch().catch(err => console.error("Error refetching ideas:", err));
+      refetchClusters().catch(err => console.error("Error refetching clusters:", err));
+      
+      // Handle suggested category if present (only if transcript already exists)
+      if (idea.transcript && idea.suggestedClusterLabel && !idea.clusterId) {
         setSuggestedCategoryLabel(idea.suggestedClusterLabel);
         setEditableCategoryName(idea.suggestedClusterLabel);
         setPendingIdeaId(idea.id);
         setShowSuggestedCategoryModal(true);
         setStatus("idle");
-      } else if (idea.clusterId) {
-        // Auto-assigned to existing cluster
-        setStatus("saved");
-        // Refetch in background - don't block on errors
-        refetch().catch(err => console.error("Error refetching ideas:", err));
-        refetchClusters().catch(err => console.error("Error refetching clusters:", err));
-        setTimeout(() => setStatus("idle"), 2000);
       } else {
-        // No assignment
-        setStatus("saved");
-        // Refetch in background - don't block on errors
-        refetch().catch(err => console.error("Error refetching ideas:", err));
-        refetchClusters().catch(err => console.error("Error refetching clusters:", err));
+        // Auto-assigned or no category - just reset status after delay
         setTimeout(() => setStatus("idle"), 2000);
       }
 
