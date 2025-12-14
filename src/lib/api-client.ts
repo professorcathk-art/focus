@@ -82,9 +82,20 @@ class ApiClient {
       });
 
       if (!response.ok) {
-        const errorData: ApiError = await response.json().catch(() => ({
-          message: `HTTP ${response.status}: ${response.statusText}`,
-        }));
+        // Try to parse error response, but handle empty responses
+        let errorData: ApiError;
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          try {
+            const text = await response.text();
+            errorData = text ? JSON.parse(text) : { message: `HTTP ${response.status}: ${response.statusText}` };
+          } catch {
+            errorData = { message: `HTTP ${response.status}: ${response.statusText}` };
+          }
+        } else {
+          const text = await response.text();
+          errorData = { message: text || `HTTP ${response.status}: ${response.statusText}` };
+        }
         
         // If token is invalid, clear it and throw a specific error
         if (response.status === 401 && (errorData.message?.includes("token") || errorData.message?.includes("auth"))) {
@@ -92,7 +103,12 @@ class ApiClient {
           throw new Error("Session expired. Please sign in again.");
         }
         
-        throw new Error(errorData.message || "Request failed");
+        // Provide better error message for 404
+        if (response.status === 404) {
+          throw new Error(errorData.message || `Route not found: ${endpoint}`);
+        }
+        
+        throw new Error(errorData.message || `Request failed: HTTP ${response.status}`);
       }
 
       return await response.json();
