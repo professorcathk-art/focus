@@ -26,14 +26,14 @@ try {
  * Async transcription function - runs in background
  * Updates idea with transcript and embedding when complete
  */
-async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, userId) {
+async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, deepgramApiKey, userId) {
   // Add initial validation and logging
   console.log(`[Async Transcription] 🎙️ Starting transcription for idea: ${ideaId}`);
   console.log(`[Async Transcription] Parameters:`, {
     ideaId,
     audioBufferSize: audioBuffer?.length || 0,
     mimeType: mimeType || 'unknown',
-    aimlApiKeyPresent: !!aimlApiKey,
+    deepgramApiKeyPresent: !!deepgramApiKey,
     userId,
   });
   
@@ -54,154 +54,93 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, aimlApiKey, u
   
   try {
     console.log(`[Async Transcription] Audio buffer size: ${audioBuffer.length} bytes, mimeType: ${mimeType}`);
-    console.log(`[Async Transcription] AIMLAPI key present: ${!!aimlApiKey}`);
+    console.log(`[Async Transcription] Deepgram API key present: ${!!deepgramApiKey}`);
     
-    if (!aimlApiKey) {
-      throw new Error('AIMLAPI key not configured');
+    if (!deepgramApiKey) {
+      throw new Error('Deepgram API key not configured');
     }
     
-    // Use AIMLAPI STT endpoint with multipart/form-data
-    const aimlFormData = new FormData();
-    aimlFormData.append('file', audioBuffer, {
-      filename: 'recording.m4a',
-      contentType: mimeType || 'audio/m4a',
-      knownLength: audioBuffer.length,
-    });
-    aimlFormData.append('model', '#g1_nova-2-general');
+    // Use Deepgram API - single request, no polling needed
+    const deepgramBaseUrl = 'https://api.deepgram.com';
+    const deepgramEndpoint = '/v1/listen';
     
-    const aimlFormHeaders = aimlFormData.getHeaders();
-    const aimlBaseUrl = 'https://api.aimlapi.com/v1';
+    // Determine content type for Deepgram
+    let contentType = mimeType || 'audio/m4a';
+    // Deepgram prefers specific content types
+    if (mimeType === 'audio/x-m4a' || mimeType === 'audio/m4a') {
+      contentType = 'audio/m4a';
+    }
     
-    // Convert FormData to buffer
-    const formBuffer = await new Promise((resolve, reject) => {
-      const chunks = [];
-      aimlFormData.on('data', (chunk) => chunks.push(chunk));
-      aimlFormData.on('end', () => resolve(Buffer.concat(chunks)));
-      aimlFormData.on('error', reject);
+    // Build query parameters
+    const queryParams = new URLSearchParams({
+      model: 'nova-3',
+      smart_format: 'true',
     });
     
-    aimlFormHeaders['Content-Length'] = formBuffer.length.toString();
+    const url = `${deepgramBaseUrl}${deepgramEndpoint}?${queryParams.toString()}`;
     
-    console.log(`[Async Transcription] Calling AIMLAPI: ${aimlBaseUrl}/stt/create`);
-    console.log(`[Async Transcription] FormData size: ${formBuffer.length} bytes`);
+    console.log(`[Async Transcription] Calling Deepgram API: ${url}`);
+    console.log(`[Async Transcription] Audio buffer size: ${audioBuffer.length} bytes, Content-Type: ${contentType}`);
     
-    // STEP 1: Create transcription task (returns generation_id)
-    const TIMEOUT_MS = 60000; // 60s for initial request
+    // Single request to Deepgram - returns transcript directly
+    const TIMEOUT_MS = 120000; // 2 minutes for transcription
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
     
-    let createResponse;
+    let response;
     try {
-      createResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
+      response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${aimlApiKey}`,
-          ...aimlFormHeaders,
+          'Authorization': `Token ${deepgramApiKey}`,
+          'Content-Type': contentType,
         },
-        body: formBuffer,
+        body: audioBuffer,
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
     } catch (fetchError) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
-        throw new Error('AIMLAPI request timed out after 60 seconds');
+        throw new Error('Deepgram request timed out after 120 seconds');
       }
-      throw new Error(`AIMLAPI fetch error: ${fetchError.message}`);
+      throw new Error(`Deepgram fetch error: ${fetchError.message}`);
     }
     
-    if (!createResponse.ok) {
-      const errorText = await createResponse.text();
+    if (!response.ok) {
+      const errorText = await response.text();
       let errorJson = null;
       try {
         errorJson = JSON.parse(errorText);
       } catch (e) {
         // Not JSON
       }
-      console.error(`[Async Transcription] AIMLAPI create error response:`, {
-        status: createResponse.status,
-        statusText: createResponse.statusText,
+      console.error(`[Async Transcription] Deepgram error response:`, {
+        status: response.status,
+        statusText: response.statusText,
         error: errorText,
         errorJson: errorJson,
       });
-      throw new Error(`AIMLAPI transcription failed: ${createResponse.status} - ${errorText.substring(0, 200)}`);
+      throw new Error(`Deepgram transcription failed: ${response.status} - ${errorText.substring(0, 200)}`);
     }
     
-    const createData = await createResponse.json();
-    console.log(`[Async Transcription] Create response:`, JSON.stringify(createData).substring(0, 500));
+    const responseData = await response.json();
+    console.log(`[Async Transcription] Deepgram response:`, JSON.stringify(responseData).substring(0, 500));
     
-    // Extract generation_id from response
-    const generationId = createData.generation_id || createData.id || createData.generationId;
-    if (!generationId) {
-      console.error(`[Async Transcription] No generation_id in response:`, JSON.stringify(createData));
-      throw new Error('No generation_id returned from AIMLAPI');
-    }
-    
-    console.log(`[Async Transcription] Generation ID: ${generationId}, polling for result...`);
-    
-    // STEP 2: Poll for transcription result (up to 5 minutes)
-    const POLL_TIMEOUT_MS = 300000; // 5 minutes total
-    const POLL_INTERVAL_MS = 3000; // Poll every 3 seconds
-    const startTime = Date.now();
+    // Extract transcript from Deepgram response format
+    // Deepgram returns: { results: { channels: [{ alternatives: [{ transcript: "..." }] }] } }
     let transcript = null;
-    let aimlData = null;
-    
-    while (Date.now() - startTime < POLL_TIMEOUT_MS) {
-      try {
-        const pollResponse = await fetch(`${aimlBaseUrl}/stt/${generationId}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${aimlApiKey}`,
-          },
-        });
-        
-        if (!pollResponse.ok) {
-          const errorText = await pollResponse.text();
-          console.error(`[Async Transcription] Poll error: ${pollResponse.status} - ${errorText}`);
-          if (pollResponse.status === 404) {
-            // Not ready yet, continue polling
-            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-            continue;
-          }
-          throw new Error(`Poll failed: ${pollResponse.status} - ${errorText.substring(0, 200)}`);
-        }
-        
-        aimlData = await pollResponse.json();
-        console.log(`[Async Transcription] Poll response:`, JSON.stringify(aimlData).substring(0, 500));
-        
-        // Check if transcription is ready
-        transcript = aimlData.transcription || aimlData.text || aimlData.transcript || 
-                     aimlData.result?.transcription || aimlData.data?.transcription ||
-                     aimlData.result?.text || aimlData.data?.text;
-        
-        if (transcript && typeof transcript === 'string' && transcript.trim()) {
-          console.log(`[Async Transcription] ✅ Transcription received!`);
-          break;
-        }
-        
-        // Check status - if completed but no transcript, might be an error
-        const status = aimlData.status || aimlData.state;
-        if (status === 'completed' || status === 'done') {
-          if (!transcript) {
-            console.error(`[Async Transcription] Status completed but no transcript:`, JSON.stringify(aimlData));
-            throw new Error('Transcription completed but no transcript found');
-          }
-        }
-        
-        // Wait before next poll
-        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-      } catch (pollError) {
-        if (pollError.message?.includes('Poll failed') && !pollError.message?.includes('404')) {
-          throw pollError;
-        }
-        // For 404 or other transient errors, continue polling
-        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-      }
+    if (responseData.results?.channels?.[0]?.alternatives?.[0]?.transcript) {
+      transcript = responseData.results.channels[0].alternatives[0].transcript;
+    } else if (responseData.transcript) {
+      transcript = responseData.transcript;
+    } else if (responseData.results?.channels?.[0]?.alternatives?.[0]?.text) {
+      transcript = responseData.results.channels[0].alternatives[0].text;
     }
     
     if (!transcript || typeof transcript !== 'string') {
-      console.error(`[Async Transcription] No transcript after polling:`, JSON.stringify(aimlData));
-      throw new Error('No transcript returned from AIMLAPI after polling');
+      console.error(`[Async Transcription] No transcript in Deepgram response:`, JSON.stringify(responseData));
+      throw new Error('No transcript returned from Deepgram API');
     }
     
     const trimmedTranscript = transcript.trim();
@@ -572,13 +511,13 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       return res.status(400).json({ message: 'Audio file is required' });
     }
 
-    // Use AIMLAPI Nova-2 model ONLY - no OpenAI fallback
-    const aimlApiKey = process.env.AIML_API_KEY;
-
-    if (!aimlApiKey) {
-      console.error('[Upload Audio] AIML_API_KEY not found. Set AIML_API_KEY in environment variables');
+    // Use Deepgram API with nova-3 model
+    const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+    
+    if (!deepgramApiKey) {
+      console.error('[Upload Audio] DEEPGRAM_API_KEY not found. Set DEEPGRAM_API_KEY in environment variables');
       return res.status(500).json({ 
-        message: 'Transcription service not configured. Please set AIML_API_KEY in Vercel environment variables' 
+        message: 'Transcription service not configured. Please set DEEPGRAM_API_KEY in Vercel environment variables' 
       });
     }
 
@@ -643,10 +582,10 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
     // Vercel serverless functions terminate after response, so we need waitUntil
     console.log(`[Upload Audio] ⏳ Starting async transcription for idea: ${ideaId}`);
     console.log(`[Upload Audio] Audio buffer available: ${!!req.file.buffer}, size: ${req.file.buffer?.length || 0} bytes`);
-    console.log(`[Upload Audio] AIMLAPI key available: ${!!aimlApiKey}`);
+    console.log(`[Upload Audio] Deepgram API key available: ${!!deepgramApiKey}`);
     
     waitUntil(
-      transcribeAudioAsync(ideaId, req.file.buffer, req.file.mimetype, aimlApiKey, req.user.id)
+      transcribeAudioAsync(ideaId, req.file.buffer, req.file.mimetype, deepgramApiKey, req.user.id)
         .then(() => {
           console.log(`[Upload Audio] ✅ Async transcription completed for idea: ${ideaId}`);
         })
