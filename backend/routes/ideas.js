@@ -336,14 +336,33 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
         console.log(`[Upload Audio] FormData headers:`, aimlFormHeaders);
         console.log(`[Upload Audio] File buffer size: ${req.file.buffer.length} bytes, FormData size: ${formBuffer.length} bytes`);
         
-        const aimlResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${aimlApiKey}`,
-            ...aimlFormHeaders,  // Includes Content-Type with boundary and Content-Length
-          },
-          body: formBuffer, // Use buffer instead of stream
-        });
+        // Add timeout to prevent Vercel 300s timeout (use 240s to be safe)
+        const TIMEOUT_MS = 240000; // 4 minutes
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        
+        let aimlResponse;
+        try {
+          aimlResponse = await fetch(`${aimlBaseUrl}/stt/create`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${aimlApiKey}`,
+              ...aimlFormHeaders,  // Includes Content-Type with boundary and Content-Length
+            },
+            body: formBuffer, // Use buffer instead of stream
+            signal: controller.signal, // Add abort signal for timeout
+          });
+          clearTimeout(timeoutId);
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          if (fetchError.name === 'AbortError' || fetchError.message.includes('aborted')) {
+            console.error('[Upload Audio] AIMLAPI request timed out after 240 seconds');
+            return res.status(500).json({ 
+              message: 'Transcription request timed out. The audio file may be too long or the service is slow. Please try a shorter recording or try again later.',
+            });
+          }
+          throw fetchError; // Re-throw other errors
+        }
         
         if (aimlResponse.ok) {
           const aimlData = await aimlResponse.json();

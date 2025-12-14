@@ -198,13 +198,29 @@ export default function RecordScreen() {
       } as any);
       formData.append("duration", duration.toString());
 
-      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.ideas.uploadAudio}`, {
-        method: "POST",
-        headers: {
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-        body: formData,
-      });
+      // Add timeout to prevent hanging (5 minutes max, but should complete faster)
+      const TIMEOUT_MS = 300000; // 5 minutes
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      
+      let response;
+      try {
+        response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.ideas.uploadAudio}`, {
+          method: "POST",
+          headers: {
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+          body: formData,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
+          throw new Error("Transcription request timed out. Please try a shorter recording or try again later.");
+        }
+        throw fetchError;
+      }
 
       if (!response.ok) {
         let errorData;
