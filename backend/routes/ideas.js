@@ -279,11 +279,12 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
             });
           }
           
-          // If 400 Bad Request, provide detailed error
+          // If 400 Bad Request, provide detailed error and don't fallback
           if (aimlResponse.status === 400) {
             const errorMsg = errorJson?.message || errorJson?.error?.message || errorText || 'Bad Request';
+            console.error('[Upload Audio] AIMLAPI 400 Bad Request - stopping, not falling back to OpenAI');
             return res.status(500).json({ 
-              message: `AIMLAPI Bad Request (400). This might be due to unsupported file format or model. Error: ${errorMsg}. Please check if AIMLAPI supports nova-3 model for audio transcription.`,
+              message: `AIMLAPI Bad Request (400) with nova-3 model. Error: ${errorMsg}. Please check: 1) AIML_API_KEY is set correctly in Vercel environment variables, 2) AIMLAPI supports nova-3 model for audio transcription, 3) Audio file format is supported (MP3, WAV, M4A).`,
             });
           }
           

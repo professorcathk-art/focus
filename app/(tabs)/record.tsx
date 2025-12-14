@@ -312,7 +312,6 @@ export default function RecordScreen() {
 
     // Hide keyboard first
     Keyboard.dismiss();
-    setShowClusterPicker(false);
 
     setStatus("saved");
     try {
@@ -842,9 +841,9 @@ export default function RecordScreen() {
 
             <TouchableOpacity
               onPress={() => {
-                // User wants to select existing category
+                // User wants to select existing category - show categories inline
                 setShowSuggestedCategoryModal(false);
-                setShowClusterPicker(true);
+                // Categories are now shown inline when typing, so just close the modal
               }}
               className="px-6 py-3 rounded-xl border-2"
               style={{ borderColor: "#34C759" }}
