@@ -42,6 +42,9 @@ export default function IdeaDetailScreen() {
   const [isChangingCategory, setIsChangingCategory] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
+  const [playbackStatus, setPlaybackStatus] = useState<any>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const transcriptionPollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleCopy = async () => {
     if (idea?.transcript) {
@@ -296,9 +299,25 @@ export default function IdeaDetailScreen() {
 
         {/* Transcript */}
         <View className="mb-6">
-          <Text className="text-lg text-black dark:text-white leading-7">
-            {idea.transcript}
-          </Text>
+          {idea.audioUrl && !idea.transcript ? (
+            <View className="py-8 items-center">
+              <ActivityIndicator size="large" color="#34C759" />
+              <Text className="text-base text-gray-500 dark:text-gray-400 mt-4">
+                Transcribing audio...
+              </Text>
+              <Text className="text-sm text-gray-400 dark:text-gray-500 mt-2">
+                This may take a few moments
+              </Text>
+            </View>
+          ) : idea.transcript ? (
+            <Text className="text-lg text-black dark:text-white leading-7">
+              {idea.transcript}
+            </Text>
+          ) : (
+            <Text className="text-base text-gray-500 dark:text-gray-400 italic">
+              No transcript available
+            </Text>
+          )}
         </View>
 
         {/* Actions */}
