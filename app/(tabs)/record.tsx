@@ -7,7 +7,7 @@ import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingVi
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import { useIdeas } from "@/hooks/use-ideas";

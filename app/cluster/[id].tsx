@@ -5,7 +5,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useColorScheme } from "react-native";
 import { useCluster } from "@/hooks/use-clusters";
 import { useIdeas } from "@/hooks/use-ideas";
