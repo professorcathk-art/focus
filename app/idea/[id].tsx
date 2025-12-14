@@ -289,6 +289,9 @@ export default function IdeaDetailScreen() {
             setIsDeleting(true);
             try {
               await apiClient.delete(API_ENDPOINTS.ideas.delete(idea.id));
+              // Remove from cache
+              const { removeCachedIdea } = await import("@/lib/ideas-cache");
+              await removeCachedIdea(idea.id).catch(err => console.error("Cache removal error:", err));
               // Navigate back immediately - the parent views will refresh
               router.back();
             } catch (err) {
