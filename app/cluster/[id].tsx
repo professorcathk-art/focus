@@ -28,7 +28,15 @@ export default function ClusterDetailScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { cluster, isLoading: clusterLoading, refetch: refetchCluster } = useCluster(id || "");
+  
+  // Handle special clusters (uncategorised and favourite) - don't fetch from API
+  const isUncategorised = id === "uncategorised";
+  const isFavourite = id === "favourite";
+  
+  // Only fetch cluster from API if it's not a special cluster
+  const { cluster, isLoading: clusterLoading, refetch: refetchCluster } = useCluster(
+    (isUncategorised || isFavourite) ? "" : (id || "")
+  );
   const { ideas, isLoading: ideasLoading, refetch } = useIdeas();
   const [togglingFavoriteId, setTogglingFavoriteId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -36,7 +44,12 @@ export default function ClusterDetailScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([refetch(), refetchCluster()]);
+      // Only refetch cluster if it's not a special cluster
+      if (isUncategorised || isFavourite) {
+        await refetch();
+      } else {
+        await Promise.all([refetch(), refetchCluster()]);
+      }
     } catch (error) {
       console.error("Error refreshing:", error);
     } finally {
@@ -50,10 +63,6 @@ export default function ClusterDetailScreen() {
       refetch();
     }, [refetch])
   );
-
-  // Handle special clusters (uncategorised and favourite)
-  const isUncategorised = id === "uncategorised";
-  const isFavourite = id === "favourite";
   
   const uncategorisedCluster = isUncategorised ? {
     id: "uncategorised",
