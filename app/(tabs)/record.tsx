@@ -558,19 +558,25 @@ export default function RecordScreen() {
           className="flex-1"
         >
         <View className="flex-1 px-6">
-          {/* Header with gradient background */}
-          <View className="pt-6 pb-6" style={{
-            backgroundColor: isDark ? "#000000" : "#E8F5E9",
+          {/* Header - Clean minimalist design with greeting */}
+          <View className="pt-8 pb-4" style={{
             marginHorizontal: -24,
             paddingHorizontal: 24,
-            paddingTop: 24,
           }}>
-            <Text className="text-3xl font-bold text-black dark:text-white mb-2">
-              Capture Idea
-            </Text>
-            <Text className="text-base text-gray-600 dark:text-gray-400">
-              Record or type your thoughts
-            </Text>
+            {(() => {
+              const { user } = useAuthStore.getState();
+              const userName = user?.name || user?.email?.split("@")[0] || "there";
+              return (
+                <>
+                  <Text className="text-lg text-gray-500 dark:text-gray-400 font-medium">
+                    Hi {userName}
+                  </Text>
+                  <Text className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                    Record or type your thoughts
+                  </Text>
+                </>
+              );
+            })()}
           </View>
 
           {/* Text Input Section */}

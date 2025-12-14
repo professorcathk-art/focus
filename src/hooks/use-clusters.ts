@@ -190,25 +190,29 @@ export function useCluster(id: string) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchCluster = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const data = await apiClient.get<Cluster>(API_ENDPOINTS.clusters.get(id));
-        setCluster(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch cluster");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (id) {
-      fetchCluster();
+  const fetchCluster = async () => {
+    if (!id) {
+      setCluster(null);
+      setIsLoading(false);
+      return;
     }
+    
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await apiClient.get<Cluster>(API_ENDPOINTS.clusters.get(id));
+      setCluster(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch cluster");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCluster();
   }, [id]);
 
-  return { cluster, isLoading, error };
+  return { cluster, isLoading, error, refetch: fetchCluster };
 }
 
