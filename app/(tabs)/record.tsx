@@ -29,8 +29,7 @@ export default function RecordScreen() {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [textInput, setTextInput] = useState("");
-  const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
-  const [showClusterPicker, setShowClusterPicker] = useState(false);
+  const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null); // null = auto-categorize
   const [showNewClusterModal, setShowNewClusterModal] = useState(false);
   const [newClusterName, setNewClusterName] = useState("");
   const [showSuggestedCategoryModal, setShowSuggestedCategoryModal] = useState(false);
@@ -475,28 +474,64 @@ export default function RecordScreen() {
                 }}
               />
               {textInput.trim() && (
-                <View className="mt-3 flex-row items-center justify-between gap-2">
-                  <TouchableOpacity
-                    onPress={() => {
-                      Keyboard.dismiss();
-                      setShowClusterPicker(true);
-                    }}
-                    className="px-4 py-2 rounded-full border flex-1"
-                    style={{ 
-                      borderColor: selectedClusterId ? "#34C759" : "#D1D1D6",
-                      backgroundColor: selectedClusterId ? "#E8F5E9" : "transparent"
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Text className="text-sm font-medium text-center" style={{ color: selectedClusterId ? "#34C759" : "#8E8E93" }}>
-                      {selectedClusterId 
-                        ? clusters.find(c => c.id === selectedClusterId)?.label || "Select Category"
-                        : "📁 Category (Optional)"}
+                <View className="mt-4">
+                  {/* Category Selection */}
+                  <View className="mb-4">
+                    <Text className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">
+                      Category
                     </Text>
-                  </TouchableOpacity>
+                    <ScrollView 
+                      horizontal 
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ paddingRight: 8 }}
+                    >
+                      {/* Auto-categorize (Default) */}
+                      <TouchableOpacity
+                        onPress={() => setSelectedClusterId(null)}
+                        className="px-4 py-2.5 rounded-full mr-2"
+                        style={{
+                          backgroundColor: selectedClusterId === null ? "#34C759" : (isDark ? "#2C2C2E" : "#F2F2F7"),
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          className="text-sm font-medium"
+                          style={{
+                            color: selectedClusterId === null ? "#FFFFFF" : (isDark ? "#FFFFFF" : "#000000"),
+                          }}
+                        >
+                          ✨ Auto-categorize
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* Category Options */}
+                      {clusters.slice(0, 10).map((cluster) => (
+                        <TouchableOpacity
+                          key={cluster.id}
+                          onPress={() => setSelectedClusterId(cluster.id)}
+                          className="px-4 py-2.5 rounded-full mr-2"
+                          style={{
+                            backgroundColor: selectedClusterId === cluster.id ? "#34C759" : (isDark ? "#2C2C2E" : "#F2F2F7"),
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            className="text-sm font-medium"
+                            style={{
+                              color: selectedClusterId === cluster.id ? "#FFFFFF" : (isDark ? "#FFFFFF" : "#000000"),
+                            }}
+                          >
+                            {cluster.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+
+                  {/* Save Button */}
                   <TouchableOpacity
                     onPress={handleSaveText}
-                    className="px-6 py-2 rounded-full flex-row items-center justify-center"
+                    className="w-full py-3 rounded-full flex-row items-center justify-center"
                     style={{ backgroundColor: "#34C759" }}
                     activeOpacity={0.8}
                     disabled={status === "saved" || isAssigningCategory}
@@ -504,7 +539,7 @@ export default function RecordScreen() {
                     {(status === "saved" || isAssigningCategory) ? (
                       <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
-                      <Text className="text-white font-semibold text-sm">Save</Text>
+                      <Text className="text-white font-semibold text-base">Save</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -671,119 +706,6 @@ export default function RecordScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Cluster Picker Modal */}
-      <Modal
-        visible={showClusterPicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowClusterPicker(false)}
-      >
-        <View className="flex-1 justify-end bg-black/50">
-          <View className="bg-white dark:bg-card-dark rounded-t-3xl p-6 max-h-[80%]"
-            style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: -4 },
-              shadowOpacity: 0.3,
-              shadowRadius: 16,
-              elevation: 16,
-            }}
-          >
-            <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-xl font-bold text-black dark:text-white">
-                Select Category
-              </Text>
-              <TouchableOpacity
-                onPress={() => setShowClusterPicker(false)}
-                className="p-2"
-              >
-                <Ionicons name="close" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <TouchableOpacity
-                onPress={() => {
-                  setSelectedClusterId(null);
-                  setShowClusterPicker(false);
-                }}
-                className={`p-4 rounded-xl mb-2 ${selectedClusterId === null ? "bg-green-50 dark:bg-green-900/20" : "bg-gray-50 dark:bg-gray-900"}`}
-              >
-                <Text className={`font-medium ${selectedClusterId === null ? "text-green-600 dark:text-green-400" : "text-gray-700 dark:text-gray-300"}`}>
-                  ✨ Auto-categorize (Recommended)
-                </Text>
-                <Text className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  AI will automatically find the best category
-                </Text>
-              </TouchableOpacity>
-
-              {clusters.map((cluster) => (
-                <TouchableOpacity
-                  key={cluster.id}
-                  onPress={async () => {
-                    setSelectedClusterId(cluster.id);
-                    setShowClusterPicker(false);
-                    
-                    // If there's a pending idea from suggestion modal, assign it
-                    if (pendingIdeaId) {
-                      try {
-                        let actualClusterId = getActualClusterId(cluster.id);
-                        
-                        // If it's a local category ID, create the cluster in the database
-                        if (cluster.id.startsWith("cat-") && !actualClusterId) {
-                          const selectedCategory = clusters.find(c => c.id === cluster.id);
-                          if (selectedCategory) {
-                            const newCluster = await createCluster(selectedCategory.label);
-                            actualClusterId = newCluster.id;
-                          }
-                        }
-                        
-                        // Only assign if we have a valid database cluster ID
-                        if (actualClusterId && !actualClusterId.startsWith("cat-")) {
-                          await assignIdeaToCluster(actualClusterId, pendingIdeaId);
-                          await refetch();
-                          await refetchClusters();
-                        }
-                        
-                        setPendingIdeaId(null);
-                        setSuggestedCategoryLabel(null);
-                      } catch (err) {
-                        console.error("Failed to assign pending idea:", err);
-                        Alert.alert("Error", "Failed to assign to category");
-                      }
-                    }
-                  }}
-                  className={`p-4 rounded-xl mb-2 flex-row items-center justify-between ${selectedClusterId === cluster.id ? "bg-green-50 dark:bg-green-900/20" : "bg-gray-50 dark:bg-gray-900"}`}
-                >
-                  <View className="flex-1">
-                    <Text className={`font-medium ${selectedClusterId === cluster.id ? "text-green-600 dark:text-green-400" : "text-gray-700 dark:text-gray-300"}`}>
-                      {cluster.label}
-                    </Text>
-                    <Text className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {cluster.ideaIds.length} idea{cluster.ideaIds.length !== 1 ? "s" : ""}
-                    </Text>
-                  </View>
-                  {selectedClusterId === cluster.id && (
-                    <Ionicons name="checkmark-circle" size={24} color="#34C759" />
-                  )}
-                </TouchableOpacity>
-              ))}
-
-              <TouchableOpacity
-                onPress={() => {
-                  setShowClusterPicker(false);
-                  setShowNewClusterModal(true);
-                }}
-                className="p-4 rounded-xl mt-2 border-2 border-dashed border-gray-300 dark:border-gray-700 items-center"
-              >
-                <Ionicons name="add-circle-outline" size={24} color="#34C759" />
-                <Text className="text-green-600 dark:text-green-400 font-medium mt-2">
-                  Create New Category
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
 
       {/* New Cluster Modal */}
       <Modal

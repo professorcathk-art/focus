@@ -228,11 +228,16 @@ export default function ProfileScreen() {
               elevation: 2,
             }}
           >
-            <View className="flex-row items-center">
+            <View className="flex-row items-center flex-1">
               <Ionicons name="notifications" size={20} color="#8E8E93" />
-              <Text className="text-base text-black dark:text-white ml-3">
-                Notifications
-              </Text>
+              <View className="ml-3 flex-1">
+                <Text className="text-base text-black dark:text-white">
+                  Notifications
+                </Text>
+                <Text className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  To-do reminders
+                </Text>
+              </View>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
           </TouchableOpacity>
