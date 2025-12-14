@@ -95,6 +95,84 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 /**
+ * Toggle favorite status (must come before /:id route)
+ * Route: PUT /api/ideas/:id/favorite
+ * IMPORTANT: This route MUST be defined before router.put('/:id') to work correctly
+ * This is a simple boolean toggle - no AI needed
+ */
+router.put('/:id/favorite', requireAuth, async (req, res) => {
+  // Double-check this is a favorite request
+  if (!req.path.endsWith('/favorite') && !req.originalUrl.includes('/favorite')) {
+    console.error(`[FAVORITE ROUTE] ⚠️ Path doesn't end with /favorite: ${req.path}`);
+    return res.status(404).json({ message: 'Route not found' });
+  }
+  
+  const ideaId = req.params.id;
+  console.log(`[FAVORITE ROUTE] ✅ PUT /:id/favorite MATCHED with id: ${ideaId}`);
+  console.log(`[FAVORITE ROUTE] Request method: ${req.method}, path: ${req.path}, originalUrl: ${req.originalUrl}, params:`, req.params);
+  console.log(`[FAVORITE ROUTE] Full URL: ${req.protocol}://${req.get('host')}${req.originalUrl}`);
+  
+  try {
+    console.log(`[Toggle Favorite] Request received for idea ${ideaId}, user: ${req.user.id}`);
+    
+    // Check ownership and get current favorite status
+    const { data: existingIdea, error: checkError } = await supabase
+      .from('ideas')
+      .select('is_favorite')
+      .eq('id', ideaId)
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (checkError || !existingIdea) {
+      console.error('[Toggle Favorite] Idea not found or error:', checkError);
+      return res.status(404).json({ message: 'Idea not found' });
+    }
+
+    const newFavoriteStatus = !existingIdea.is_favorite;
+    console.log(`[Toggle Favorite] Toggling favorite from ${existingIdea.is_favorite} to ${newFavoriteStatus}`);
+
+    // Update favorite status (simple boolean toggle)
+    const { data: idea, error } = await supabase
+      .from('ideas')
+      .update({ 
+        is_favorite: newFavoriteStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', ideaId)
+      .eq('user_id', req.user.id)  // Double-check ownership
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .single();
+
+    if (error) {
+      console.error('[Toggle Favorite] Update error:', error);
+      return res.status(500).json({ message: 'Failed to toggle favorite' });
+    }
+
+    if (!idea) {
+      console.error('[Toggle Favorite] No idea returned after update');
+      return res.status(404).json({ message: 'Idea not found' });
+    }
+
+    console.log(`[Toggle Favorite] ✅ Successfully toggled favorite for idea ${ideaId} to ${newFavoriteStatus}`);
+    res.json({
+      id: idea.id,
+      userId: idea.user_id,
+      transcript: idea.transcript,
+      audioUrl: idea.audio_url,
+      duration: idea.duration,
+      createdAt: idea.created_at,
+      updatedAt: idea.updated_at,
+      clusterId: idea.cluster_id,
+      isFavorite: idea.is_favorite || false,
+    });
+  } catch (error) {
+    console.error('[Toggle Favorite] Unexpected error:', error);
+    console.error('[Toggle Favorite] Error stack:', error.stack);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
  * Create idea from text
  */
 router.post('/', requireAuth, async (req, res) => {
@@ -426,8 +504,15 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
  * Route: PUT /api/ideas/:id/favorite
  * IMPORTANT: This route MUST be defined before router.put('/:id') to work correctly
  * This is a simple boolean toggle - no AI needed
+ * Using explicit route matching to ensure Express matches it
  */
 router.put('/:id/favorite', requireAuth, async (req, res) => {
+  // Double-check this is a favorite request
+  if (!req.path.endsWith('/favorite') && !req.originalUrl.includes('/favorite')) {
+    console.error(`[FAVORITE ROUTE] ⚠️ Path doesn't end with /favorite: ${req.path}`);
+    return res.status(404).json({ message: 'Route not found' });
+  }
+  
   const ideaId = req.params.id;
   console.log(`[FAVORITE ROUTE] ✅ PUT /:id/favorite MATCHED with id: ${ideaId}`);
   console.log(`[FAVORITE ROUTE] Request method: ${req.method}, path: ${req.path}, originalUrl: ${req.originalUrl}, params:`, req.params);
