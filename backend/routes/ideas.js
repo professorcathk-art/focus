@@ -346,6 +346,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       isFavorite: idea.is_favorite || false,
+      transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
     console.error('Get idea error:', error);
@@ -471,7 +472,7 @@ router.post('/', requireAuth, async (req, res) => {
         created_at: now,
         updated_at: now,
       })
-      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite')
+      .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .single();
 
     if (error) {
@@ -518,6 +519,7 @@ router.post('/', requireAuth, async (req, res) => {
       embedding: idea.embedding,
       isFavorite: idea.is_favorite || false,
       suggestedClusterLabel: suggestedClusterLabel, // Include suggested label if no match found
+      transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
     console.error('Create idea error:', error);
