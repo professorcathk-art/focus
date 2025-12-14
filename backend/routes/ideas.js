@@ -306,6 +306,8 @@ const upload = multer({
  */
 router.get('/', requireAuth, async (req, res) => {
   try {
+    console.log(`[List Ideas] Fetching ideas for user: ${req.user.id}`);
+    
     // Select specific columns to avoid JSON parsing issues with vector/embedding type
     const { data: ideas, error } = await supabase
       .from('ideas')
@@ -314,11 +316,31 @@ router.get('/', requireAuth, async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching ideas:', error);
-      return res.status(500).json({ message: 'Failed to fetch ideas' });
+      console.error('[List Ideas] Supabase error:', error);
+      console.error('[List Ideas] Error code:', error.code);
+      console.error('[List Ideas] Error message:', error.message);
+      console.error('[List Ideas] Error details:', error.details);
+      console.error('[List Ideas] Error hint:', error.hint);
+      
+      // Check if it's a connection/authentication error
+      if (error.message?.includes('JWT') || error.message?.includes('auth') || error.code === 'PGRST301') {
+        return res.status(401).json({ message: 'Authentication error. Please sign in again.' });
+      }
+      
+      // Check if it's a timeout or connection error
+      if (error.message?.includes('timeout') || error.message?.includes('ECONNREFUSED') || error.message?.includes('ENOTFOUND')) {
+        return res.status(503).json({ message: 'Database connection error. Please try again later.' });
+      }
+      
+      return res.status(500).json({ 
+        message: 'Failed to fetch ideas',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
 
-    const formattedIdeas = ideas.map(idea => ({
+    console.log(`[List Ideas] ✅ Successfully fetched ${ideas?.length || 0} ideas`);
+
+    const formattedIdeas = (ideas || []).map(idea => ({
       id: idea.id,
       userId: idea.user_id,
       transcript: idea.transcript,
@@ -333,8 +355,12 @@ router.get('/', requireAuth, async (req, res) => {
 
     res.json(formattedIdeas);
   } catch (error) {
-    console.error('List ideas error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('[List Ideas] Unexpected error:', error);
+    console.error('[List Ideas] Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
