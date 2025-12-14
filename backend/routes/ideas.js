@@ -282,7 +282,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
       return res.status(400).json({ message: 'Audio file is required' });
     }
 
-    // Use AIMLAPI nova-3 model ONLY - no OpenAI fallback
+    // Use AIMLAPI Nova-2 model ONLY - no OpenAI fallback
     const aimlApiKey = process.env.AIML_API_KEY;
 
     if (!aimlApiKey) {
@@ -390,7 +390,7 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
           if (aimlResponse.status === 404) {
             const errorMsg = errorJson?.message || errorJson?.error?.message || errorText || 'Not Found';
             return res.status(500).json({ 
-              message: `AIMLAPI STT endpoint not found (404): ${errorMsg}. Please check: 1) AIML_API_KEY is valid, 2) Endpoint /v1/stt/create is correct, 3) Model 'nova-3' is supported.`,
+              message: `AIMLAPI STT endpoint not found (404): ${errorMsg}. Please check: 1) AIML_API_KEY is valid, 2) Endpoint /v1/stt/create is correct.`,
             });
           }
           
