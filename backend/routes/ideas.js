@@ -310,6 +310,7 @@ router.get('/', requireAuth, async (req, res) => {
       updatedAt: idea.updated_at,
       clusterId: idea.cluster_id,
       isFavorite: idea.is_favorite || false,
+      transcriptionError: idea.transcription_error || null,
     }));
 
     res.json(formattedIdeas);
