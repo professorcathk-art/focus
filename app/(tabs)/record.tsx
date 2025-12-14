@@ -22,7 +22,13 @@ export default function RecordScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const router = useRouter();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
+  
+  // Get user name safely - skip name if cannot identify
+  const getUserName = () => {
+    if (!user) return "there";
+    return user.name || user.email?.split("@")[0] || "there";
+  };
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [status, setStatus] = useState<"idle" | "recording" | "transcribing" | "saved">("idle");
@@ -564,7 +570,7 @@ export default function RecordScreen() {
             paddingHorizontal: 24,
           }}>
             <Text className="text-lg text-gray-500 dark:text-gray-400 font-medium">
-              Hi {user?.name || user?.email?.split("@")[0] || "there"}
+              Hi {getUserName()}
             </Text>
             <Text className="text-sm text-gray-400 dark:text-gray-500 mt-1">
               Record or type your thoughts
