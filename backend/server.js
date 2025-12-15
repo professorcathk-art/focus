@@ -54,6 +54,14 @@ app.get('/api/health', (req, res) => {
 app.use((req, res, next) => {
   console.error(`[404] Route not found: ${req.method} ${req.originalUrl}`);
   console.error(`[404] Path: ${req.path}, Original URL: ${req.originalUrl}`);
+  // Log all registered routes for debugging
+  console.error(`[404] Registered todos routes:`, todosRouter.stack.map(r => {
+    if (r.route) {
+      const methods = Object.keys(r.route.methods).join(', ').toUpperCase();
+      return `${methods} ${r.route.path}`;
+    }
+    return null;
+  }).filter(Boolean));
   res.status(404).json({
     message: `Route not found: ${req.method} ${req.originalUrl}`,
     path: req.path,

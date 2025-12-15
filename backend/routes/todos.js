@@ -53,8 +53,10 @@ router.get('/today', requireAuth, async (req, res) => {
  * Only moves tasks after midnight (new day)
  * Only moves tasks that were NOT manually added for a future date
  * IMPORTANT: This route must be defined BEFORE /:id routes to avoid route conflicts
+ * CRITICAL: Route path must match exactly - no typos!
  */
 router.post('/move-incomplete', requireAuth, async (req, res) => {
+  console.log('[MOVE-INCOMPLETE] Route hit!', req.method, req.path, req.originalUrl);
   try {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
