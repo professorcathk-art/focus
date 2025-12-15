@@ -34,11 +34,14 @@ app.use('/api/chat', require('./routes/chat'));
 // Register todos routes with explicit logging
 const todosRouter = require('./routes/todos');
 console.log('[SERVER] Todos router loaded, checking routes...');
+console.log('[SERVER] Total router stack length:', todosRouter.stack.length);
 // Log all registered routes for debugging
-todosRouter.stack.forEach((r) => {
+todosRouter.stack.forEach((r, index) => {
   if (r.route) {
     const methods = Object.keys(r.route.methods).join(', ').toUpperCase();
-    console.log(`[SERVER] Registered route: ${methods} ${r.route.path}`);
+    console.log(`[SERVER] Route ${index}: ${methods} ${r.route.path}`);
+  } else {
+    console.log(`[SERVER] Stack item ${index}:`, r.name || 'unnamed', r.regexp?.toString() || 'no regexp');
   }
 });
 app.use('/api/todos', todosRouter);
