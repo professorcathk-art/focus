@@ -15,6 +15,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Debug middleware - log ALL incoming requests
+app.use((req, res, next) => {
+  console.log(`[REQUEST] ${req.method} ${req.originalUrl} - Path: ${req.path}`);
+  next();
+});
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 // Register ideas routes with explicit logging
@@ -37,8 +43,16 @@ app.use('/api/chat', require('./routes/chat'));
 // This is a workaround for Vercel serverless function route matching
 const { requireAuth: requireAuthTodos } = require('./middleware/auth');
 const supabaseTodos = require('./lib/supabase');
+
+// Register route with explicit logging to ensure it's matched
 app.post('/api/todos/move-incomplete', requireAuthTodos, async (req, res) => {
-  console.log('[SERVER] Move-incomplete route hit directly on app (bypassing router)');
+  console.log('[SERVER] ⚡ Move-incomplete route MATCHED! Method:', req.method, 'Path:', req.path, 'Original URL:', req.originalUrl);
+  await handleMoveIncomplete(req, res);
+});
+
+// Extract handler to separate function
+async function handleMoveIncomplete(req, res) {
+  console.log('[SERVER] Move-incomplete handler executing');
   try {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -101,7 +115,7 @@ app.post('/api/todos/move-incomplete', requireAuthTodos, async (req, res) => {
     console.error('Move incomplete todos error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
-});
+}
 
 // Register todos routes with explicit logging
 const todosRouter = require('./routes/todos');
