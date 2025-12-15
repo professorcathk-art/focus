@@ -31,6 +31,78 @@ app.use('/api/ideas', ideasRouter);
 app.use('/api/clusters', require('./routes/clusters'));
 app.use('/api/search', require('./routes/search'));
 app.use('/api/chat', require('./routes/chat'));
+
+// CRITICAL FIX: Register move-incomplete route DIRECTLY on app BEFORE router
+// This ensures it's matched before any /:id routes can intercept it
+// This is a workaround for Vercel serverless function route matching
+const { requireAuth: requireAuthTodos } = require('./middleware/auth');
+const supabaseTodos = require('./lib/supabase');
+app.post('/api/todos/move-incomplete', requireAuthTodos, async (req, res) => {
+  console.log('[SERVER] Move-incomplete route hit directly on app (bypassing router)');
+  try {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const todayStr = today.toISOString().split('T')[0];
+
+    const hoursSinceMidnight = now.getHours() + (now.getMinutes() / 60);
+    if (hoursSinceMidnight < 1) {
+      return res.json({ success: true, moved: 0, message: 'Too early in the day' });
+    }
+
+    const { data: incompleteTodos, error: fetchError } = await supabaseTodos
+      .from('todos')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .eq('date', yesterdayStr)
+      .eq('completed', false);
+    
+    if (fetchError) {
+      console.error('Error fetching incomplete todos:', fetchError);
+      return res.status(500).json({ message: 'Failed to fetch incomplete todos' });
+    }
+
+    const tasksToMove = (incompleteTodos || []).filter(todo => {
+      const todoCreatedDate = new Date(todo.created_at).toISOString().split('T')[0];
+      const todoDate = todo.date;
+      if (todo.is_rolled_over) return true;
+      return todoCreatedDate <= todoDate;
+    });
+
+    if (!tasksToMove || tasksToMove.length === 0) {
+      return res.json({ success: true, moved: 0 });
+    }
+
+    const movedTodos = [];
+    for (const todo of tasksToMove) {
+      const { data: movedTodo, error: updateError } = await supabaseTodos
+        .from('todos')
+        .update({
+          date: todayStr,
+          is_rolled_over: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', todo.id)
+        .eq('user_id', req.user.id)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error(`Error moving todo ${todo.id}:`, updateError);
+      } else {
+        movedTodos.push(movedTodo);
+      }
+    }
+
+    res.json({ success: true, moved: movedTodos.length });
+  } catch (error) {
+    console.error('Move incomplete todos error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Register todos routes with explicit logging
 const todosRouter = require('./routes/todos');
 console.log('[SERVER] Todos router loaded, checking routes...');
