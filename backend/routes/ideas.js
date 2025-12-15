@@ -322,19 +322,29 @@ router.get('/', requireAuth, async (req, res) => {
       console.error('[List Ideas] Error details:', error.details);
       console.error('[List Ideas] Error hint:', error.hint);
       
+      // Check if error message is HTML (Cloudflare error page)
+      const errorMessage = typeof error.message === 'string' ? error.message : JSON.stringify(error);
+      if (errorMessage.includes('<!DOCTYPE html>') || errorMessage.includes('Cloudflare') || errorMessage.includes('500')) {
+        console.error('[List Ideas] ⚠️ Cloudflare/Supabase 500 error detected');
+        return res.status(503).json({ 
+          message: 'Database temporarily unavailable. Please try again in a few moments.',
+          retryable: true
+        });
+      }
+      
       // Check if it's a connection/authentication error
-      if (error.message?.includes('JWT') || error.message?.includes('auth') || error.code === 'PGRST301') {
+      if (errorMessage.includes('JWT') || errorMessage.includes('auth') || error.code === 'PGRST301') {
         return res.status(401).json({ message: 'Authentication error. Please sign in again.' });
       }
       
       // Check if it's a timeout or connection error
-      if (error.message?.includes('timeout') || error.message?.includes('ECONNREFUSED') || error.message?.includes('ENOTFOUND')) {
+      if (errorMessage.includes('timeout') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND')) {
         return res.status(503).json({ message: 'Database connection error. Please try again later.' });
       }
       
       return res.status(500).json({ 
         message: 'Failed to fetch ideas',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        error: process.env.NODE_ENV === 'development' ? errorMessage : undefined
       });
     }
 
@@ -357,9 +367,20 @@ router.get('/', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('[List Ideas] Unexpected error:', error);
     console.error('[List Ideas] Error stack:', error.stack);
+    
+    // Check if error message is HTML (Cloudflare error page)
+    const errorMessage = error?.message || String(error);
+    if (errorMessage.includes('<!DOCTYPE html>') || errorMessage.includes('Cloudflare') || errorMessage.includes('500')) {
+      console.error('[List Ideas] ⚠️ Cloudflare/Supabase 500 error detected in catch block');
+      return res.status(503).json({ 
+        message: 'Database temporarily unavailable. Please try again in a few moments.',
+        retryable: true
+      });
+    }
+    
     res.status(500).json({ 
       message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? errorMessage : undefined
     });
   }
 });

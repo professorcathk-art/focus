@@ -57,11 +57,12 @@ export const API_ENDPOINTS = {
   },
   // Todos
   todos: {
-    today: "/todos/today",
+    today: (date?: string) => date ? `/todos/today?date=${date}` : "/todos/today",
     create: "/todos",
     update: (id: string) => `/todos/${id}`,
     delete: (id: string) => `/todos/${id}`,
     resetToday: "/todos/reset-today",
+    moveIncompleteToNextDay: "/todos/move-incomplete",
   },
   // User
   user: {

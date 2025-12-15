@@ -31,7 +31,17 @@ app.use('/api/ideas', ideasRouter);
 app.use('/api/clusters', require('./routes/clusters'));
 app.use('/api/search', require('./routes/search'));
 app.use('/api/chat', require('./routes/chat'));
-app.use('/api/todos', require('./routes/todos'));
+// Register todos routes with explicit logging
+const todosRouter = require('./routes/todos');
+console.log('[SERVER] Todos router loaded, checking routes...');
+// Log all registered routes for debugging
+todosRouter.stack.forEach((r) => {
+  if (r.route) {
+    const methods = Object.keys(r.route.methods).join(', ').toUpperCase();
+    console.log(`[SERVER] Registered route: ${methods} ${r.route.path}`);
+  }
+});
+app.use('/api/todos', todosRouter);
 app.use('/api/user', require('./routes/user'));
 app.use('/api/feedback', require('./routes/feedback'));
 

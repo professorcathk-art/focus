@@ -244,9 +244,18 @@ export default function IdeaDetailScreen() {
         if (existingCluster) {
           actualClusterId = existingCluster.id;
         } else {
-          // Create new cluster in database
-          const newCluster = await createCluster(category.label);
-          actualClusterId = newCluster.id;
+          // Check if cluster already exists (case-insensitive)
+          const existingCluster = clusters.find(c => 
+            c.label.toLowerCase() === category.label.toLowerCase() && !c.id.startsWith("cat-")
+          );
+          
+          if (existingCluster) {
+            actualClusterId = existingCluster.id;
+          } else {
+            // Create new cluster in database - wait for sync since we need real ID for assignment
+            const newCluster = await createCluster(category.label, true);
+            actualClusterId = newCluster.id;
+          }
         }
       }
       

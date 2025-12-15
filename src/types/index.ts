@@ -56,6 +56,7 @@ export interface Todo {
   dueDate?: string; // Optional deadline date
   createdAt: string;
   updatedAt: string;
+  isRolledOver?: boolean; // True if this task was auto-moved from previous day
 }
 
 export interface UserStats {

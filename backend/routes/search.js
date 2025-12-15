@@ -37,6 +37,17 @@ router.post('/semantic', requireAuth, async (req, res) => {
 
     if (error) {
       console.error('Error fetching ideas:', error);
+      
+      // Check if error message is HTML (Cloudflare error page)
+      const errorMessage = typeof error.message === 'string' ? error.message : JSON.stringify(error);
+      if (errorMessage.includes('<!DOCTYPE html>') || errorMessage.includes('Cloudflare') || errorMessage.includes('500')) {
+        console.error('[Search] ⚠️ Cloudflare/Supabase 500 error detected');
+        return res.status(503).json({ 
+          message: 'Database temporarily unavailable. Please try again in a few moments.',
+          retryable: true
+        });
+      }
+      
       return res.status(500).json({ message: 'Failed to search ideas' });
     }
 

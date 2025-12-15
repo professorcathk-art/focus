@@ -8,17 +8,19 @@ const supabase = require('../lib/supabase');
 const { requireAuth } = require('../middleware/auth');
 
 /**
- * Get today's todos
+ * Get todos for a specific date (defaults to today)
  */
 router.get('/today', requireAuth, async (req, res) => {
   try {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    // Support date query parameter: ?date=2024-01-15
+    const requestedDate = req.query.date || new Date().toISOString().split('T')[0];
+    const dateStr = requestedDate.split('T')[0]; // Ensure YYYY-MM-DD format
 
     const { data: todos, error } = await supabase
       .from('todos')
       .select('*')
       .eq('user_id', req.user.id)
-      .eq('date', today)
+      .eq('date', dateStr)
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -36,11 +38,100 @@ router.get('/today', requireAuth, async (req, res) => {
       dueDate: todo.date, // Use date as dueDate
       createdAt: todo.created_at,
       updatedAt: todo.updated_at,
+      isRolledOver: todo.is_rolled_over || false,
     }));
 
     res.json(formattedTodos);
   } catch (error) {
     console.error('Get todos error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
+ * Move incomplete tasks from previous day to today
+ * Only moves tasks after midnight (new day)
+ * Only moves tasks that were NOT manually added for a future date
+ * IMPORTANT: This route must be defined BEFORE /:id routes to avoid route conflicts
+ */
+router.post('/move-incomplete', requireAuth, async (req, res) => {
+  try {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const todayStr = today.toISOString().split('T')[0];
+
+    // Check if it's past midnight (at least 1 hour into the new day)
+    // This prevents moving tasks during the same day
+    const hoursSinceMidnight = now.getHours() + (now.getMinutes() / 60);
+    if (hoursSinceMidnight < 1) {
+      // Too early in the day, don't move yet
+      return res.json({ success: true, moved: 0, message: 'Too early in the day' });
+    }
+
+    // Get incomplete todos from yesterday
+    // Only get tasks that were NOT manually added for a future date
+    // We check: created_at date <= task date (meaning task wasn't manually set to future)
+    // OR task is already rolled over (can be rolled again)
+    const { data: incompleteTodos, error: fetchError } = await supabase
+      .from('todos')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .eq('date', yesterdayStr)
+      .eq('completed', false);
+    
+    if (fetchError) {
+      console.error('Error fetching incomplete todos:', fetchError);
+      return res.status(500).json({ message: 'Failed to fetch incomplete todos' });
+    }
+
+    // Filter to only include tasks that:
+    // 1. Were created on or before the task date (not manually added for future)
+    // 2. OR are already rolled over (can be rolled again)
+    const tasksToMove = (incompleteTodos || []).filter(todo => {
+      const todoCreatedDate = new Date(todo.created_at).toISOString().split('T')[0];
+      const todoDate = todo.date;
+      
+      // If task is already rolled over, it can be moved again
+      if (todo.is_rolled_over) {
+        return true;
+      }
+      
+      // If created date <= task date, it's a normal task (not manually set to future)
+      return todoCreatedDate <= todoDate;
+    });
+
+    if (!tasksToMove || tasksToMove.length === 0) {
+      return res.json({ success: true, moved: 0 });
+    }
+
+    // Move each incomplete todo to today and mark as rolled over
+    const movedTodos = [];
+    for (const todo of tasksToMove) {
+      const { data: movedTodo, error: updateError } = await supabase
+        .from('todos')
+        .update({
+          date: todayStr,
+          is_rolled_over: true, // Mark as rolled over
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', todo.id)
+        .eq('user_id', req.user.id)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error(`Error moving todo ${todo.id}:`, updateError);
+      } else {
+        movedTodos.push(movedTodo);
+      }
+    }
+
+    res.json({ success: true, moved: movedTodos.length });
+  } catch (error) {
+    console.error('Move incomplete todos error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -89,6 +180,7 @@ router.post('/', requireAuth, async (req, res) => {
       dueDate: todo.date, // Use date as dueDate
       createdAt: todo.created_at,
       updatedAt: todo.updated_at,
+      isRolledOver: todo.is_rolled_over || false,
     });
   } catch (error) {
     console.error('Create todo error:', error);
@@ -143,6 +235,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       dueDate: todo.date, // Use date as dueDate
       createdAt: todo.created_at,
       updatedAt: todo.updated_at,
+      isRolledOver: todo.is_rolled_over || false,
     });
   } catch (error) {
     console.error('Update todo error:', error);
@@ -171,31 +264,6 @@ router.delete('/:id', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Delete todo error:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-/**
- * Reset todos for next day (mark all today's todos as incomplete)
- */
-router.post('/reset-today', requireAuth, async (req, res) => {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-
-    const { error } = await supabase
-      .from('todos')
-      .update({ completed: false, updated_at: new Date().toISOString() })
-      .eq('user_id', req.user.id)
-      .eq('date', today);
-
-    if (error) {
-      console.error('Reset todos error:', error);
-      return res.status(500).json({ message: 'Failed to reset todos' });
-    }
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Reset todos error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

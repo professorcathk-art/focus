@@ -43,6 +43,7 @@ export default function RecordScreen() {
   const [editableCategoryName, setEditableCategoryName] = useState<string>("");
   const [pendingIdeaId, setPendingIdeaId] = useState<string | null>(null);
   const [isAssigningCategory, setIsAssigningCategory] = useState(false);
+  const [showCategoryPickerInModal, setShowCategoryPickerInModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { ideas, createIdea, refetch } = useIdeas();
   const { clusters, createCluster, assignIdeaToCluster, refetch: refetchClusters } = useClusters();
@@ -75,7 +76,8 @@ export default function RecordScreen() {
         clearInterval(transcriptionPollingRef.current);
       }
     };
-  }, [ideas, refetch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ideas]); // Only depend on ideas, not refetch (refetch is stable now)
   
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {
@@ -355,6 +357,7 @@ export default function RecordScreen() {
         setSuggestedCategoryLabel(idea.suggestedClusterLabel);
         setEditableCategoryName(idea.suggestedClusterLabel);
         setPendingIdeaId(idea.id);
+        setShowCategoryPickerInModal(false); // Reset to show suggested category view
         setShowSuggestedCategoryModal(true);
         setStatus("idle");
       } else {
@@ -400,17 +403,43 @@ export default function RecordScreen() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  
   const handleCreateNewCluster = async () => {
-    if (!newClusterName.trim()) return;
+    if (!newClusterName.trim() || isCreatingCategory) return;
 
     try {
-      const newCluster = await createCluster(newClusterName.trim());
+      setIsCreatingCategory(true);
+      // Use waitForSync=true to get the real cluster ID immediately for proper assignment
+      const newCluster = await createCluster(newClusterName.trim(), true);
+      console.log(`[Frontend] Created new cluster: ${newCluster.id} with label: "${newCluster.label}"`);
       setSelectedClusterId(newCluster.id);
       setNewClusterName("");
       setShowNewClusterModal(false);
+      // Refresh clusters to ensure the new one is in the list
+      await refetchClusters();
+      console.log(`[Frontend] Selected cluster ID set to: ${newCluster.id}`);
       Alert.alert("Success", "Category created!");
     } catch (error) {
-      Alert.alert("Error", "Failed to create category");
+      const errorMessage = error instanceof Error ? error.message : "Failed to create category";
+      if (errorMessage.includes("already exists")) {
+        // Find existing cluster and select it
+        const existingCluster = clusters.find(c => 
+          c.label.toLowerCase() === newClusterName.trim().toLowerCase() && !c.id.startsWith('cat-')
+        );
+        if (existingCluster) {
+          setSelectedClusterId(existingCluster.id);
+          setNewClusterName("");
+          setShowNewClusterModal(false);
+          Alert.alert("Info", "Category already exists. Selected it for you.");
+        } else {
+          Alert.alert("Error", "Category already exists");
+        }
+      } else {
+        Alert.alert("Error", errorMessage);
+      }
+    } finally {
+      setIsCreatingCategory(false);
     }
   };
 
@@ -436,7 +465,11 @@ export default function RecordScreen() {
     // Hide keyboard first
     Keyboard.dismiss();
 
+    // Prevent double-save
+    if (status === "saved" || isAssigningCategory) return;
+
     setStatus("saved");
+    setIsAssigningCategory(false); // Reset assignment state at start
     try {
       const newIdea = await createIdea(textInput.trim());
       setTextInput("");
@@ -446,25 +479,69 @@ export default function RecordScreen() {
       if (selectedClusterId && newIdea) {
         setIsAssigningCategory(true);
         try {
-          let actualClusterId = getActualClusterId(selectedClusterId);
+          let actualClusterId: string | null = null;
           
-          // If it's a local category ID, create the cluster in the database
-          if (selectedClusterId.startsWith("cat-") && !actualClusterId) {
+          console.log(`[Frontend] Assigning idea ${newIdea.id} to selected cluster: ${selectedClusterId}`);
+          
+          // Check if it's already a real database cluster ID (doesn't start with "cat-")
+          if (!selectedClusterId.startsWith("cat-")) {
+            // It's already a real database cluster ID - use it directly
+            actualClusterId = selectedClusterId;
+            console.log(`[Frontend] Using real cluster ID directly: ${actualClusterId}`);
+          } else {
+            // It's a temp/local category ID - need to find or create the real cluster
             const selectedCategory = clusters.find(c => c.id === selectedClusterId);
             if (selectedCategory) {
-              const newCluster = await createCluster(selectedCategory.label);
-              actualClusterId = newCluster.id;
+              // First try to find existing database cluster with same label
+              const existingCluster = clusters.find(c => 
+                c.label === selectedCategory.label && !c.id.startsWith("cat-")
+              );
+              
+              if (existingCluster) {
+                actualClusterId = existingCluster.id;
+              } else {
+                // Need to create the cluster in database
+                // This should rarely happen since plus button creates with waitForSync=true
+                console.log(`[Frontend] Creating cluster "${selectedCategory.label}" for assignment`);
+                const newCluster = await createCluster(selectedCategory.label, true);
+                actualClusterId = newCluster.id;
+                // Refresh clusters to include the new one
+                await refetchClusters();
+              }
+            } else {
+              // Category not found - this shouldn't happen if created via plus button
+              console.warn(`[Frontend] Selected cluster ${selectedClusterId} not found in clusters array`);
+              // Try refreshing clusters and checking again
+              await refetchClusters();
+              await new Promise(resolve => setTimeout(resolve, 200));
+              const refreshedCategory = clusters.find(c => c.id === selectedClusterId);
+              if (refreshedCategory && !refreshedCategory.id.startsWith("cat-")) {
+                actualClusterId = refreshedCategory.id;
+              }
             }
           }
           
           // Only assign if we have a valid database cluster ID
           if (actualClusterId && !actualClusterId.startsWith("cat-")) {
+            console.log(`[Frontend] Assigning idea ${newIdea.id} to cluster ${actualClusterId}`);
             await assignIdeaToCluster(actualClusterId, newIdea.id);
-            console.log(`[Frontend] Manually assigned idea ${newIdea.id} to cluster ${actualClusterId}`);
+            console.log(`[Frontend] Successfully assigned idea ${newIdea.id} to cluster ${actualClusterId}`);
+            await refetch();
+            await refetchClusters();
+            setStatus("idle");
+          } else {
+            console.error(`[Frontend] ERROR: Could not determine actual cluster ID for ${selectedClusterId}. ActualClusterId: ${actualClusterId}`);
+            Alert.alert("Warning", "Note saved but category assignment failed. Please assign manually.");
+            await refetch();
+            await refetchClusters();
+            setStatus("idle");
           }
         } catch (err) {
           console.error("Failed to assign to cluster:", err);
-          // Don't fail the save if assignment fails
+          // Don't fail the save if assignment fails, but reset status
+          await refetch();
+          await refetchClusters();
+          setStatus("idle");
         } finally {
           setIsAssigningCategory(false);
         }
@@ -492,10 +569,16 @@ export default function RecordScreen() {
         }
       }
       
-      setSelectedClusterId(null);
+      // Reset selection only after all operations complete
+      // Don't reset if assignment is still in progress (shouldn't happen, but safety check)
+      if (!isAssigningCategory) {
+        setSelectedClusterId(null);
+      }
     } catch (error) {
       console.error("Failed to save idea:", error);
       setStatus("idle");
+      setIsAssigningCategory(false);
+      setSelectedClusterId(null);
       
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       
@@ -565,16 +648,25 @@ export default function RecordScreen() {
         >
         <View className="flex-1 px-6">
           {/* Header - Clean minimalist design with greeting */}
-          <View className="pt-8 pb-4" style={{
+          <View className="pt-8 pb-4 flex-row items-start justify-between" style={{
             marginHorizontal: -24,
             paddingHorizontal: 24,
           }}>
-            <Text className="text-lg text-gray-500 dark:text-gray-400 font-medium">
-              Hi {getUserName()}
-            </Text>
-            <Text className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-              Record or type your thoughts
-            </Text>
+            <View className="flex-1">
+              <Text className="text-lg text-gray-500 dark:text-gray-400 font-medium">
+                Hi {getUserName()}
+              </Text>
+              <Text className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                Record or type your thoughts
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => router.push("/(tabs)/profile")}
+              className="p-2 -mt-1"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="settings-outline" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
+            </TouchableOpacity>
           </View>
 
           {/* Text Input Section */}
@@ -662,6 +754,26 @@ export default function RecordScreen() {
                           </TouchableOpacity>
                         );
                       })}
+                      
+                      {/* Plus button to add new category */}
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowNewClusterModal(true);
+                        }}
+                        className="px-5 py-3 rounded-full mr-3 border-2 items-center justify-center"
+                        style={{
+                          borderColor: isDark ? "#8E8E93" : "#D1D1D6",
+                          backgroundColor: "transparent",
+                          minWidth: 44,
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons 
+                          name="add" 
+                          size={20} 
+                          color={isDark ? "#8E8E93" : "#8E8E93"} 
+                        />
+                      </TouchableOpacity>
                     </ScrollView>
                   </View>
 
@@ -915,10 +1027,20 @@ export default function RecordScreen() {
               <TouchableOpacity
                 onPress={handleCreateNewCluster}
                 className="px-6 py-3 rounded-xl"
-                style={{ backgroundColor: "#34C759" }}
-                disabled={!newClusterName.trim()}
+                style={{ 
+                  backgroundColor: (!newClusterName.trim() || isCreatingCategory) ? "#9CA3AF" : "#34C759",
+                  opacity: (!newClusterName.trim() || isCreatingCategory) ? 0.6 : 1
+                }}
+                disabled={!newClusterName.trim() || isCreatingCategory}
               >
-                <Text className="text-white font-semibold">Create</Text>
+                {isCreatingCategory ? (
+                  <View className="flex-row items-center">
+                    <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text className="text-white font-semibold">Creating...</Text>
+                  </View>
+                ) : (
+                  <Text className="text-white font-semibold">Create</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -932,6 +1054,7 @@ export default function RecordScreen() {
         animationType="fade"
         onRequestClose={() => {
           setShowSuggestedCategoryModal(false);
+          setShowCategoryPickerInModal(false);
           setSuggestedCategoryLabel(null);
           setEditableCategoryName("");
           setPendingIdeaId(null);
@@ -947,90 +1070,254 @@ export default function RecordScreen() {
               elevation: 16,
             }}
           >
-            <View className="items-center mb-4">
-              <Ionicons name="sparkles" size={32} color="#34C759" />
-            </View>
-            <Text className="text-xl font-bold text-black dark:text-white mb-2 text-center">
-              Suggested Category
-            </Text>
-            <Text className="text-sm text-gray-600 dark:text-gray-400 mb-4 text-center">
-              We couldn't find a similar category. You can edit the suggested name or create a new one.
-            </Text>
-            
-            <View className="mb-6">
-              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Category Name
-              </Text>
-              <TextInput
-                className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 text-base text-black dark:text-white"
-                placeholder="Enter category name"
-                placeholderTextColor="#9CA3AF"
-                value={editableCategoryName}
-                onChangeText={setEditableCategoryName}
-                autoFocus={false}
-                returnKeyType="done"
-                blurOnSubmit={true}
-                onSubmitEditing={Keyboard.dismiss}
-              />
-            </View>
+            {!showCategoryPickerInModal ? (
+              <>
+                <View className="items-center mb-4">
+                  <Ionicons name="sparkles" size={32} color="#34C759" />
+                </View>
+                <Text className="text-xl font-bold text-black dark:text-white mb-2 text-center">
+                  Suggested Category
+                </Text>
+                <Text className="text-sm text-gray-600 dark:text-gray-400 mb-4 text-center">
+                  We couldn't find a similar category. You can edit the suggested name or create a new one.
+                </Text>
+                
+                <View className="mb-6">
+                  <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Category Name
+                  </Text>
+                  <TextInput
+                    className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 text-base text-black dark:text-white"
+                    placeholder="Enter category name"
+                    placeholderTextColor="#9CA3AF"
+                    value={editableCategoryName}
+                    onChangeText={setEditableCategoryName}
+                    autoFocus={false}
+                    returnKeyType="done"
+                    blurOnSubmit={true}
+                    onSubmitEditing={Keyboard.dismiss}
+                  />
+                </View>
 
-            <View className="flex-row gap-3 mb-3">
-              <TouchableOpacity
-                onPress={async () => {
-                  // User approves suggested category (with edited name if changed)
-                  const categoryName = editableCategoryName.trim() || suggestedCategoryLabel || "New Category";
-                  if (pendingIdeaId && categoryName) {
-                    try {
-                      const newCluster = await createCluster(categoryName);
-                      await assignIdeaToCluster(newCluster.id, pendingIdeaId);
-                      await refetch();
-                      await refetchClusters();
-                    } catch (err) {
-                      console.error("Failed to create and assign cluster:", err);
-                      Alert.alert("Error", "Failed to create category");
-                    }
-                  }
-                  setShowSuggestedCategoryModal(false);
-                  setSuggestedCategoryLabel(null);
-                  setEditableCategoryName("");
-                  setPendingIdeaId(null);
-                }}
-                className="flex-1 px-6 py-3 rounded-xl"
-                style={{ backgroundColor: "#34C759" }}
-              >
-                <Text className="text-white font-semibold text-center">Create Category</Text>
-              </TouchableOpacity>
-            </View>
+                <View className="flex-row gap-3 mb-3">
+                  <TouchableOpacity
+                    onPress={async () => {
+                      // Prevent double-clicks
+                      if (isAssigningCategory) return;
+                      
+                      // User approves suggested category (with edited name if changed)
+                      const categoryName = editableCategoryName.trim() || suggestedCategoryLabel || "New Category";
+                      if (pendingIdeaId && categoryName) {
+                        try {
+                          setIsAssigningCategory(true);
+                          setStatus("saved"); // Show loading state
+                          // Wait for sync to complete since we need the real cluster ID for assignment
+                          const newCluster = await createCluster(categoryName, true);
+                          await assignIdeaToCluster(newCluster.id, pendingIdeaId);
+                          await refetch();
+                          await refetchClusters();
+                          
+                          // Close modal on success
+                          setShowSuggestedCategoryModal(false);
+                          setShowCategoryPickerInModal(false);
+                          setSuggestedCategoryLabel(null);
+                          setEditableCategoryName("");
+                          setPendingIdeaId(null);
+                          setStatus("idle");
+                        } catch (err) {
+                          console.error("Failed to create and assign cluster:", err);
+                          const errorMessage = err instanceof Error ? err.message : "Failed to create category";
+                          
+                          // Handle duplicate error gracefully
+                          if (errorMessage.includes("already exists")) {
+                            // Find existing cluster and assign to it
+                            const existingCluster = clusters.find(c => 
+                              c.label.toLowerCase() === categoryName.toLowerCase()
+                            );
+                            if (existingCluster && !existingCluster.id.startsWith('cat-')) {
+                              try {
+                                await assignIdeaToCluster(existingCluster.id, pendingIdeaId);
+                                await refetch();
+                                await refetchClusters();
+                                setShowSuggestedCategoryModal(false);
+                                setShowCategoryPickerInModal(false);
+                                setSuggestedCategoryLabel(null);
+                                setEditableCategoryName("");
+                                setPendingIdeaId(null);
+                                setStatus("idle");
+                                return; // Success, exit early
+                              } catch (assignErr) {
+                                Alert.alert("Error", "Category exists but failed to assign idea");
+                                setStatus("idle");
+                              }
+                            } else {
+                              Alert.alert("Info", "Category already exists. Please select it from the list.");
+                              setStatus("idle");
+                            }
+                          } else {
+                            Alert.alert("Error", errorMessage);
+                            setStatus("idle");
+                          }
+                        } finally {
+                          setIsAssigningCategory(false);
+                        }
+                      }
+                    }}
+                    disabled={isAssigningCategory}
+                    className="flex-1 px-6 py-3 rounded-xl"
+                    style={{ 
+                      backgroundColor: isAssigningCategory ? "#9CA3AF" : "#34C759",
+                      opacity: isAssigningCategory ? 0.6 : 1
+                    }}
+                  >
+                    {isAssigningCategory ? (
+                      <View className="flex-row items-center justify-center">
+                        <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text className="text-white font-semibold text-center">Creating...</Text>
+                      </View>
+                    ) : (
+                      <Text className="text-white font-semibold text-center">Create Category</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
 
-            <TouchableOpacity
-              onPress={() => {
-                // User wants to select existing category - show categories inline
-                setShowSuggestedCategoryModal(false);
-                // Categories are now shown inline when typing, so just close the modal
-              }}
-              className="px-6 py-3 rounded-xl border-2"
-              style={{ borderColor: "#34C759" }}
-            >
-              <Text className="text-green-600 dark:text-green-400 font-semibold text-center">
-                Choose Existing Category
-              </Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    // Show category picker
+                    setShowCategoryPickerInModal(true);
+                  }}
+                  className="px-6 py-3 rounded-xl border-2 mb-3"
+                  style={{ borderColor: "#34C759" }}
+                >
+                  <Text className="text-green-600 dark:text-green-400 font-semibold text-center">
+                    Choose Existing Category
+                  </Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => {
-                // User skips categorization
-                setShowSuggestedCategoryModal(false);
-                setSuggestedCategoryLabel(null);
-                setEditableCategoryName("");
-                setPendingIdeaId(null);
-                refetch();
-              }}
-              className="px-6 py-3 mt-3"
-            >
-              <Text className="text-gray-500 dark:text-gray-400 text-center text-sm">
-                Skip for now
-              </Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    // User skips categorization
+                    setShowSuggestedCategoryModal(false);
+                    setShowCategoryPickerInModal(false);
+                    setSuggestedCategoryLabel(null);
+                    setEditableCategoryName("");
+                    setPendingIdeaId(null);
+                    refetch();
+                  }}
+                  className="px-6 py-3"
+                >
+                  <Text className="text-gray-500 dark:text-gray-400 text-center text-sm">
+                    Skip for now
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <View className="flex-row items-center justify-between mb-4">
+                  <Text className="text-xl font-bold text-black dark:text-white">
+                    Select Category
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setShowCategoryPickerInModal(false)}
+                    className="p-2"
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="arrow-back" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
+                  </TouchableOpacity>
+                </View>
+                
+                <ScrollView className="max-h-64 mb-4">
+                  {isAssigningCategory ? (
+                    <View className="py-8 items-center">
+                      <ActivityIndicator size="large" color="#34C759" />
+                      <Text className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+                        Assigning category...
+                      </Text>
+                    </View>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        onPress={async () => {
+                          // Unassign category (set to null)
+                          if (pendingIdeaId) {
+                            try {
+                              setIsAssigningCategory(true);
+                              await apiClient.put(API_ENDPOINTS.ideas.update(pendingIdeaId), {
+                                clusterId: null,
+                              });
+                              await refetch();
+                              await refetchClusters();
+                              setShowSuggestedCategoryModal(false);
+                              setShowCategoryPickerInModal(false);
+                              setSuggestedCategoryLabel(null);
+                              setEditableCategoryName("");
+                              setPendingIdeaId(null);
+                            } catch (err) {
+                              Alert.alert("Error", err instanceof Error ? err.message : "Failed to remove category");
+                            } finally {
+                              setIsAssigningCategory(false);
+                            }
+                          }
+                        }}
+                        className="py-3 px-4 rounded-xl mb-2"
+                        style={{ backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }}
+                        disabled={isAssigningCategory}
+                      >
+                        <Text className="text-base text-black dark:text-white">Uncategorized</Text>
+                      </TouchableOpacity>
+                      {clusters.filter(c => !c.id.startsWith('cat-')).map((cluster) => (
+                        <TouchableOpacity
+                          key={cluster.id}
+                          onPress={async () => {
+                            if (pendingIdeaId && !isAssigningCategory) {
+                              try {
+                                setIsAssigningCategory(true);
+                                await assignIdeaToCluster(cluster.id, pendingIdeaId);
+                                await refetch();
+                                await refetchClusters();
+                                setShowSuggestedCategoryModal(false);
+                                setShowCategoryPickerInModal(false);
+                                setSuggestedCategoryLabel(null);
+                                setEditableCategoryName("");
+                                setPendingIdeaId(null);
+                              } catch (err) {
+                                Alert.alert("Error", err instanceof Error ? err.message : "Failed to assign category");
+                              } finally {
+                                setIsAssigningCategory(false);
+                              }
+                            }
+                          }}
+                          className="py-3 px-4 rounded-xl mb-2"
+                          style={{ backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }}
+                          disabled={isAssigningCategory}
+                        >
+                          <Text className="text-base text-black dark:text-white">{cluster.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                      {clusters.filter(c => !c.id.startsWith('cat-')).length === 0 && (
+                        <Text className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                          No categories yet. Create one first!
+                        </Text>
+                      )}
+                    </>
+                  )}
+                </ScrollView>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowSuggestedCategoryModal(false);
+                    setShowCategoryPickerInModal(false);
+                    setSuggestedCategoryLabel(null);
+                    setEditableCategoryName("");
+                    setPendingIdeaId(null);
+                  }}
+                  className="px-6 py-3 rounded-xl"
+                  style={{ backgroundColor: "#F2F2F7" }}
+                >
+                  <Text className="text-center text-gray-700 dark:text-gray-300 font-semibold">Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
       </Modal>

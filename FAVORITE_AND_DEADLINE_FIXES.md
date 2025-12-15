@@ -92,3 +92,4 @@ No database changes needed - `is_favorite` column already exists (from previous 
 4. **Test Deadline**: Add a new todo and select different deadlines
 5. **Check Logs**: Review backend logs if favorite still doesn't work
 
+

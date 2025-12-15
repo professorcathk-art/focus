@@ -69,3 +69,4 @@ node -e "require('dotenv').config(); console.log('AIML_API_KEY:', process.env.AI
 - **Still getting errors?** Check backend logs for detailed error messages
 - **Production (Vercel)?** Set environment variables in Vercel dashboard, not in `.env` file
 
+

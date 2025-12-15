@@ -5,7 +5,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useColorScheme } from "react-native";
 import { useCluster } from "@/hooks/use-clusters";
 import { useIdeas } from "@/hooks/use-ideas";
@@ -40,6 +40,13 @@ export default function ClusterDetailScreen() {
   const { ideas, isLoading: ideasLoading, refetch } = useIdeas();
   const [togglingFavoriteId, setTogglingFavoriteId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Refetch ideas when screen comes into focus (e.g., after deleting an idea)
+  useFocusEffect(
+    useCallback(() => {
+      refetch().catch(err => console.error("Error refetching ideas:", err));
+    }, [refetch])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

@@ -10,6 +10,7 @@ import {
   Keyboard,
   Alert,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "react-native";
@@ -18,12 +19,13 @@ import { useAuthStore } from "@/store/auth-store";
 import { apiClient } from "@/lib/api-client";
 import { API_ENDPOINTS } from "@/config/api";
 import { Todo } from "@/types";
-import { format, isToday } from "date-fns";
+import { format, isToday, addDays, startOfDay } from "date-fns";
 
 export default function TodoScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const { isAuthenticated } = useAuthStore();
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [todos, setTodos] = useState<Todo[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -31,19 +33,64 @@ export default function TodoScreen() {
   const [togglingTodoId, setTogglingTodoId] = useState<string | null>(null);
   const [deletingTodoId, setDeletingTodoId] = useState<string | null>(null);
   const [resettingTodos, setResettingTodos] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+
+  const [lastMoveDate, setLastMoveDate] = useState<string | null>(null);
+
+  const moveIncompleteTasks = async () => {
+    try {
+      const todayStr = format(new Date(), "yyyy-MM-dd");
+      
+      // Only move if we haven't moved today yet
+      if (lastMoveDate === todayStr) {
+        console.log("[TodoScreen] Already moved tasks today, skipping");
+        return;
+      }
+
+      const result = await apiClient.post<{ success: boolean; moved: number; message?: string }>(
+        API_ENDPOINTS.todos.moveIncompleteToNextDay
+      );
+      
+      if (result.success) {
+        setLastMoveDate(todayStr);
+        console.log(`[TodoScreen] Moved ${result.moved} incomplete tasks to today`);
+        // Reload todos after moving
+        await loadTodos();
+      }
+    } catch (error) {
+      // Silently fail - this is a background operation
+      console.error("Move incomplete tasks error:", error);
+    }
+  };
 
   useEffect(() => {
     if (isAuthenticated) {
+      // Only auto-move incomplete tasks when viewing today's date
+      // And only if it's past midnight (at least 1 hour into the day)
+      if (isToday(selectedDate)) {
+        const now = new Date();
+        const hoursSinceMidnight = now.getHours() + (now.getMinutes() / 60);
+        
+        // Only move if it's past 1 AM (to ensure it's a new day)
+        if (hoursSinceMidnight >= 1) {
+          moveIncompleteTasks();
+        }
+      }
       loadTodos();
     }
-  }, [isAuthenticated]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, selectedDate]);
 
   const loadTodos = async () => {
     if (!isAuthenticated) return;
     
     setIsLoading(true);
     try {
-      const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today);
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
+      const endpoint = API_ENDPOINTS.todos.today(dateStr);
+      const data = await apiClient.get<Todo[]>(endpoint);
       setTodos(data);
     } catch (error) {
       console.error("Load todos error:", error);
@@ -52,12 +99,32 @@ export default function TodoScreen() {
     }
   };
 
+  const handleDateChange = (days: number) => {
+    setSelectedDate(addDays(selectedDate, days));
+  };
+
+  const handleSelectDate = (date: Date) => {
+    setSelectedDate(date);
+    setShowCalendarModal(false);
+  };
+
+  const goToToday = () => {
+    setSelectedDate(new Date());
+  };
+
+  const handleOpenCalendar = () => {
+    // Sync calendar month/year with selected date when opening
+    setCalendarYear(selectedDate.getFullYear());
+    setCalendarMonth(selectedDate.getMonth());
+    setShowCalendarModal(true);
+  };
+
   const handleAddTodo = async () => {
     if (!input.trim() || !isAuthenticated || addingTodo) return;
 
     const tempId = `temp-${Date.now()}`;
     const todoText = input.trim();
-    const todoDate = format(new Date(), "yyyy-MM-dd"); // Always use today
+    const todoDate = format(selectedDate, "yyyy-MM-dd"); // Use selected date
     
     const tempTodo: Todo = {
       id: tempId,
@@ -79,7 +146,7 @@ export default function TodoScreen() {
     try {
       const newTodo = await apiClient.post<Todo>(API_ENDPOINTS.todos.create, {
         text: todoText,
-        date: todoDate, // Default to today
+        date: todoDate, // Use selected date (can be today or future date)
       });
       // Replace temp todo with real one using functional update
       setTodos(prevTodos => prevTodos.map(t => t.id === tempId ? newTodo : t));
@@ -203,18 +270,50 @@ export default function TodoScreen() {
           }}
         >
           <View className="flex-row items-center justify-between mb-2">
-            <View>
-              <Text className="text-2xl font-bold text-black dark:text-white">
-                Today's Tasks
-              </Text>
-              <Text className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                {format(new Date(), "EEEE, MMMM d")}
-              </Text>
+            <View className="flex-1">
+              <View className="flex-row items-center gap-3">
+                <TouchableOpacity
+                  onPress={() => handleDateChange(-1)}
+                  className="p-2"
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="chevron-back" size={20} color={isDark ? "#FFFFFF" : "#000000"} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleOpenCalendar}
+                  className="flex-1"
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-2xl font-bold text-black dark:text-white text-center">
+                    {isToday(selectedDate) ? "Today's Tasks" : format(selectedDate, "EEEE, MMMM d")}
+                  </Text>
+                  <Text className="text-sm text-gray-600 dark:text-gray-400 mt-1 text-center">
+                    {isToday(selectedDate) ? format(selectedDate, "EEEE, MMMM d") : format(selectedDate, "yyyy-MM-dd")}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleDateChange(1)}
+                  className="p-2"
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="chevron-forward" size={20} color={isDark ? "#FFFFFF" : "#000000"} />
+                </TouchableOpacity>
+              </View>
+              {!isToday(selectedDate) && (
+                <TouchableOpacity
+                  onPress={goToToday}
+                  className="mt-2 self-center"
+                >
+                  <Text className="text-xs text-green-600 dark:text-green-400">
+                    Go to Today
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
-            {totalCount > 0 && (
+            {totalCount > 0 && isToday(selectedDate) && (
               <TouchableOpacity
                 onPress={handleResetToday}
-                className="px-3 py-1.5 rounded-full"
+                className="px-3 py-1.5 rounded-full ml-2"
                 style={{ backgroundColor: isDark ? "#38383A" : "#FFFFFF" }}
                 disabled={resettingTodos}
               >
@@ -289,8 +388,9 @@ export default function TodoScreen() {
               >
                 <TouchableOpacity
                   onPress={() => handleToggleTodo(todo.id, todo.completed)}
-                  className="mr-3"
+                  className="mr-3 p-2 -ml-2"
                   disabled={togglingTodoId === todo.id}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   {togglingTodoId === todo.id ? (
                     <ActivityIndicator size="small" color="#34C759" />
@@ -404,6 +504,170 @@ export default function TodoScreen() {
             </Text>
           )}
         </View>
+
+        {/* Calendar Modal */}
+        <Modal
+          visible={showCalendarModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowCalendarModal(false)}
+        >
+          <View className="flex-1 justify-center items-center bg-black/50 px-6">
+            <View className="bg-white dark:bg-card-dark rounded-2xl p-6 w-full max-w-sm"
+              style={{
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.3,
+                shadowRadius: 16,
+                elevation: 16,
+              }}
+            >
+              <View className="flex-row items-center justify-between mb-4">
+                <Text className="text-xl font-bold text-black dark:text-white">
+                  Select Date
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowCalendarModal(false)}
+                  className="p-2"
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Month Navigation */}
+              <View className="flex-row items-center justify-between mb-4">
+                <TouchableOpacity
+                  onPress={() => {
+                    const newDate = new Date(calendarYear, calendarMonth - 1, 1);
+                    setCalendarMonth(newDate.getMonth());
+                    setCalendarYear(newDate.getFullYear());
+                  }}
+                  className="p-2"
+                >
+                  <Ionicons name="chevron-back" size={20} color={isDark ? "#FFFFFF" : "#000000"} />
+                </TouchableOpacity>
+                <Text className="text-lg font-semibold text-black dark:text-white">
+                  {format(new Date(calendarYear, calendarMonth, 1), "MMMM yyyy")}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    const newDate = new Date(calendarYear, calendarMonth + 1, 1);
+                    setCalendarMonth(newDate.getMonth());
+                    setCalendarYear(newDate.getFullYear());
+                  }}
+                  className="p-2"
+                >
+                  <Ionicons name="chevron-forward" size={20} color={isDark ? "#FFFFFF" : "#000000"} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Calendar Grid */}
+              <View className="mb-4">
+                {/* Day headers */}
+                <View className="flex-row mb-2">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                    <View key={day} className="flex-1 items-center">
+                      <Text className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                        {day}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Calendar days */}
+                {(() => {
+                  const firstDay = new Date(calendarYear, calendarMonth, 1);
+                  const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
+                  const startDate = startOfDay(firstDay);
+                  const daysInMonth = lastDay.getDate();
+                  const startingDayOfWeek = firstDay.getDay();
+                  const days: (Date | null)[] = [];
+
+                  // Add empty cells for days before month starts
+                  for (let i = 0; i < startingDayOfWeek; i++) {
+                    days.push(null);
+                  }
+
+                  // Add days of the month
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    days.push(new Date(calendarYear, calendarMonth, day));
+                  }
+
+                  const rows: (Date | null)[][] = [];
+                  for (let i = 0; i < days.length; i += 7) {
+                    rows.push(days.slice(i, i + 7));
+                  }
+
+                  return (
+                    <View>
+                      {rows.map((row, rowIndex) => (
+                        <View key={rowIndex} className="flex-row mb-1">
+                          {row.map((date, colIndex) => {
+                            if (!date) {
+                              return <View key={`${rowIndex}-${colIndex}`} className="flex-1 h-10" />;
+                            }
+                            const isSelected = format(date, "yyyy-MM-dd") === format(selectedDate, "yyyy-MM-dd");
+                            const isTodayDate = isToday(date);
+                            const isPast = date < startOfDay(new Date()) && !isTodayDate;
+
+                            return (
+                              <TouchableOpacity
+                                key={`${rowIndex}-${colIndex}`}
+                                onPress={() => handleSelectDate(date)}
+                                className="flex-1 h-10 items-center justify-center rounded-lg mx-0.5"
+                                style={{
+                                  backgroundColor: isSelected
+                                    ? "#34C759"
+                                    : isTodayDate
+                                    ? isDark
+                                      ? "#38383A"
+                                      : "#E8F5E9"
+                                    : "transparent",
+                                }}
+                              >
+                                <Text
+                                  className="text-sm"
+                                  style={{
+                                    color: isSelected
+                                      ? "#FFFFFF"
+                                      : isPast
+                                      ? isDark
+                                        ? "#8E8E93"
+                                        : "#8E8E93"
+                                      : isDark
+                                      ? "#FFFFFF"
+                                      : "#000000",
+                                    fontWeight: isSelected || isTodayDate ? "bold" : "normal",
+                                  }}
+                                >
+                                  {format(date, "d")}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })()}
+              </View>
+
+              <TouchableOpacity
+                onPress={() => {
+                  goToToday();
+                  setShowCalendarModal(false);
+                }}
+                className="px-4 py-2 rounded-xl"
+                style={{ backgroundColor: isDark ? "#38383A" : "#F2F2F7" }}
+              >
+                <Text className="text-center text-black dark:text-white font-semibold">
+                  Go to Today
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

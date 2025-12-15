@@ -70,3 +70,4 @@ Ensure these are set in **Vercel Dashboard**:
 - **whisper-1**: Audio transcription model (speech-to-text)
 - **AIMLAPI**: Proxies OpenAI, so `whisper-1` via AIMLAPI works
 
+
