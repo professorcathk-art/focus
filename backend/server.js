@@ -44,14 +44,9 @@ app.use('/api/chat', require('./routes/chat'));
 const { requireAuth: requireAuthTodos } = require('./middleware/auth');
 const supabaseTodos = require('./lib/supabase');
 
-// Register route with explicit logging to ensure it's matched
-app.post('/api/todos/move-incomplete', requireAuthTodos, async (req, res) => {
-  console.log('[SERVER] ⚡ Move-incomplete route MATCHED! Method:', req.method, 'Path:', req.path, 'Original URL:', req.originalUrl);
-  await handleMoveIncomplete(req, res);
-});
-
 // Simplified handler: Just move incomplete tasks from yesterday to today
 // No need for rolled_over flag - simpler calendar approach
+// Define function BEFORE route registration to ensure it's available
 async function handleMoveIncomplete(req, res) {
   console.log('[SERVER] Move-incomplete handler executing');
   try {
@@ -114,6 +109,13 @@ async function handleMoveIncomplete(req, res) {
     res.status(500).json({ message: 'Internal server error' });
   }
 }
+
+// Register route with explicit logging to ensure it's matched
+// Route MUST be registered BEFORE the todos router to avoid conflicts
+app.post('/api/todos/move-incomplete', requireAuthTodos, async (req, res) => {
+  console.log('[SERVER] ⚡ Move-incomplete route MATCHED! Method:', req.method, 'Path:', req.path, 'Original URL:', req.originalUrl);
+  await handleMoveIncomplete(req, res);
+});
 
 // Register todos routes with explicit logging
 const todosRouter = require('./routes/todos');
