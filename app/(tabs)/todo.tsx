@@ -38,8 +38,15 @@ export default function TodoScreen() {
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
 
   const [lastMoveDate, setLastMoveDate] = useState<string | null>(null);
+  const [isMovingTasks, setIsMovingTasks] = useState(false);
 
   const moveIncompleteTasks = async () => {
+    // Prevent multiple simultaneous calls
+    if (isMovingTasks) {
+      console.log("[TodoScreen] Move already in progress, skipping");
+      return;
+    }
+
     try {
       const todayStr = format(new Date(), "yyyy-MM-dd");
       
@@ -49,36 +56,50 @@ export default function TodoScreen() {
         return;
       }
 
+      setIsMovingTasks(true);
+      console.log("[TodoScreen] Calling move-incomplete endpoint...");
+      
       const result = await apiClient.post<{ success: boolean; moved: number; message?: string }>(
         API_ENDPOINTS.todos.moveIncompleteToNextDay
       );
       
       if (result.success) {
         setLastMoveDate(todayStr);
-        console.log(`[TodoScreen] Moved ${result.moved} incomplete tasks to today`);
+        console.log(`[TodoScreen] ✅ Moved ${result.moved} incomplete tasks to today`);
         // Reload todos after moving
         await loadTodos();
       }
     } catch (error) {
-      // Silently fail - this is a background operation
+      // Log error but don't show to user - this is a background operation
       console.error("Move incomplete tasks error:", error);
+      // Don't set lastMoveDate on error so it can retry
+    } finally {
+      setIsMovingTasks(false);
     }
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
-      // Only auto-move incomplete tasks when viewing today's date
-      // And only if it's past midnight (at least 1 hour into the day)
-      if (isToday(selectedDate)) {
-        const now = new Date();
-        const hoursSinceMidnight = now.getHours() + (now.getMinutes() / 60);
-        
-        // Only move if it's past 1 AM (to ensure it's a new day)
-        if (hoursSinceMidnight >= 1) {
-          moveIncompleteTasks();
-        }
+    if (!isAuthenticated) return;
+    
+    // Always load todos for the selected date
+    loadTodos();
+    
+    // Only auto-move incomplete tasks when viewing today's date
+    // And only if it's past midnight (at least 1 hour into the day)
+    // And only once per day
+    if (isToday(selectedDate)) {
+      const now = new Date();
+      const hoursSinceMidnight = now.getHours() + (now.getMinutes() / 60);
+      const todayStr = format(now, "yyyy-MM-dd");
+      
+      // Only move if:
+      // 1. It's past 1 AM (to ensure it's a new day)
+      // 2. We haven't moved today yet
+      // 3. Not already moving
+      if (hoursSinceMidnight >= 1 && lastMoveDate !== todayStr && !isMovingTasks) {
+        console.log("[TodoScreen] Conditions met for auto-move, calling moveIncompleteTasks");
+        moveIncompleteTasks();
       }
-      loadTodos();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, selectedDate]);
