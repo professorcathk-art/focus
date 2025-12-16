@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -11,15 +11,25 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useAuthStore } from "@/store/auth-store";
 import { apiClient } from "@/lib/api-client";
 import { API_ENDPOINTS } from "@/config/api";
 import { Todo } from "@/types";
 import { format, isToday, addDays, startOfDay } from "date-fns";
+import {
+  getCachedTodos,
+  setCachedTodos,
+  getAllTodosIncludingPending,
+  clearCacheForDate,
+} from "@/lib/todos-cache";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function TodoScreen() {
   const colorScheme = useColorScheme();
@@ -32,13 +42,75 @@ export default function TodoScreen() {
   const [addingTodo, setAddingTodo] = useState(false);
   const [togglingTodoId, setTogglingTodoId] = useState<string | null>(null);
   const [deletingTodoId, setDeletingTodoId] = useState<string | null>(null);
-  const [resettingTodos, setResettingTodos] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
 
   const [lastMoveDate, setLastMoveDate] = useState<string | null>(null);
   const [isMovingTasks, setIsMovingTasks] = useState(false);
+  const fetchingRef = useRef(false);
+
+  const loadTodos = useCallback(async (useCache = true) => {
+    if (!isAuthenticated) return;
+    
+    // Prevent concurrent fetches
+    if (fetchingRef.current) {
+      console.log("[TodoScreen] ⏭️ Fetch already in progress, skipping...");
+      return;
+    }
+    
+    fetchingRef.current = true;
+    setIsLoading(true);
+    
+    try {
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
+      
+      // Try cache first for instant UI update
+      if (useCache) {
+        const cachedTodos = await getAllTodosIncludingPending(dateStr);
+        if (cachedTodos !== null) {
+          // Show cached data immediately
+          setTodos(cachedTodos);
+          setIsLoading(false);
+          
+          // Fetch from API in background (non-blocking)
+          // Don't await - let it update cache and state when done
+          apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr))
+            .then(async (data) => {
+              await setCachedTodos(dateStr, data);
+              setTodos(data);
+            })
+            .catch((error) => {
+              console.error("[TodoScreen] Background refresh error:", error);
+              // Keep using cached data on error
+            });
+          
+          // Return early - we have cache, API will update in background
+          fetchingRef.current = false;
+          return;
+        }
+      }
+
+      // No cache available - fetch from API (blocking)
+      const endpoint = API_ENDPOINTS.todos.today(dateStr);
+      const data = await apiClient.get<Todo[]>(endpoint);
+      
+      // Update cache and state
+      await setCachedTodos(dateStr, data);
+      setTodos(data);
+    } catch (error) {
+      console.error("Load todos error:", error);
+      // If API fails but we have cache, keep using it
+      const cachedTodos = await getAllTodosIncludingPending(dateStr);
+      if (cachedTodos !== null) {
+        setTodos(cachedTodos);
+        console.log("[TodoScreen] API failed but using cached data");
+      }
+    } finally {
+      setIsLoading(false);
+      fetchingRef.current = false;
+    }
+  }, [isAuthenticated, selectedDate]);
 
   const moveIncompleteTasks = async () => {
     // Prevent multiple simultaneous calls
@@ -66,6 +138,12 @@ export default function TodoScreen() {
       if (result.success) {
         setLastMoveDate(todayStr);
         console.log(`[TodoScreen] ✅ Moved ${result.moved} incomplete tasks to today`);
+        // Clear cache for yesterday and today since tasks were moved
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = format(yesterday, "yyyy-MM-dd");
+        await clearCacheForDate(yesterdayStr);
+        await clearCacheForDate(todayStr);
         // Reload todos after moving
         await loadTodos();
       }
@@ -81,8 +159,8 @@ export default function TodoScreen() {
   useEffect(() => {
     if (!isAuthenticated) return;
     
-    // Always load todos for the selected date
-    loadTodos();
+    // Always load todos for the selected date (with cache)
+    loadTodos(true);
     
     // Only auto-move incomplete tasks when viewing today's date
     // And only if it's past midnight (at least 1 hour into the day)
@@ -101,24 +179,7 @@ export default function TodoScreen() {
         moveIncompleteTasks();
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, selectedDate]);
-
-  const loadTodos = async () => {
-    if (!isAuthenticated) return;
-    
-    setIsLoading(true);
-    try {
-      const dateStr = format(selectedDate, "yyyy-MM-dd");
-      const endpoint = API_ENDPOINTS.todos.today(dateStr);
-      const data = await apiClient.get<Todo[]>(endpoint);
-      setTodos(data);
-    } catch (error) {
-      console.error("Load todos error:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [isAuthenticated, selectedDate, loadTodos]);
 
   const handleDateChange = (days: number) => {
     setSelectedDate(addDays(selectedDate, days));
@@ -163,6 +224,11 @@ export default function TodoScreen() {
 
     // Optimistic update
     setTodos(prevTodos => [...prevTodos, tempTodo]);
+    // Update cache optimistically
+    const cachedTodos = await getAllTodosIncludingPending(todoDate);
+    if (cachedTodos) {
+      await setCachedTodos(todoDate, [...cachedTodos, tempTodo]);
+    }
 
     try {
       const newTodo = await apiClient.post<Todo>(API_ENDPOINTS.todos.create, {
@@ -171,10 +237,21 @@ export default function TodoScreen() {
       });
       // Replace temp todo with real one using functional update
       setTodos(prevTodos => prevTodos.map(t => t.id === tempId ? newTodo : t));
+      // Update cache with real todo
+      const updatedCached = await getAllTodosIncludingPending(todoDate);
+      if (updatedCached) {
+        const finalTodos = updatedCached.map(t => t.id === tempId ? newTodo : t);
+        await setCachedTodos(todoDate, finalTodos);
+      }
     } catch (error) {
       console.error("Add todo error:", error);
       // Revert optimistic update
       setTodos(prevTodos => prevTodos.filter(t => t.id !== tempId));
+      // Revert cache
+      const cachedTodos = await getAllTodosIncludingPending(todoDate);
+      if (cachedTodos) {
+        await setCachedTodos(todoDate, cachedTodos.filter(t => t.id !== tempId));
+      }
       setInput(todoText);
       Alert.alert("Error", "Failed to add todo");
     } finally {
@@ -188,7 +265,14 @@ export default function TodoScreen() {
 
     // Optimistic update
     const newCompleted = !completed;
+    const todoDate = todos.find(t => t.id === id)?.date || format(selectedDate, "yyyy-MM-dd");
     setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t)));
+    // Update cache optimistically
+    const cachedTodos = await getAllTodosIncludingPending(todoDate);
+    if (cachedTodos) {
+      const updatedCached = cachedTodos.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t));
+      await setCachedTodos(todoDate, updatedCached);
+    }
     setTogglingTodoId(id);
 
     try {
@@ -197,10 +281,22 @@ export default function TodoScreen() {
         { completed: newCompleted }
       );
       setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? updatedTodo : t)));
+      // Update cache with real todo
+      const cachedTodos = await getAllTodosIncludingPending(todoDate);
+      if (cachedTodos) {
+        const finalTodos = cachedTodos.map((t) => (t.id === id ? updatedTodo : t));
+        await setCachedTodos(todoDate, finalTodos);
+      }
     } catch (error) {
       console.error("Toggle todo error:", error);
       // Revert optimistic update
       setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? { ...t, completed } : t)));
+      // Revert cache
+      const cachedTodos = await getAllTodosIncludingPending(todoDate);
+      if (cachedTodos) {
+        const revertedCached = cachedTodos.map((t) => (t.id === id ? { ...t, completed } : t));
+        await setCachedTodos(todoDate, revertedCached);
+      }
       Alert.alert("Error", "Failed to update todo");
     } finally {
       setTogglingTodoId(null);
@@ -221,9 +317,15 @@ export default function TodoScreen() {
           onPress: async () => {
             // Store deleted todo for potential revert
             const deletedTodo = todos.find(t => t.id === id);
+            const todoDate = deletedTodo?.date || format(selectedDate, "yyyy-MM-dd");
             
             // Optimistic update - remove from list
             setTodos(prevTodos => prevTodos.filter((t) => t.id !== id));
+            // Update cache optimistically
+            const cachedTodos = await getAllTodosIncludingPending(todoDate);
+            if (cachedTodos) {
+              await setCachedTodos(todoDate, cachedTodos.filter((t) => t.id !== id));
+            }
             setDeletingTodoId(id);
 
             try {
@@ -233,6 +335,11 @@ export default function TodoScreen() {
               // Revert optimistic update
               if (deletedTodo) {
                 setTodos(prevTodos => [...prevTodos, deletedTodo]);
+                // Revert cache
+                const cachedTodos = await getAllTodosIncludingPending(todoDate);
+                if (cachedTodos) {
+                  await setCachedTodos(todoDate, [...cachedTodos, deletedTodo]);
+                }
               }
               Alert.alert("Error", "Failed to delete todo");
             } finally {
@@ -244,32 +351,6 @@ export default function TodoScreen() {
     );
   };
 
-  const handleResetToday = async () => {
-    if (!isAuthenticated || resettingTodos) return;
-
-    Alert.alert(
-      "Reset Today's Tasks",
-      "This will mark all tasks as incomplete. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reset",
-          onPress: async () => {
-            setResettingTodos(true);
-            try {
-              await apiClient.post(API_ENDPOINTS.todos.resetToday);
-              await loadTodos();
-            } catch (error) {
-              console.error("Reset todos error:", error);
-              Alert.alert("Error", "Failed to reset todos");
-            } finally {
-              setResettingTodos(false);
-            }
-          },
-        },
-      ]
-    );
-  };
 
   const completedCount = todos.filter((t) => t.completed).length;
   const totalCount = todos.length;
@@ -283,41 +364,45 @@ export default function TodoScreen() {
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         {/* Header */}
-        <View
-          className="px-6 py-4 border-b"
+        <LinearGradient
+          colors={isDark 
+            ? ["#0A0A0A", "#1A1A2E", "#16213E"] 
+            : ["#A8E6CF", "#88D8C0", "#7EC8E3", "#4ECDC4"]
+          }
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          className="px-6 py-5 border-b"
           style={{
-            backgroundColor: isDark ? "#000000" : "#E8F5E9",
-            borderBottomColor: isDark ? "#38383A" : "#E5E5EA",
+            borderBottomColor: isDark ? "#38383A" : "rgba(255,255,255,0.3)",
           }}
         >
-          <View className="flex-row items-center justify-between mb-2">
+          <View className="flex-row items-center justify-between mb-3">
             <View className="flex-1">
               <View className="flex-row items-center gap-3">
                 <TouchableOpacity
                   onPress={() => handleDateChange(-1)}
-                  className="p-2"
+                  className="p-2 rounded-full"
+                  style={{ backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.3)" }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Ionicons name="chevron-back" size={20} color={isDark ? "#FFFFFF" : "#000000"} />
+                  <Ionicons name="chevron-back" size={20} color={isDark ? "#FFFFFF" : "#1A1A1A"} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={handleOpenCalendar}
                   className="flex-1"
                   activeOpacity={0.7}
                 >
-                  <Text className="text-2xl font-bold text-black dark:text-white text-center">
+                  <Text className="text-2xl font-bold text-white dark:text-white text-center" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 }}>
                     {isToday(selectedDate) ? "Today's Tasks" : format(selectedDate, "EEEE, MMMM d")}
-                  </Text>
-                  <Text className="text-sm text-gray-600 dark:text-gray-400 mt-1 text-center">
-                    {isToday(selectedDate) ? format(selectedDate, "EEEE, MMMM d") : format(selectedDate, "yyyy-MM-dd")}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => handleDateChange(1)}
-                  className="p-2"
+                  className="p-2 rounded-full"
+                  style={{ backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.3)" }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Ionicons name="chevron-forward" size={20} color={isDark ? "#FFFFFF" : "#000000"} />
+                  <Ionicons name="chevron-forward" size={20} color={isDark ? "#FFFFFF" : "#1A1A1A"} />
                 </TouchableOpacity>
               </View>
               {!isToday(selectedDate) && (
@@ -325,36 +410,22 @@ export default function TodoScreen() {
                   onPress={goToToday}
                   className="mt-2 self-center"
                 >
-                  <Text className="text-xs text-green-600 dark:text-green-400">
+                  <Text className="text-xs font-medium text-white" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>
                     Go to Today
                   </Text>
                 </TouchableOpacity>
               )}
             </View>
-            {totalCount > 0 && isToday(selectedDate) && (
-              <TouchableOpacity
-                onPress={handleResetToday}
-                className="px-3 py-1.5 rounded-full ml-2"
-                style={{ backgroundColor: isDark ? "#38383A" : "#FFFFFF" }}
-                disabled={resettingTodos}
-              >
-                {resettingTodos ? (
-                  <ActivityIndicator size="small" color={isDark ? "#FFFFFF" : "#000000"} />
-                ) : (
-                  <Ionicons name="refresh" size={18} color={isDark ? "#FFFFFF" : "#000000"} />
-                )}
-              </TouchableOpacity>
-            )}
           </View>
 
           {/* Progress Bar */}
           {totalCount > 0 && (
             <View className="mt-4">
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <Text className="text-sm font-medium text-white" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>
                   Progress
                 </Text>
-                <Text className="text-sm font-semibold text-green-600 dark:text-green-400">
+                <Text className="text-sm font-semibold text-white" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>
                   {completedCount} / {totalCount}
                 </Text>
               </View>
@@ -366,13 +437,13 @@ export default function TodoScreen() {
                   className="h-full rounded-full"
                   style={{
                     width: `${progress * 100}%`,
-                    backgroundColor: "#34C759",
+                    backgroundColor: "#FF6B9D",
                   }}
                 />
               </View>
             </View>
           )}
-        </View>
+        </LinearGradient>
 
         {/* Todos List */}
         <ScrollView
@@ -414,13 +485,13 @@ export default function TodoScreen() {
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   {togglingTodoId === todo.id ? (
-                    <ActivityIndicator size="small" color="#34C759" />
+                    <ActivityIndicator size="small" color="#FF6B9D" />
                   ) : (
                     <View
                       className="w-6 h-6 rounded-full border-2 items-center justify-center"
                       style={{
-                        borderColor: todo.completed ? "#34C759" : "#D1D1D6",
-                        backgroundColor: todo.completed ? "#34C759" : "transparent",
+                        borderColor: todo.completed ? "#FF6B9D" : "#D1D1D6",
+                        backgroundColor: todo.completed ? "#FF6B9D" : "transparent",
                       }}
                     >
                       {todo.completed && (
@@ -496,7 +567,7 @@ export default function TodoScreen() {
               style={{
                 backgroundColor:
                   input.trim() && isAuthenticated && !addingTodo
-                    ? "#34C759"
+                    ? "#FF6B9D"
                     : isDark
                     ? "#38383A"
                     : "#E5E5EA",
@@ -622,12 +693,25 @@ export default function TodoScreen() {
 
                   return (
                     <View>
-                      {rows.map((row, rowIndex) => (
-                        <View key={rowIndex} className="flex-row mb-1">
-                          {row.map((date, colIndex) => {
-                            if (!date) {
-                              return <View key={`${rowIndex}-${colIndex}`} className="flex-1 h-10" />;
-                            }
+                      {rows.map((row, rowIndex) => {
+                        const isLastRow = rowIndex === rows.length - 1;
+                        const firstNonNullIndex = row.findIndex(d => d !== null);
+                        const lastRowDates = row.filter(d => d !== null);
+                        return (
+                          <View 
+                            key={rowIndex} 
+                            className="flex-row mb-1"
+                            style={isLastRow && firstNonNullIndex > 0 ? { justifyContent: 'flex-start' } : {}}
+                          >
+                            {row.map((date, colIndex) => {
+                              if (!date) {
+                                // For last row, skip empty cells at the start
+                                if (isLastRow && colIndex < firstNonNullIndex) {
+                                  return null;
+                                }
+                                // For other rows or empty cells after dates, render placeholder
+                                return <View key={`${rowIndex}-${colIndex}`} className="flex-1 h-10" style={{ minWidth: (SCREEN_WIDTH - 48) / 7 }} />;
+                              }
                             const isSelected = format(date, "yyyy-MM-dd") === format(selectedDate, "yyyy-MM-dd");
                             const isTodayDate = isToday(date);
                             const isPast = date < startOfDay(new Date()) && !isTodayDate;
@@ -639,7 +723,7 @@ export default function TodoScreen() {
                                 className="flex-1 h-10 items-center justify-center rounded-lg mx-0.5"
                                 style={{
                                   backgroundColor: isSelected
-                                    ? "#34C759"
+                                    ? "#FF6B9D"
                                     : isTodayDate
                                     ? isDark
                                       ? "#38383A"
@@ -667,8 +751,9 @@ export default function TodoScreen() {
                               </TouchableOpacity>
                             );
                           })}
-                        </View>
-                      ))}
+                          </View>
+                        );
+                      })}
                     </View>
                   );
                 })()}

@@ -22,6 +22,9 @@ export default function Index() {
     return <Redirect href="/(tabs)/record" />;
   }
 
-  return <Redirect href="/(auth)/signin" />;
+  // Check if user has seen onboarding
+  // For now, always show onboarding first time
+  // TODO: Add AsyncStorage check to skip onboarding after first time
+  return <Redirect href="/(auth)/onboarding" />;
 }
 
