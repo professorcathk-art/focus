@@ -166,6 +166,18 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Log all registered routes at startup (for debugging)
+console.log('[SERVER] ===== REGISTERED ROUTES =====');
+app._router.stack.forEach((middleware, index) => {
+  if (middleware.route) {
+    const methods = Object.keys(middleware.route.methods).join(', ').toUpperCase();
+    console.log(`[SERVER] ${index}: ${methods} ${middleware.route.path}`);
+  } else if (middleware.name === 'router') {
+    console.log(`[SERVER] ${index}: Router mounted at ${middleware.regexp}`);
+  }
+});
+console.log('[SERVER] ===== END ROUTES =====');
+
 // Export app for Vercel serverless functions
 module.exports = app;
 
