@@ -39,27 +39,46 @@ router.get('/stats', requireAuth, async (req, res) => {
     const averagePerDay = ideasLast30Days ? (ideasLast30Days / 30).toFixed(1) : 0;
 
     // Top category
-    const { data: clusters } = await supabase
-      .from('clusters')
-      .select('id, label')
-      .eq('user_id', req.user.id);
-
     let topCategory = null;
-    if (clusters && clusters.length > 0) {
-      const clusterCounts = await Promise.all(
-        clusters.map(async (cluster) => {
-          const { count } = await supabase
-            .from('ideas')
-            .select('*', { count: 'exact', head: true })
-            .eq('cluster_id', cluster.id);
-          return { label: cluster.label, count: count || 0 };
-        })
-      );
+    try {
+      const { data: clusters, error: clustersError } = await supabase
+        .from('clusters')
+        .select('id, label')
+        .eq('user_id', req.user.id);
 
-      const top = clusterCounts.sort((a, b) => b.count - a.count)[0];
-      if (top && top.count > 0) {
-        topCategory = top;
+      if (clustersError) {
+        console.error('Error fetching clusters for stats:', clustersError);
+        // Continue without top category if query fails
+      } else if (clusters && clusters.length > 0) {
+        const clusterCounts = await Promise.all(
+          clusters.map(async (cluster) => {
+            try {
+              const { count, error: countError } = await supabase
+                .from('ideas')
+                .select('*', { count: 'exact', head: true })
+                .eq('cluster_id', cluster.id);
+              
+              if (countError) {
+                console.error(`Error counting ideas for cluster ${cluster.id}:`, countError);
+                return { label: cluster.label, count: 0 };
+              }
+              
+              return { label: cluster.label, count: count || 0 };
+            } catch (err) {
+              console.error(`Error processing cluster ${cluster.id}:`, err);
+              return { label: cluster.label, count: 0 };
+            }
+          })
+        );
+
+        const top = clusterCounts.sort((a, b) => b.count - a.count)[0];
+        if (top && top.count > 0) {
+          topCategory = top;
+        }
       }
+    } catch (err) {
+      console.error('Error calculating top category:', err);
+      // Continue without top category if calculation fails
     }
 
     res.json({

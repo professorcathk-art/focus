@@ -21,32 +21,93 @@ router.get('/', requireAuth, async (req, res) => {
 
     if (error) {
       console.error('Error fetching clusters:', error);
-      return res.status(500).json({ message: 'Failed to fetch clusters' });
+      
+      // Check if error message is HTML (Cloudflare error page)
+      const errorMessage = typeof error.message === 'string' ? error.message : JSON.stringify(error);
+      if (errorMessage.includes('<!DOCTYPE html>') || errorMessage.includes('Cloudflare') || errorMessage.includes('500')) {
+        console.error('[List Clusters] ⚠️ Cloudflare/Supabase 500 error detected');
+        return res.status(503).json({ 
+          message: 'Database temporarily unavailable. Please try again in a few moments.',
+          retryable: true
+        });
+      }
+      
+      // Check if it's a connection/authentication error
+      if (errorMessage.includes('JWT') || errorMessage.includes('auth') || error.code === 'PGRST301') {
+        return res.status(401).json({ message: 'Authentication error. Please sign in again.' });
+      }
+      
+      // Check if it's a timeout or connection error
+      if (errorMessage.includes('timeout') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND')) {
+        return res.status(503).json({ message: 'Database connection error. Please try again later.' });
+      }
+      
+      return res.status(500).json({ message: 'Failed to fetch clusters', error: errorMessage });
     }
 
-    // Get idea IDs for each cluster
+    // Handle case where clusters is null or undefined
+    if (!clusters || !Array.isArray(clusters)) {
+      console.log('No clusters found or invalid response');
+      return res.json([]);
+    }
+
+    // Get idea IDs for each cluster with error handling
     const clustersWithIdeas = await Promise.all(
       clusters.map(async (cluster) => {
-        const { data: ideas } = await supabase
-          .from('ideas')
-          .select('id')
-          .eq('cluster_id', cluster.id);
+        try {
+          const { data: ideas, error: ideasError } = await supabase
+            .from('ideas')
+            .select('id')
+            .eq('cluster_id', cluster.id);
 
-        return {
-          id: cluster.id,
-          userId: cluster.user_id,
-          label: cluster.label,
-          ideaIds: ideas?.map(i => i.id) || [],
-          createdAt: cluster.created_at,
-          updatedAt: cluster.updated_at,
-        };
+          if (ideasError) {
+            console.error(`Error fetching ideas for cluster ${cluster.id}:`, ideasError);
+            // Continue with empty ideaIds array if query fails
+          }
+
+          return {
+            id: cluster.id,
+            userId: cluster.user_id,
+            label: cluster.label,
+            ideaIds: ideas?.map(i => i.id) || [],
+            createdAt: cluster.created_at,
+            updatedAt: cluster.updated_at,
+          };
+        } catch (err) {
+          console.error(`Error processing cluster ${cluster.id}:`, err);
+          // Return cluster with empty ideaIds if processing fails
+          return {
+            id: cluster.id,
+            userId: cluster.user_id,
+            label: cluster.label,
+            ideaIds: [],
+            createdAt: cluster.created_at,
+            updatedAt: cluster.updated_at,
+          };
+        }
       })
     );
 
     res.json(clustersWithIdeas);
   } catch (error) {
     console.error('List clusters error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Error stack:', error.stack);
+    
+    // Check if error message is HTML (Cloudflare error page)
+    const errorMessage = error?.message || String(error);
+    if (errorMessage.includes('<!DOCTYPE html>') || errorMessage.includes('Cloudflare') || errorMessage.includes('500')) {
+      console.error('[List Clusters] ⚠️ Cloudflare/Supabase 500 error detected in catch block');
+      return res.status(503).json({ 
+        message: 'Database temporarily unavailable. Please try again in a few moments.',
+        retryable: true
+      });
+    }
+    
+    res.status(500).json({ 
+      message: 'Internal server error',
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
