@@ -89,34 +89,19 @@ router.post('/move-incomplete', requireAuth, async (req, res) => {
       return res.status(500).json({ message: 'Failed to fetch incomplete todos' });
     }
 
-    // Filter to only include tasks that:
-    // 1. Were created on or before the task date (not manually added for future)
-    // 2. OR are already rolled over (can be rolled again)
-    const tasksToMove = (incompleteTodos || []).filter(todo => {
-      const todoCreatedDate = new Date(todo.created_at).toISOString().split('T')[0];
-      const todoDate = todo.date;
-      
-      // If task is already rolled over, it can be moved again
-      if (todo.is_rolled_over) {
-        return true;
-      }
-      
-      // If created date <= task date, it's a normal task (not manually set to future)
-      return todoCreatedDate <= todoDate;
-    });
-
-    if (!tasksToMove || tasksToMove.length === 0) {
+    // Simplified: Move ALL incomplete tasks from yesterday to today
+    // No need to filter or track rolled_over - simpler calendar approach
+    if (!incompleteTodos || incompleteTodos.length === 0) {
       return res.json({ success: true, moved: 0 });
     }
 
-    // Move each incomplete todo to today and mark as rolled over
+    // Move each incomplete todo to today
     const movedTodos = [];
-    for (const todo of tasksToMove) {
+    for (const todo of incompleteTodos) {
       const { data: movedTodo, error: updateError } = await supabase
         .from('todos')
         .update({
           date: todayStr,
-          is_rolled_over: true, // Mark as rolled over
           updated_at: new Date().toISOString(),
         })
         .eq('id', todo.id)

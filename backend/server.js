@@ -50,7 +50,8 @@ app.post('/api/todos/move-incomplete', requireAuthTodos, async (req, res) => {
   await handleMoveIncomplete(req, res);
 });
 
-// Extract handler to separate function
+// Simplified handler: Just move incomplete tasks from yesterday to today
+// No need for rolled_over flag - simpler calendar approach
 async function handleMoveIncomplete(req, res) {
   console.log('[SERVER] Move-incomplete handler executing');
   try {
@@ -61,11 +62,13 @@ async function handleMoveIncomplete(req, res) {
     const yesterdayStr = yesterday.toISOString().split('T')[0];
     const todayStr = today.toISOString().split('T')[0];
 
+    // Only move if it's past midnight (at least 1 hour into the new day)
     const hoursSinceMidnight = now.getHours() + (now.getMinutes() / 60);
     if (hoursSinceMidnight < 1) {
       return res.json({ success: true, moved: 0, message: 'Too early in the day' });
     }
 
+    // Get ALL incomplete tasks from yesterday (simple approach)
     const { data: incompleteTodos, error: fetchError } = await supabaseTodos
       .from('todos')
       .select('*')
@@ -78,24 +81,18 @@ async function handleMoveIncomplete(req, res) {
       return res.status(500).json({ message: 'Failed to fetch incomplete todos' });
     }
 
-    const tasksToMove = (incompleteTodos || []).filter(todo => {
-      const todoCreatedDate = new Date(todo.created_at).toISOString().split('T')[0];
-      const todoDate = todo.date;
-      if (todo.is_rolled_over) return true;
-      return todoCreatedDate <= todoDate;
-    });
-
-    if (!tasksToMove || tasksToMove.length === 0) {
+    if (!incompleteTodos || incompleteTodos.length === 0) {
       return res.json({ success: true, moved: 0 });
     }
 
+    // Simply move all incomplete tasks to today
+    // Each day's tasks are independent - no need to track rolled_over
     const movedTodos = [];
-    for (const todo of tasksToMove) {
+    for (const todo of incompleteTodos) {
       const { data: movedTodo, error: updateError } = await supabaseTodos
         .from('todos')
         .update({
           date: todayStr,
-          is_rolled_over: true,
           updated_at: new Date().toISOString(),
         })
         .eq('id', todo.id)
@@ -110,6 +107,7 @@ async function handleMoveIncomplete(req, res) {
       }
     }
 
+    console.log(`[SERVER] ✅ Moved ${movedTodos.length} incomplete tasks from ${yesterdayStr} to ${todayStr}`);
     res.json({ success: true, moved: movedTodos.length });
   } catch (error) {
     console.error('Move incomplete todos error:', error);
