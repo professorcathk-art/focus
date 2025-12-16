@@ -48,12 +48,18 @@ console.log('[SERVER] Total router stack length:', todosRouter.stack.length);
 todosRouter.stack.forEach((r, index) => {
   if (r.route) {
     const methods = Object.keys(r.route.methods).join(', ').toUpperCase();
-    console.log(`[SERVER] Route ${index}: ${methods} ${r.route.path}`);
+    const fullPath = `/api/todos${r.route.path}`;
+    console.log(`[SERVER] Route ${index}: ${methods} ${r.route.path} -> Full path: ${fullPath}`);
+    // Explicitly check for move-incomplete route
+    if (r.route.path === '/move-incomplete') {
+      console.log(`[SERVER] ✅ Found move-incomplete route! Methods: ${methods}`);
+    }
   } else {
     console.log(`[SERVER] Stack item ${index}:`, r.name || 'unnamed', r.regexp?.toString() || 'no regexp');
   }
 });
 app.use('/api/todos', todosRouter);
+console.log('[SERVER] ✅ Todos router mounted at /api/todos');
 app.use('/api/user', require('./routes/user'));
 app.use('/api/feedback', require('./routes/feedback'));
 
