@@ -1,21 +1,49 @@
 # Focus Circle Landing Page
 
-Modern, dark-themed landing page inspired by saner.ai, built with vanilla HTML/CSS/JS for fast loading and easy deployment.
+Modern, dark-themed landing page built with Next.js for easy form integration and lead capture.
 
 ## Features
 
 - ✅ Dark theme with gradient accents
 - ✅ Smooth scroll animations
 - ✅ Mobile-responsive design
-- ✅ Single HTML file (no dependencies)
-- ✅ Fast loading (optimized)
+- ✅ Next.js framework (ready for forms/surveys)
 - ✅ SEO-friendly
+- ✅ Fast loading
 
-## Files
+## Why Next.js?
 
-- `index.html` - Main landing page
-- `privacy-policy.html` - Privacy policy page
-- `vercel.json` - Vercel configuration for routing
+Next.js is perfect for adding:
+- **Lead capture forms** - Easy form handling with API routes
+- **Surveys/Questionnaires** - Server-side form processing
+- **Email integration** - Send form submissions to email services
+- **Database integration** - Store leads in Supabase or other databases
+- **Analytics** - Track form submissions and conversions
+
+## Files Structure
+
+```
+website/
+├── app/
+│   ├── page.tsx          ← Main landing page
+│   ├── layout.tsx        ← Root layout
+│   ├── globals.css       ← Global styles
+│   └── privacy-policy/
+│       └── page.tsx      ← Privacy policy page
+├── package.json          ← Dependencies
+├── next.config.js        ← Next.js config
+└── vercel.json           ← Vercel routing
+```
+
+## Local Development
+
+```bash
+cd website
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000)
 
 ## Deployment to Vercel
 
@@ -25,10 +53,8 @@ Modern, dark-themed landing page inspired by saner.ai, built with vanilla HTML/C
 2. Click "Add New..." → "Project"
 3. Import repository: `professorcathk-art/focus`
 4. **Set Root Directory**: `website`
-5. **Framework Preset**: Other (or Static Site)
-6. **Build Command**: (leave empty - static HTML)
-7. **Output Directory**: `.` (current directory)
-8. Click "Deploy"
+5. **Framework Preset**: Next.js (auto-detected)
+6. Click "Deploy"
 
 ### Option 2: Vercel CLI
 
@@ -37,17 +63,29 @@ cd website
 vercel
 ```
 
+## Adding Forms/Surveys (Future)
+
+When you're ready to add lead capture:
+
+1. Create form component in `app/components/LeadForm.tsx`
+2. Create API route in `app/api/submit-lead/route.ts`
+3. Integrate with email service (SendGrid, Resend, etc.) or Supabase
+4. Add form to landing page
+
+Example API route structure:
+```typescript
+// app/api/submit-lead/route.ts
+export async function POST(request: Request) {
+  const data = await request.json();
+  // Process form data
+  // Send email or save to database
+  return Response.json({ success: true });
+}
+```
+
 ## Customization
 
-- Update App Store link in `index.html` (search for "apps.apple.com")
+- Update App Store link in `app/page.tsx`
+- Modify colors in `app/globals.css` (CSS variables)
+- Add/remove sections as needed
 - Update company information
-- Update contact emails
-- Modify colors in CSS variables at top of `<style>` tag
-- Add/remove testimonials as needed
-
-## Notes
-
-- This is a static HTML site (no Next.js needed)
-- All CSS and JS is embedded in HTML for fast loading
-- Privacy policy is a separate HTML file
-- Vercel will serve these files as static assets

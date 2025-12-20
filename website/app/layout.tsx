@@ -2,13 +2,13 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Focus Circle - Capture & Organize Your Ideas',
-  description: 'An ADHD-friendly app for capturing, organizing, and finding ideas using voice recording, text input, and AI-powered categorization.',
+  title: 'Focus Circle - Stay Focused. Get More Done.',
+  description: 'Eliminate distractions and reclaim hours of deep work every week with Focus Circle.',
   keywords: 'productivity, ideas, voice recording, AI, task management, ADHD-friendly',
   authors: [{ name: 'Professor Cat Limited' }],
   openGraph: {
-    title: 'Focus Circle - Capture & Organize Your Ideas',
-    description: 'An ADHD-friendly app for capturing, organizing, and finding ideas using voice recording, text input, and AI-powered categorization.',
+    title: 'Focus Circle - Stay Focused. Get More Done.',
+    description: 'Eliminate distractions and reclaim hours of deep work every week with Focus Circle.',
     type: 'website',
   },
 }
@@ -24,4 +24,3 @@ export default function RootLayout({
     </html>
   )
 }
-

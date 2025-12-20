@@ -1,16 +1,12 @@
 {
-  "version": 2,
-  "buildCommand": null,
-  "outputDirectory": ".",
-  "framework": null,
   "rewrites": [
     {
       "source": "/privacy-policy",
-      "destination": "/privacy-policy.html"
+      "destination": "/privacy-policy"
     },
     {
       "source": "/privacy",
-      "destination": "/privacy-policy.html"
+      "destination": "/privacy-policy"
     }
   ],
   "headers": [
