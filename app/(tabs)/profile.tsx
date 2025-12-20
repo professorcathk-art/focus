@@ -2,7 +2,7 @@
  * Profile tab - Stats and settings
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, useColorScheme, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -11,16 +11,51 @@ import { useUserStats } from "@/hooks/use-user-stats";
 import { Ionicons } from "@expo/vector-icons";
 import { apiClient } from "@/lib/api-client";
 import { API_ENDPOINTS } from "@/config/api";
+import { supabase } from "@/lib/supabase";
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, signOut } = useAuthStore();
+  const { user, signOut, checkAuth } = useAuthStore();
   const { stats, isLoading } = useUserStats();
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackSubject, setFeedbackSubject] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackType, setFeedbackType] = useState("General");
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
+  const [showNameEditModal, setShowNameEditModal] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [isUpdatingName, setIsUpdatingName] = useState(false);
+
+  useEffect(() => {
+    if (showNameEditModal) {
+      setDisplayName(user?.name || user?.email?.split("@")[0] || "");
+    }
+  }, [showNameEditModal, user]);
+
+  const handleUpdateDisplayName = async () => {
+    if (!displayName.trim()) {
+      Alert.alert("Error", "Display name cannot be empty");
+      return;
+    }
+
+    setIsUpdatingName(true);
+    try {
+      await supabase.auth.updateUser({
+        data: {
+          name: displayName.trim(),
+          full_name: displayName.trim(),
+        },
+      });
+      await checkAuth();
+      setShowNameEditModal(false);
+      Alert.alert("Success", "Display name updated!");
+    } catch (error) {
+      console.error("Error updating display name:", error);
+      Alert.alert("Error", "Failed to update display name");
+    } finally {
+      setIsUpdatingName(false);
+    }
+  };
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -91,10 +126,43 @@ export default function ProfileScreen() {
             Profile
           </Text>
           {user && (
-            <Text className="text-base text-gray-600 dark:text-gray-400">
-              {user.email}
-            </Text>
+            <>
+              <Text className="text-base text-gray-600 dark:text-gray-400 mb-1">
+                {user.name || user.email?.split("@")[0] || "User"}
+              </Text>
+              <Text className="text-sm text-gray-500 dark:text-gray-500">
+                {user.email}
+              </Text>
+            </>
           )}
+        </View>
+
+        {/* Display Name Section */}
+        <View className="mb-6">
+          <TouchableOpacity
+            onPress={() => {
+              setDisplayName(user?.name || user?.email?.split("@")[0] || "");
+              setShowNameEditModal(true);
+            }}
+            className="bg-white dark:bg-card-dark rounded-xl p-4 flex-row items-center justify-between"
+            style={{
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.05,
+              shadowRadius: 4,
+              elevation: 2,
+            }}
+          >
+            <View className="flex-1">
+              <Text className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                Display Name
+              </Text>
+              <Text className="text-base font-medium text-black dark:text-white">
+                {user?.name || user?.email?.split("@")[0] || "Not set"}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? "#8E8E93" : "#8E8E93"} />
+          </TouchableOpacity>
         </View>
 
         {/* Stats Section */}
@@ -459,6 +527,88 @@ export default function ProfileScreen() {
               </View>
             </TouchableOpacity>
           </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Display Name Edit Modal */}
+      <Modal
+        visible={showNameEditModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowNameEditModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          className="flex-1 justify-end"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+        >
+          <TouchableOpacity
+            className="flex-1"
+            activeOpacity={1}
+            onPress={() => setShowNameEditModal(false)}
+          />
+          <View
+            className="bg-white dark:bg-[#1C1C1E] rounded-t-3xl px-6 pt-6 pb-8"
+            style={{
+              maxHeight: "50%",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: -2 },
+              shadowOpacity: 0.25,
+              shadowRadius: 10,
+              elevation: 10,
+            }}
+          >
+            <View className="flex-row items-center justify-between mb-6">
+              <Text className="text-2xl font-bold text-black dark:text-white">
+                Change Display Name
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowNameEditModal(false)}
+                className="p-2"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              className="bg-gray-50 dark:bg-[#2C2C2E] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-base text-black dark:text-white mb-6"
+              placeholder="Enter your display name"
+              placeholderTextColor="#9CA3AF"
+              value={displayName}
+              onChangeText={setDisplayName}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleUpdateDisplayName}
+            />
+
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={() => setShowNameEditModal(false)}
+                className="flex-1 px-6 py-3 rounded-xl border-2"
+                style={{ borderColor: isDark ? "#8E8E93" : "#D1D1D6" }}
+              >
+                <Text className="text-center font-semibold" style={{ color: isDark ? "#FFFFFF" : "#000000" }}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleUpdateDisplayName}
+                className="flex-1 px-6 py-3 rounded-xl"
+                style={{
+                  backgroundColor: isUpdatingName ? "#9CA3AF" : "#34C759",
+                  opacity: isUpdatingName ? 0.6 : 1,
+                }}
+                disabled={isUpdatingName}
+              >
+                {isUpdatingName ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text className="text-center font-semibold text-white">Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>

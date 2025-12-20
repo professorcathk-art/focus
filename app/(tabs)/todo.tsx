@@ -55,6 +55,8 @@ export default function TodoScreen() {
   const fetchingRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const checkingRef = useRef<Set<string>>(new Set()); // Track which dates we've checked for moving
+  const lastLoadedDateRef = useRef<string | null>(null); // Track last loaded date to prevent flashing
+  const togglingRef = useRef<Set<string>>(new Set()); // Track todos currently being toggled to prevent filtering
   
   // Get user's timezone offset in minutes (e.g., -480 for PST which is UTC-8)
   const getTimezoneOffset = useCallback(() => {
@@ -409,7 +411,14 @@ export default function TodoScreen() {
   }, [isAuthenticated, user?.id, selectedDate, lastMoveDate, isMovingTasks, moveIncompleteTasks]);
 
   useEffect(() => {
-    if (!isAuthenticated || !user?.id) return;
+    // Early return if not authenticated - but don't clear todos to prevent flashing
+    if (!isAuthenticated || !user?.id) {
+      // Only clear if we were previously authenticated (to handle sign-out)
+      if (todos.length > 0) {
+        setTodos([]);
+      }
+      return;
+    }
     
     // Capture the current selectedDate to avoid stale closure
     const currentDate = selectedDate;
@@ -418,57 +427,56 @@ export default function TodoScreen() {
     
     console.log(`[TodoScreen] useEffect triggered for date: ${dateStr}`);
     
-    // Clear todos immediately when date changes to prevent showing stale data
-    // This ensures we don't show previous date's todos while loading new date
-    setTodos([]);
-    setIsLoading(true);
-    
-    // Clear memory cache for ALL dates for this user to prevent stale data
-    // This must happen synchronously before loadTodos to prevent flashing
-    try {
-      const memoryKeys = Array.from(memoryCache.keys());
-      let clearedCount = 0;
-      for (const key of memoryKeys) {
-        // Clear ALL memory cache entries for this user to prevent date confusion
-        if (key.startsWith(`${userId}_`)) {
-          memoryCache.delete(key);
-          clearedCount++;
+    // Only clear todos and load if date actually changed (not on every render)
+    if (lastLoadedDateRef.current !== dateStr) {
+      // CRITICAL: Filter todos by date BEFORE clearing
+      // This prevents showing wrong-date todos even if they're in state
+      const filteredTodos = todos.filter(todo => todo.date === dateStr);
+      if (filteredTodos.length !== todos.length) {
+        console.log(`[TodoScreen] ⚠️ Filtered out ${todos.length - filteredTodos.length} todos with wrong dates before date change`);
+        setTodos(filteredTodos);
+      }
+      console.log(`[TodoScreen] Date changed from ${lastLoadedDateRef.current} to ${dateStr}, clearing todos`);
+      setTodos([]); // Clear immediately
+      setIsLoading(true);
+      lastLoadedDateRef.current = dateStr;
+      
+      // Clear memory cache for ALL dates for this user to prevent stale data
+      try {
+        const memoryKeys = Array.from(memoryCache.keys());
+        let clearedCount = 0;
+        for (const key of memoryKeys) {
+          if (key.startsWith(`${userId}_`)) {
+            memoryCache.delete(key);
+            clearedCount++;
+          }
+        }
+        if (clearedCount > 0) {
+          console.log(`[TodoScreen] Cleared ${clearedCount} memory cache entries for user`);
+        }
+      } catch (error) {
+        console.error("[TodoScreen] Error clearing memory cache:", error);
+      }
+      
+      // Load todos for the selected date
+      // Skip cache on date change to force fresh API fetch and prevent flashing
+      loadTodos(false, currentDate).catch((error) => {
+        console.error(`[TodoScreen] Error loading todos for ${dateStr}:`, error);
+      });
+      
+      // Check and move incomplete tasks if it's a new day
+      if (isToday(selectedDate)) {
+        const checkKey = `moveCheck_${dateStr}`;
+        if (!checkingRef.current.has(checkKey)) {
+          checkingRef.current.add(checkKey);
+          setTimeout(() => {
+            checkAndMoveTasks();
+          }, 1000);
         }
       }
-      if (clearedCount > 0) {
-        console.log(`[TodoScreen] Cleared ${clearedCount} memory cache entries for user`);
-      }
-    } catch (error) {
-      console.error("[TodoScreen] Error clearing memory cache:", error);
     }
-    
-    // Clear AsyncStorage cache for the previous date asynchronously (non-blocking)
-    // This helps prevent wrong-date todos from showing
-    const prevDate = new Date(currentDate);
-    prevDate.setDate(prevDate.getDate() - 1);
-    const prevDateStr = format(prevDate, "yyyy-MM-dd");
-    clearCacheForDate(prevDateStr, userId).catch(err => {
-      console.error(`[TodoScreen] Error clearing previous date cache:`, err);
-    });
-    
-    // Load todos for the selected date
-    // Skip cache on date change to force fresh API fetch and prevent flashing
-    // This ensures we always get correct data for the new date
-    loadTodos(false, currentDate).catch((error) => {
-      console.error(`[TodoScreen] Error loading todos for ${dateStr}:`, error);
-    });
-    
-    // Check and move incomplete tasks if it's a new day
-    // Only check once per date to avoid excessive calls
-    if (isToday(selectedDate)) {
-      const checkKey = `moveCheck_${dateStr}`;
-      if (!checkingRef.current.has(checkKey)) {
-        checkingRef.current.add(checkKey);
-        setTimeout(() => {
-          checkAndMoveTasks();
-        }, 1000); // Wait for loadTodos to complete
-      }
-    }
+    // Note: We don't filter todos here if date hasn't changed to avoid infinite loops
+    // The render filter below will handle any wrong-date todos
   }, [isAuthenticated, selectedDate, loadTodos, checkAndMoveTasks]);
   
   // Listen for app state changes (foreground/background) to check for new day
@@ -607,35 +615,81 @@ export default function TodoScreen() {
   const handleToggleTodo = async (id: string, completed: boolean) => {
     if (!isAuthenticated || !user?.id || togglingTodoId === id) return;
 
-    // Optimistic update
+    // Mark as toggling to prevent filtering during update
+    togglingRef.current.add(id);
+    setTogglingTodoId(id);
+
+    // Optimistic update - use functional update to ensure atomic state change
     const newCompleted = !completed;
     const todoDate = todos.find(t => t.id === id)?.date || format(selectedDate, "yyyy-MM-dd");
     const userId = user.id;
-    setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t)));
+    const currentDateStr = format(selectedDate, "yyyy-MM-dd");
+    
+    // Optimistic state update - ensure it matches current date
+    setTodos(prevTodos => {
+      return prevTodos.map((t) => {
+        if (t.id === id) {
+          return { ...t, completed: newCompleted };
+        }
+        return t;
+      });
+    });
+    
     // Update cache optimistically
     const cachedTodos = await getAllTodosIncludingPending(todoDate, userId);
     if (cachedTodos) {
       const updatedCached = cachedTodos.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t));
       await setCachedTodos(todoDate, userId, updatedCached);
     }
-    setTogglingTodoId(id);
 
     try {
       const updatedTodo = await apiClient.put<Todo>(
         API_ENDPOINTS.todos.update(id),
         { completed: newCompleted }
       );
-      setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? updatedTodo : t)));
+      
+      // Update state with API response - ensure date still matches and use functional update
+      setTodos(prevTodos => {
+        // Double-check we're still on the same date
+        const stillOnSameDate = format(selectedDate, "yyyy-MM-dd") === currentDateStr;
+        if (!stillOnSameDate) {
+          console.log(`[TodoScreen] Date changed during toggle, ignoring update for ${id}`);
+          return prevTodos; // Don't update if date changed
+        }
+        
+        // Update the todo atomically
+        return prevTodos.map((t) => {
+          if (t.id === id) {
+            // Ensure the updated todo matches the current date
+            if (updatedTodo.date === currentDateStr) {
+              return updatedTodo;
+            } else {
+              // If API returned wrong date, keep optimistic update
+              console.log(`[TodoScreen] ⚠️ API returned todo with wrong date (${updatedTodo.date}), keeping optimistic update`);
+              return { ...t, completed: newCompleted };
+            }
+          }
+          return t;
+        });
+      });
+      
       // Update cache with real todo
-      const cachedTodos = await getAllTodosIncludingPending(todoDate, userId);
-      if (cachedTodos) {
-        const finalTodos = cachedTodos.map((t) => (t.id === id ? updatedTodo : t));
+      const cachedTodosAfter = await getAllTodosIncludingPending(todoDate, userId);
+      if (cachedTodosAfter) {
+        const finalTodos = cachedTodosAfter.map((t) => (t.id === id ? updatedTodo : t));
         await setCachedTodos(todoDate, userId, finalTodos);
       }
     } catch (error) {
       console.error("Toggle todo error:", error);
-      // Revert optimistic update
-      setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? { ...t, completed } : t)));
+      // Revert optimistic update - use functional update
+      setTodos(prevTodos => {
+        const stillOnSameDate = format(selectedDate, "yyyy-MM-dd") === currentDateStr;
+        if (!stillOnSameDate) {
+          return prevTodos; // Don't revert if date changed
+        }
+        return prevTodos.map((t) => (t.id === id ? { ...t, completed } : t));
+      });
+      
       // Revert cache
       const cachedTodos = await getAllTodosIncludingPending(todoDate, userId);
       if (cachedTodos) {
@@ -645,6 +699,7 @@ export default function TodoScreen() {
       Alert.alert("Error", "Failed to update todo");
     } finally {
       setTogglingTodoId(null);
+      togglingRef.current.delete(id);
     }
   };
 
@@ -828,7 +883,16 @@ export default function TodoScreen() {
               </Text>
             </View>
           ) : (
-            todos.map((todo) => (
+            todos
+              .filter(todo => {
+                // Don't filter out todos that are currently being toggled
+                if (togglingRef.current.has(todo.id)) {
+                  return true;
+                }
+                // Double-check date match
+                return todo.date === format(selectedDate, "yyyy-MM-dd");
+              })
+              .map((todo) => (
               <View
                 key={todo.id}
                 className="bg-white dark:bg-card-dark rounded-xl p-4 mb-3 flex-row items-center"
@@ -974,6 +1038,7 @@ export default function TodoScreen() {
                 shadowOpacity: 0.3,
                 shadowRadius: 16,
                 elevation: 16,
+                overflow: 'hidden', // Prevent content from going outside
               }}
             >
               <View className="flex-row items-center justify-between mb-4">
@@ -1017,16 +1082,19 @@ export default function TodoScreen() {
               </View>
 
               {/* Calendar Grid */}
-              <View className="mb-4">
+              <View className="mb-4" style={{ overflow: 'hidden' }}>
                 {/* Day headers */}
                 <View className="flex-row mb-2">
-                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                    <View key={day} className="flex-1 items-center">
-                      <Text className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                        {day}
-                      </Text>
-                    </View>
-                  ))}
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => {
+                    const dayCellWidth = (SCREEN_WIDTH - 48 - 48) / 7; // 48 = modal padding, 48 = outer padding
+                    return (
+                      <View key={day} style={{ width: dayCellWidth, alignItems: 'center' }}>
+                        <Text className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                          {day}
+                        </Text>
+                      </View>
+                    );
+                  })}
                 </View>
 
                 {/* Calendar days */}
@@ -1054,16 +1122,26 @@ export default function TodoScreen() {
                   }
 
                   // Calculate fixed width for each day cell to ensure consistent alignment
-                  const dayCellWidth = (SCREEN_WIDTH - 48) / 7; // 48 = padding (24 * 2)
+                  // Account for modal padding (24px * 2) and outer padding (24px * 2)
+                  const dayCellWidth = (SCREEN_WIDTH - 48 - 48) / 7;
+                  
+                  // Ensure all rows have exactly 7 cells for consistent layout
+                  // Pad last row with nulls if needed
+                  const paddedRows = rows.map(row => {
+                    const padded = [...row];
+                    while (padded.length < 7) {
+                      padded.push(null);
+                    }
+                    return padded;
+                  });
                   
                   return (
                     <View>
-                      {rows.map((row, rowIndex) => {
+                      {paddedRows.map((row, rowIndex) => {
                         return (
                           <View 
                             key={rowIndex} 
                             className="flex-row mb-1"
-                            style={{ justifyContent: 'space-between' }}
                           >
                             {row.map((date, colIndex) => {
                               if (!date) {

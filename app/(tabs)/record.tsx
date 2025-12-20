@@ -924,28 +924,42 @@ export default function RecordScreen() {
                   )}
 
                   {/* Record Button with gradient - fixed position */}
-                  <TouchableOpacity
-                    onPressIn={handlePressIn}
-                    onPressOut={handlePressOut}
-                    className="w-24 h-24 rounded-full items-center justify-center shadow-lg"
+                  <View
                     style={{
-                      backgroundColor: isRecording ? "#30D158" : "#34C759",
-                      shadowColor: "#34C759",
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: 0.3,
-                      shadowRadius: 16,
-                      elevation: 8,
+                      width: 96,
+                      height: 96,
+                      position: 'relative',
                     }}
-                    activeOpacity={1}
-                    delayPressIn={0}
-                    delayPressOut={0}
                   >
-                    <Ionicons
-                      name={isRecording ? "stop" : "mic"}
-                      size={48}
-                      color="#FFFFFF"
-                    />
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      onPressIn={handlePressIn}
+                      onPressOut={handlePressOut}
+                      className="w-24 h-24 rounded-full items-center justify-center shadow-lg"
+                      style={{
+                        backgroundColor: isRecording ? "#30D158" : "#34C759",
+                        shadowColor: "#34C759",
+                        shadowOffset: { width: 0, height: 8 },
+                        shadowOpacity: 0.3,
+                        shadowRadius: 16,
+                        elevation: 8,
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                      }}
+                      activeOpacity={1}
+                      delayPressIn={0}
+                      delayPressOut={0}
+                      disabled={status === "transcribing" || status === "saved"}
+                    >
+                      <Ionicons
+                        name={isRecording ? "stop" : "mic"}
+                        size={48}
+                        color="#FFFFFF"
+                      />
+                    </TouchableOpacity>
+                  </View>
 
                   <Text className="text-sm text-gray-500 dark:text-gray-400 mt-6 text-center px-4">
                     Hold to record • Release when done

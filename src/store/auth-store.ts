@@ -280,21 +280,33 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       // Extract user name from Apple credential or user metadata
-      const userName = credential.fullName
-        ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
-        : data.user.user_metadata?.full_name
+      // Apple only provides fullName on FIRST sign-in, so check metadata first
+      let userName = data.user.user_metadata?.full_name 
         || data.user.user_metadata?.name
+        || (credential.fullName 
+          ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
+          : null)
         || data.user.email?.split("@")[0]
         || "User";
 
-      // Update user metadata with name if available
-      if (credential.fullName && !data.user.user_metadata?.name) {
-        await supabase.auth.updateUser({
-          data: {
-            name: userName,
-            full_name: userName,
-          },
-        });
+      // Update user metadata with name if we got it from Apple and it's not already stored
+      if (credential.fullName && !data.user.user_metadata?.name && !data.user.user_metadata?.full_name) {
+        const appleName = `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim();
+        if (appleName) {
+          userName = appleName;
+          try {
+            await supabase.auth.updateUser({
+              data: {
+                name: userName,
+                full_name: userName,
+              },
+            });
+            console.log("[Auth] ✅ Updated user metadata with Apple name:", userName);
+          } catch (updateError) {
+            console.error("[Auth] ⚠️ Failed to update user metadata:", updateError);
+            // Continue anyway - name is still set locally
+          }
+        }
       }
 
       const user: User = {
