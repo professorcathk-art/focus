@@ -1,65 +1,53 @@
 # Focus Circle Landing Page
 
-This is the marketing website for Focus Circle app, separate from the main app codebase.
+Modern, dark-themed landing page inspired by saner.ai, built with vanilla HTML/CSS/JS for fast loading and easy deployment.
 
-## Tech Stack
+## Features
 
-- **Next.js 14** - React framework
-- **TypeScript** - Type safety
-- **Vercel** - Hosting and deployment
+- ✅ Dark theme with gradient accents
+- ✅ Smooth scroll animations
+- ✅ Mobile-responsive design
+- ✅ Single HTML file (no dependencies)
+- ✅ Fast loading (optimized)
+- ✅ SEO-friendly
 
-## Local Development
+## Files
 
-```bash
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+- `index.html` - Main landing page
+- `privacy-policy.html` - Privacy policy page
+- `vercel.json` - Vercel configuration for routing
 
 ## Deployment to Vercel
 
-### Option 1: Deploy via Vercel Dashboard
+### Option 1: Vercel Dashboard
 
 1. Go to [vercel.com](https://vercel.com)
-2. Click "New Project"
-3. Import your repository (or connect GitHub)
-4. Set **Root Directory** to `website`
-5. Framework Preset: **Next.js**
-6. Click "Deploy"
+2. Click "Add New..." → "Project"
+3. Import repository: `professorcathk-art/focus`
+4. **Set Root Directory**: `website`
+5. **Framework Preset**: Other (or Static Site)
+6. **Build Command**: (leave empty - static HTML)
+7. **Output Directory**: `.` (current directory)
+8. Click "Deploy"
 
-### Option 2: Deploy via CLI
+### Option 2: Vercel CLI
 
 ```bash
-# Install Vercel CLI
-npm install -g vercel
-
-# Login
-vercel login
-
-# Deploy (from website directory)
 cd website
 vercel
-
-# Deploy to production
-vercel --prod
 ```
-
-## Important Notes
-
-- This website is **completely separate** from the main app code
-- It's in the `website/` directory to keep it isolated
-- The privacy policy is at `/privacy-policy`
-- Update the App Store link once your app is live
 
 ## Customization
 
-- Update App Store link in `app/page.tsx` (search for "apps.apple.com")
-- Update company information in `app/page.tsx` and `app/privacy-policy/page.tsx`
-- Update contact emails in privacy policy
-- Add screenshots/mockups to the features section
-- Customize colors in `app/globals.css`
+- Update App Store link in `index.html` (search for "apps.apple.com")
+- Update company information
+- Update contact emails
+- Modify colors in CSS variables at top of `<style>` tag
+- Add/remove testimonials as needed
 
+## Notes
+
+- This is a static HTML site (no Next.js needed)
+- All CSS and JS is embedded in HTML for fast loading
+- Privacy policy is a separate HTML file
+- Vercel will serve these files as static assets
