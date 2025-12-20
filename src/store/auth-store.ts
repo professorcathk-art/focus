@@ -109,6 +109,14 @@ export const useAuthStore = create<AuthState>((set) => ({
           status: error.status,
           name: error.name,
         });
+        
+        // Check if email already exists
+        if (error.message?.toLowerCase().includes('already registered') || 
+            error.message?.toLowerCase().includes('user already registered') ||
+            error.message?.toLowerCase().includes('email already exists')) {
+          throw new Error("EMAIL_EXISTS");
+        }
+        
         throw new Error(error.message || "Sign up failed");
       }
 

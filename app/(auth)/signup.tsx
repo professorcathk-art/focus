@@ -91,7 +91,29 @@ export default function SignUpScreen() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Sign up failed";
       console.error("[SignUp] Error:", errorMessage);
-      setError(errorMessage);
+      
+      // Check if email already exists
+      if (errorMessage === "EMAIL_EXISTS") {
+        Alert.alert(
+          "Account Already Exists",
+          "This email is already registered. Please sign in instead.",
+          [
+            {
+              text: "Go to Sign In",
+              onPress: () => {
+                router.replace("/(auth)/signin");
+              }
+            },
+            {
+              text: "Cancel",
+              style: "cancel"
+            }
+          ]
+        );
+        setError(null); // Clear error since we're showing alert
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsLoading(false);
     }

@@ -39,8 +39,10 @@ export default function AuthCallbackScreen() {
       console.log("[Auth Callback] Params:", params);
 
       try {
-        // Extract code from params
+        // Extract parameters - could be OAuth code, email verification token, or error
         const code = params.code as string;
+        const token = params.token as string; // Email verification token
+        const type = params.type as string; // 'signup' for email verification
         const error = params.error as string;
         const errorDescription = params.error_description as string;
 
@@ -57,6 +59,95 @@ export default function AuthCallbackScreen() {
           return;
         }
 
+        // Handle email verification token (from email confirmation link)
+        if (token && type === 'signup') {
+          console.log("[Auth Callback] 📧 Email verification token detected");
+          setStatus("Verifying email...");
+          
+          try {
+            // Verify the email token with Supabase
+            const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+              token_hash: token,
+              type: 'signup'
+            });
+
+            if (verifyError) {
+              console.error("[Auth Callback] Email verification error:", verifyError);
+              setStatus("Email verification failed");
+              
+              // Try alternative method - sometimes Supabase auto-verifies via redirect
+              const { data: sessionData } = await supabase.auth.getSession();
+              if (sessionData?.session) {
+                console.log("[Auth Callback] ✅ Session found after email verification");
+                await checkAuth();
+                if (!hasRedirectedRef.current) {
+                  hasRedirectedRef.current = true;
+                  setTimeout(() => {
+                    router.replace("/(tabs)/record");
+                  }, 500);
+                }
+                return;
+              }
+              
+              if (!hasRedirectedRef.current) {
+                hasRedirectedRef.current = true;
+                setTimeout(() => {
+                  router.replace("/(auth)/signin");
+                }, 2000);
+              }
+              return;
+            }
+
+            if (verifyData?.session) {
+              console.log("[Auth Callback] ✅ Email verified successfully!");
+              await checkAuth();
+              if (!hasRedirectedRef.current) {
+                hasRedirectedRef.current = true;
+                setTimeout(() => {
+                  router.replace("/(tabs)/record");
+                }, 500);
+              }
+              return;
+            }
+
+            // If no session yet, wait a moment and check again
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const { data: finalSession } = await supabase.auth.getSession();
+            if (finalSession?.session) {
+              console.log("[Auth Callback] ✅ Session found after email verification wait");
+              await checkAuth();
+              if (!hasRedirectedRef.current) {
+                hasRedirectedRef.current = true;
+                setTimeout(() => {
+                  router.replace("/(tabs)/record");
+                }, 500);
+              }
+              return;
+            }
+
+            // If still no session, redirect to sign in
+            setStatus("Please sign in");
+            if (!hasRedirectedRef.current) {
+              hasRedirectedRef.current = true;
+              setTimeout(() => {
+                router.replace("/(auth)/signin");
+              }, 2000);
+            }
+            return;
+          } catch (verifyErr) {
+            console.error("[Auth Callback] Error verifying email:", verifyErr);
+            setStatus("Verification error");
+            if (!hasRedirectedRef.current) {
+              hasRedirectedRef.current = true;
+              setTimeout(() => {
+                router.replace("/(auth)/signin");
+              }, 2000);
+            }
+            return;
+          }
+        }
+
+        // Handle OAuth code (from Google/Apple OAuth)
         if (code) {
           console.log("[Auth Callback] Found OAuth code:", code.substring(0, 20) + "...");
           setStatus("Exchanging code for session...");
@@ -98,24 +189,40 @@ export default function AuthCallbackScreen() {
               
               try {
                 // Call Supabase's token endpoint to exchange code for session
-                const exchangeUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=authorization_code`;
+                const exchangeUrl = `${SUPABASE_URL}/auth/v1/token`;
                 
                 console.log("[Auth Callback] Calling token exchange endpoint...");
+                console.log("[Auth Callback] Code:", code.substring(0, 20) + "...");
+                console.log("[Auth Callback] Code verifier:", codeVerifier ? "Found" : "Missing");
+                console.log("[Auth Callback] Redirect URI: focus://auth-callback");
+                
+                const requestBody = new URLSearchParams({
+                  grant_type: 'authorization_code',
+                  code: code,
+                  redirect_uri: 'focus://auth-callback',
+                });
+                
+                // Only add code_verifier if we have it (required for PKCE)
+                if (codeVerifier) {
+                  requestBody.append('code_verifier', codeVerifier);
+                }
+                
                 const response = await fetch(exchangeUrl, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'apikey': SUPABASE_ANON_KEY,
                   },
-                  body: new URLSearchParams({
-                    grant_type: 'authorization_code',
-                    code: code,
-                    code_verifier: codeVerifier,
-                    redirect_uri: 'focus://auth-callback',
-                  }).toString(),
+                  body: requestBody.toString(),
                 });
                 
+                console.log("[Auth Callback] Token exchange response status:", response.status);
                 const exchangeData = await response.json();
+                console.log("[Auth Callback] Token exchange response:", {
+                  hasAccessToken: !!exchangeData.access_token,
+                  error: exchangeData.error,
+                  errorDescription: exchangeData.error_description
+                });
                 
                 if (exchangeData.access_token) {
                   console.log("[Auth Callback] ✅ Token exchange successful!");
@@ -127,6 +234,13 @@ export default function AuthCallbackScreen() {
                   
                   if (setError) {
                     console.error("[Auth Callback] Error setting session:", setError);
+                    // Try getSession as fallback - Supabase might have already set it
+                    const { data: fallbackSession } = await supabase.auth.getSession();
+                    if (fallbackSession?.session) {
+                      console.log("[Auth Callback] ✅ Session found via getSession fallback");
+                      sessionReceived = true;
+                      await checkAuth();
+                    }
                   } else if (sessionData.session) {
                     console.log("[Auth Callback] ✅ Session set successfully!");
                     console.log("[Auth Callback] User ID:", sessionData.session.user.id);
@@ -135,11 +249,12 @@ export default function AuthCallbackScreen() {
                   }
                 } else {
                   console.error("[Auth Callback] Token exchange failed:", exchangeData);
-                  // Fall back to getSession()
-                  setStatus("Retrying...");
+                  // Fall back to getSession() - Supabase might have already set the session via redirect
+                  setStatus("Checking session...");
                   await new Promise(resolve => setTimeout(resolve, 1000));
                   const { data } = await supabase.auth.getSession();
                   if (data?.session) {
+                    console.log("[Auth Callback] ✅ Session found via getSession fallback");
                     sessionReceived = true;
                     await checkAuth();
                   }

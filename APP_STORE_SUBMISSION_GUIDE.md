@@ -1,513 +1,439 @@
-# 🚀 App Store Submission Guide
+# App Store Submission Guide - Focus Circle
 
-Complete guide to launch **Focus** on the Apple App Store.
+## Prerequisites Checklist ✅
 
-## Prerequisites Checklist
+Before submitting to the App Store, ensure you have:
 
-- [ ] Apple Developer Account ($99/year)
+- [ ] Apple Developer Account (paid membership: $99/year)
 - [ ] App Store Connect access
-- [ ] App screenshots (required)
-- [ ] App description and metadata
-- [ ] Privacy policy URL (required for apps with user accounts)
-- [ ] Production build ready
-
----
+- [ ] App icons and screenshots ready
+- [ ] Privacy policy URL
+- [ ] App description and keywords prepared
+- [ ] Production build tested thoroughly
 
 ## Step 1: Apple Developer Account Setup
 
 ### 1.1 Enroll in Apple Developer Program
+1. Go to [developer.apple.com](https://developer.apple.com)
+2. Click **Enroll** → **Start Your Enrollment**
+3. Complete enrollment (requires credit card, $99/year)
+4. Wait for approval (usually 24-48 hours)
 
-1. Go to https://developer.apple.com/programs/
-2. Click **"Enroll"**
-3. Sign in with your Apple ID
-4. Complete enrollment:
-   - **Individual**: $99/year
-   - **Organization**: $99/year (requires D-U-N-S number)
-5. Wait for approval (usually 24-48 hours)
-
-### 1.2 Verify Enrollment
-
-- Check email for confirmation
-- Log in to https://developer.apple.com/account
-- Verify you can access **Certificates, Identifiers & Profiles**
-
----
+### 1.2 Verify App ID
+1. Go to [Apple Developer Portal](https://developer.apple.com/account)
+2. Navigate to **Certificates, Identifiers & Profiles**
+3. Click **Identifiers** → **App IDs**
+4. Verify your App ID exists: `com.focuscircle`
+5. Ensure **Sign In with Apple** capability is enabled
+6. Ensure **Push Notifications** capability is enabled (if needed)
 
 ## Step 2: App Store Connect Setup
 
-### 2.1 Access App Store Connect
-
-1. Go to https://appstoreconnect.apple.com
-2. Sign in with your Apple Developer account
-3. Click **"My Apps"** → **"+"** → **"New App"**
-
-### 2.2 Create New App
-
-Fill in the required information:
-
-- **Platform**: iOS
-- **Name**: Focus
-- **Primary Language**: English (or your preferred language)
-- **Bundle ID**: `com.focus.app` (must match `app.json`)
-- **SKU**: `focus-app-001` (unique identifier, can be anything)
-- **User Access**: Full Access (or Limited Access if you have a team)
-
-Click **"Create"**
-
----
-
-## Step 3: Prepare App Metadata
-
-### 3.1 App Information
-
-**Name**: Focus (30 characters max)
-
-**Subtitle**: Capture, organize, and find your ideas (30 characters max)
-
-**Category**:
-- **Primary**: Productivity
-- **Secondary**: Utilities (optional)
-
-**Privacy Policy URL**: 
-- **Required** for apps with user accounts
-- Create a simple privacy policy page (can host on GitHub Pages, Vercel, etc.)
-- Example: `https://yourdomain.com/privacy-policy`
-
-### 3.2 App Description
-
-**Description** (up to 4,000 characters):
-
-```
-Focus is a powerful app designed for ADHD users to capture, organize, and find ideas effortlessly.
-
-✨ Key Features:
-• Voice & Text Recording - Capture ideas instantly with voice or text
-• Smart Categorization - AI automatically organizes your ideas into categories
-• Semantic Search - Find ideas using natural language, not just keywords
-• To-Do List - Manage daily tasks and stay organized
-• Secure Storage - Your ideas are encrypted and stored securely
-
-Perfect for:
-• Students managing study notes
-• Professionals organizing work ideas
-• Anyone who wants to capture thoughts quickly
-
-Stay focused. Stay organized. Stay productive.
-```
-
-**Keywords** (100 characters max, comma-separated):
-```
-productivity,notes,ideas,adhd,organization,voice,recording,search,to-do,tasks
-```
-
-**Support URL**: `https://yourdomain.com/support` (or GitHub issues page)
-
-**Marketing URL** (optional): `https://yourdomain.com`
-
----
-
-## Step 4: App Screenshots (Required)
-
-### 4.1 Required Sizes
-
-You need screenshots for **all** supported device sizes:
-
-- **iPhone 6.7" Display** (iPhone 14 Pro Max, 15 Pro Max): 1290 x 2796 px
-- **iPhone 6.5" Display** (iPhone 11 Pro Max, XS Max): 1242 x 2688 px
-- **iPhone 5.5" Display** (iPhone 8 Plus, 7 Plus): 1242 x 2208 px
-- **iPad Pro (12.9-inch)** (3rd generation): 2048 x 2732 px
-- **iPad Pro (12.9-inch)** (2nd generation): 2048 x 2732 px
-
-**Minimum**: 1 screenshot per device size
-**Recommended**: 3-5 screenshots per device size
-
-### 4.2 Screenshot Content Suggestions
-
-1. **Home/Record Screen** - Show the main idea capture interface
-2. **Notes/Inbox** - Display categorized ideas
-3. **Search** - Show semantic search functionality
-4. **To-Do List** - Display task management
-5. **Profile** - Show user settings
-
-### 4.3 How to Capture Screenshots
-
-**Option 1: iOS Simulator**
-```bash
-# Start iOS Simulator
-npm run ios
-
-# In Simulator: Device → Screenshot
-# Or: Cmd + S
-```
-
-**Option 2: Physical Device**
-- Take screenshots: Power + Volume Up
-- Screenshots saved to Photos app
-
-### 4.4 Screenshot Tips
-
-- ✅ Show real app content (not mockups)
-- ✅ Use actual user data (or realistic examples)
-- ✅ Highlight key features
-- ✅ Keep text readable
-- ❌ Don't include status bar (iOS removes it automatically)
-- ❌ Don't use placeholder text
-
----
-
-## Step 5: App Icon
-
-### 5.1 Icon Requirements
-
-- **Size**: 1024 x 1024 px
-- **Format**: PNG (no transparency)
-- **No rounded corners** (Apple adds them automatically)
-- **No alpha channel**
-
-### 5.2 Current Icon
-
-Your icon is at: `assets/icon.png`
-
-**Verify it's 1024x1024**:
-```bash
-# Check icon dimensions
-file assets/icon.png
-```
-
-If it's not 1024x1024, resize it:
-```bash
-# Using ImageMagick (if installed)
-convert assets/icon.png -resize 1024x1024 assets/icon-1024.png
-```
-
----
-
-## Step 6: Privacy Policy (Required)
-
-### 6.1 Why It's Required
-
-Apple requires a privacy policy for apps that:
-- Collect user data (emails, ideas, audio recordings)
-- Use authentication (Supabase Auth)
-- Store user content
-
-### 6.2 Create Privacy Policy
-
-Create a simple HTML page or Markdown file:
-
-**Example Privacy Policy** (`PRIVACY_POLICY.md`):
-
-```markdown
-# Privacy Policy for Focus
-
-**Last Updated**: [Date]
-
-## Data Collection
-
-Focus collects the following data:
-- Email address (for account creation)
-- Ideas and notes (stored securely)
-- Audio recordings (transcribed and deleted after processing)
-
-## Data Storage
-
-- Data is stored securely using Supabase (encrypted database)
-- Audio recordings are processed and deleted immediately after transcription
-- Ideas are stored in your personal account
-
-## Third-Party Services
-
-- **Supabase**: User authentication and database storage
-- **AIMLAPI**: AI-powered categorization and search
-
-## Your Rights
-
-You can:
-- Delete your account at any time
-- Export your data
-- Request data deletion
-
-## Contact
-
-For privacy concerns, contact: [your-email@example.com]
-```
-
-### 6.3 Host Privacy Policy
-
-**Option 1: GitHub Pages**
-1. Create `docs/privacy-policy.md` in your repo
-2. Enable GitHub Pages in repo settings
-3. URL: `https://yourusername.github.io/focus/privacy-policy`
-
-**Option 2: Vercel**
-1. Create `public/privacy-policy.html`
-2. Deploy to Vercel
-3. URL: `https://yourdomain.vercel.app/privacy-policy`
-
-**Option 3: Simple HTML Page**
-- Host anywhere publicly accessible
-- Add URL to App Store Connect
-
----
-
-## Step 7: Build Production Version
-
-### 7.1 Update Version Number
-
-Before building, ensure version is correct in `app.json`:
+### 2.1 Create App Record
+1. Go to [App Store Connect](https://appstoreconnect.apple.com)
+2. Click **My Apps** → **+** → **New App**
+3. Fill in:
+   - **Platform**: iOS
+   - **Name**: Focus Circle (or your preferred name)
+   - **Primary Language**: English (or your preferred)
+   - **Bundle ID**: `com.focuscircle` (select from dropdown)
+   - **SKU**: `focus-circle-ios` (unique identifier, can be anything)
+   - **User Access**: Full Access (or Limited Access if using team)
+4. Click **Create**
+
+### 2.2 App Information
+1. In App Store Connect, go to your app
+2. Click **App Information**
+3. Fill in:
+   - **Category**: 
+     - Primary: Productivity (or Lifestyle, Utilities)
+     - Secondary: (optional)
+   - **Subtitle**: Brief tagline (30 characters max)
+   - **Privacy Policy URL**: Your privacy policy URL (required)
+   - **Support URL**: Your support/help URL
+   - **Marketing URL**: (optional) Your website
+
+### 2.3 Pricing and Availability
+1. Click **Pricing and Availability**
+2. Set:
+   - **Price**: Free (or set price)
+   - **Availability**: All countries (or select specific)
+   - **Pre-Order**: No (unless doing pre-order)
+
+## Step 3: Prepare App Assets
+
+### 3.1 App Icon
+- **Required sizes**:
+  - 1024x1024px (PNG, no transparency, no alpha channel)
+  - Must be square
+  - No rounded corners (iOS will add them)
+- **Location**: `assets/icon.png`
+- **Format**: PNG, RGB color space
+
+### 3.2 Screenshots
+- **Required for iPhone**:
+  - 6.7" Display (iPhone 14 Pro Max, 15 Pro Max): 1290 x 2796 pixels
+  - 6.5" Display (iPhone 11 Pro Max, XS Max): 1242 x 2688 pixels
+  - 5.5" Display (iPhone 8 Plus): 1242 x 2208 pixels
+- **Minimum**: At least 3 screenshots required
+- **Recommended**: 5-10 screenshots showing key features
+- **Tips**:
+  - Show your app's best features
+  - Use real content (not placeholder text)
+  - Include Today page, Record page, Search page
+  - Show Apple Sign-In if available
+
+### 3.3 App Preview Video (Optional but Recommended)
+- **Format**: MP4 or MOV
+- **Duration**: 15-30 seconds
+- **Size**: Same as screenshots
+- **Content**: Show app in action
+
+### 3.4 Description and Keywords
+- **Name**: Focus Circle (30 characters max)
+- **Subtitle**: Brief tagline (30 characters max)
+- **Description**: 
+  - First 3 lines are most important (shown in search)
+  - Up to 4000 characters
+  - Include key features, benefits
+  - Use bullet points for readability
+- **Keywords**: 
+  - Up to 100 characters
+  - Comma-separated
+  - Example: "productivity,tasks,todo,notes,ideas,voice recording,AI"
+
+## Step 4: Configure Production Build
+
+### 4.1 Update app.json for Production
+Verify these settings in `app.json`:
 
 ```json
 {
   "expo": {
+    "name": "Focus Circle",
+    "slug": "focus-circle",
     "version": "1.0.0",
     "ios": {
-      "buildNumber": "1"
+      "bundleIdentifier": "com.focuscircle",
+      "buildNumber": "1",
+      "supportsTablet": true,
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Focus needs access to your microphone to record your ideas.",
+        "NSSpeechRecognitionUsageDescription": "Focus uses speech recognition to transcribe your ideas."
+      }
     }
   }
 }
 ```
 
-### 7.2 Build for App Store
+### 4.2 Create/Update eas.json
+Create `eas.json` in project root:
 
+```json
+{
+  "cli": {
+    "version": ">= 5.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      }
+    },
+    "production": {
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://your-vercel-backend.vercel.app/api"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "your-apple-id@example.com",
+        "ascAppId": "your-app-store-connect-app-id",
+        "appleTeamId": "YUNUL5V5R6"
+      }
+    }
+  }
+}
+```
+
+### 4.3 Set Production Environment Variables
+1. Create `.env.production` file:
+```env
+EXPO_PUBLIC_API_URL=https://your-vercel-backend.vercel.app/api
+EXPO_PUBLIC_SUPABASE_URL=https://wqvevludffkemgicrfos.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+2. Or set in EAS secrets:
 ```bash
-# Make sure you're logged in
-eas login
+eas secret:create --scope project --name EXPO_PUBLIC_API_URL --value https://your-vercel-backend.vercel.app/api
+eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_URL --value https://wqvevludffkemgicrfos.supabase.co
+eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value your-anon-key
+```
 
-# Build production version
+## Step 5: Build Production App
+
+### 5.1 Install EAS CLI (if not already installed)
+```bash
+npm install -g eas-cli
+```
+
+### 5.2 Login to EAS
+```bash
+eas login
+```
+
+### 5.3 Configure EAS Build
+```bash
+eas build:configure
+```
+
+### 5.4 Build for Production
+```bash
 eas build --platform ios --profile production
 ```
 
-**This will**:
-- Build a production-ready iOS app
-- Sign with your Apple Developer certificate
-- Create an `.ipa` file ready for App Store
+**This will:**
+- Build your app in the cloud
+- Take 15-30 minutes
+- Generate an `.ipa` file
+- Upload to App Store Connect automatically (if configured)
 
-**Build time**: ~15-30 minutes
-
-### 7.3 Monitor Build
-
-- Watch progress in terminal
-- Or check: https://expo.dev/accounts/chrislau/projects/focus/builds
-
----
-
-## Step 8: Submit to App Store
-
-### 8.1 Using EAS Submit (Recommended)
-
+### 5.5 Alternative: Build Locally
 ```bash
-# Submit the latest production build
-eas submit --platform ios
+eas build --platform ios --profile production --local
 ```
 
-**EAS will**:
-- Find your latest production build
-- Upload to App Store Connect
-- Handle all submission steps
+**Note**: Requires Xcode and signing certificates configured.
 
-### 8.2 Manual Submission (Alternative)
+## Step 6: App Store Connect Submission
 
-1. **Download Build**:
-   ```bash
-   eas build:list
-   # Download the .ipa file
+### 6.1 Upload Build
+If build didn't auto-upload:
+1. Go to App Store Connect → Your App
+2. Click **TestFlight** tab
+3. Wait for build to appear (may take 10-30 minutes)
+4. Once processed, it will appear in **iOS Builds**
+
+### 6.2 Complete App Store Listing
+1. Go to **App Store** tab
+2. Click **+ Version or Platform** → **iOS App**
+3. Fill in:
+
+   **Version Information:**
+   - Version: `1.0.0` (must match app.json)
+   - Build: Select the build you just uploaded
+   - What's New: Release notes (what's new in this version)
+
+   **App Preview and Screenshots:**
+   - Upload screenshots for each required device size
+   - Upload app preview video (optional)
+
+   **Description:**
+   - Paste your app description
+   - Add keywords
+   - Add support URL
+   - Add marketing URL (optional)
+
+   **App Review Information:**
+   - **Contact Information**: Your contact details
+   - **Demo Account**: Create a test account for reviewers
+     - Email: `reviewer@yourdomain.com`
+     - Password: `Reviewer123!`
+   - **Notes**: Any special instructions for reviewers
+   - **Attachments**: (optional) Additional info
+
+   **Version Release:**
+   - **Automatically release this version**: Yes (or manual)
+   - **Release this version to**: All countries (or specific)
+
+### 6.3 Content Rights
+1. Answer questions about:
+   - Third-party content
+   - Music/audio content
+   - User-generated content
+   - Age rating
+
+### 6.4 Pricing
+1. Set price (Free or paid)
+2. Set availability (all countries or specific)
+
+### 6.5 App Privacy
+1. Click **App Privacy**
+2. Answer questions about data collection:
+   - **Name**: Collected
+   - **Email**: Collected (for account creation)
+   - **User Content**: Collected (ideas, todos, notes)
+   - **Audio Data**: Collected (voice recordings)
+   - **Usage Data**: Not collected (or collected if you use analytics)
+   - **Diagnostics**: Not collected (or collected if you use crash reporting)
+3. For each data type:
+   - **Purpose**: Select purposes (e.g., App Functionality, Analytics)
+   - **Linked to User**: Yes/No
+   - **Used for Tracking**: Yes/No
+   - **Data Collected**: Yes/No
+
+## Step 7: Submit for Review
+
+### 7.1 Final Checklist
+- [ ] App icon uploaded (1024x1024)
+- [ ] Screenshots uploaded (all required sizes)
+- [ ] Description complete
+- [ ] Keywords added
+- [ ] Privacy policy URL added
+- [ ] Support URL added
+- [ ] Demo account created
+- [ ] App Privacy questions answered
+- [ ] Build uploaded and selected
+- [ ] Version number matches app.json
+- [ ] All required fields filled
+
+### 7.2 Submit
+1. Click **Add for Review** button (top right)
+2. Review all information
+3. Click **Submit for Review**
+
+### 7.3 Review Process
+- **Timeline**: Usually 24-48 hours (can be up to 7 days)
+- **Status**: Check in App Store Connect → **App Review** tab
+- **Possible outcomes**:
+  - ✅ **Approved**: App goes live automatically (if auto-release enabled)
+  - ⚠️ **Rejected**: You'll receive feedback, fix issues, resubmit
+  - 📝 **In Review**: Still being reviewed
+
+## Step 8: Post-Submission
+
+### 8.1 Monitor Review Status
+- Check App Store Connect daily
+- Respond to any reviewer questions quickly
+- Fix any issues if rejected
+
+### 8.2 Common Rejection Reasons
+- Missing privacy policy
+- Missing demo account
+- App crashes during review
+- Missing required permissions descriptions
+- Incomplete app functionality
+- Misleading app description
+
+### 8.3 After Approval
+- App goes live automatically (if auto-release enabled)
+- Monitor App Store Connect for:
+  - Downloads
+  - Ratings and reviews
+  - Crash reports
+  - Performance metrics
+
+## Step 9: Update Process (Future Versions)
+
+When updating your app:
+
+1. **Update version** in `app.json`:
+   ```json
+   "version": "1.0.1"  // Increment version
+   "ios": {
+     "buildNumber": "2"  // Increment build number
+   }
    ```
 
-2. **Upload via Transporter**:
-   - Download Transporter app from Mac App Store
-   - Open Transporter
-   - Drag `.ipa` file
-   - Click **"Deliver"**
+2. **Build new version**:
+   ```bash
+   eas build --platform ios --profile production
+   ```
 
-3. **Or via Xcode**:
-   - Open Xcode → Window → Organizer
-   - Select your app
-   - Click **"Distribute App"**
-   - Follow wizard
+3. **Submit update**:
+   - Go to App Store Connect
+   - Click **+ Version**
+   - Select new build
+   - Update "What's New"
+   - Submit for review
 
----
+## Important Notes
 
-## Step 9: Complete App Store Listing
+### Bundle ID
+- Your bundle ID is: `com.focuscircle`
+- Must match exactly in:
+  - `app.json`
+  - Apple Developer Portal
+  - App Store Connect
 
-### 9.1 In App Store Connect
+### Sign In with Apple
+- Already configured ✅
+- Make sure it's enabled in:
+  - Apple Developer Portal (App ID capabilities)
+  - Supabase (Authentication → Providers → Apple)
 
-Go to your app → **App Store** tab:
+### Google Sign-In
+- Uses Supabase OAuth (web flow)
+- No additional App Store configuration needed
+- Make sure redirect URLs are configured correctly
 
-1. **Screenshots**: Upload all required screenshots
-2. **Description**: Paste your app description
-3. **Keywords**: Add your keywords
-4. **Support URL**: Add support URL
-5. **Privacy Policy URL**: Add privacy policy URL
-6. **App Icon**: Upload 1024x1024 icon
-7. **App Preview** (optional): Video demo
+### Privacy Policy
+- **Required** for App Store submission
+- Must be publicly accessible URL
+- Should cover:
+  - Data collection
+  - Data usage
+  - Third-party services (Supabase, Deepgram, etc.)
+  - User rights
 
-### 9.2 App Information
-
-- **Age Rating**: Complete questionnaire
-- **App Review Information**:
-  - **Contact Information**: Your email
-  - **Demo Account** (if required): Test account credentials
-  - **Notes**: Any special instructions for reviewers
-
-### 9.3 Pricing and Availability
-
-- **Price**: Free (or set price)
-- **Availability**: All countries (or select specific)
-- **Release Date**: Automatic (or schedule)
-
----
-
-## Step 10: Submit for Review
-
-### 10.1 Final Checklist
-
-Before submitting:
-
-- [ ] All screenshots uploaded
-- [ ] Description complete
-- [ ] Privacy policy URL added
-- [ ] App icon uploaded
-- [ ] Build uploaded successfully
-- [ ] Version and build number correct
-- [ ] Test account provided (if app requires login)
-
-### 10.2 Submit
-
-1. In App Store Connect, go to your app
-2. Click **"Submit for Review"**
-3. Answer any final questions
-4. Click **"Submit"**
-
-**Status**: "Waiting for Review"
-
----
-
-## Step 11: App Review Process
-
-### 11.1 Timeline
-
-- **Initial Review**: 24-48 hours
-- **Re-review** (if rejected): 24-48 hours after resubmission
-
-### 11.2 Common Rejection Reasons
-
-1. **Missing Privacy Policy**: Ensure URL is accessible
-2. **Crashing**: Test thoroughly before submission
-3. **Incomplete Functionality**: All features must work
-4. **Misleading Content**: Screenshots must match app
-5. **Missing Permissions**: Ensure all permission descriptions are clear
-
-### 11.3 If Rejected
-
-1. Read rejection reason carefully
-2. Fix issues
-3. Update build if needed
-4. Resubmit
-
----
-
-## Step 12: After Approval
-
-### 12.1 App Goes Live
-
-- App appears in App Store within 24 hours
-- Users can download immediately
-- You'll receive email notification
-
-### 12.2 Monitor
-
-- **App Store Connect**: View downloads, ratings, reviews
-- **Analytics**: Set up App Store Connect Analytics
-- **Reviews**: Respond to user reviews
-
----
+### Demo Account
+- **Required** for App Store review
+- Create a test account reviewers can use
+- Include credentials in App Review Information
 
 ## Quick Reference Commands
 
 ```bash
-# Login to EAS
+# Install EAS CLI
+npm install -g eas-cli
+
+# Login
 eas login
 
-# Build for App Store
+# Configure build
+eas build:configure
+
+# Build for production
 eas build --platform ios --profile production
 
-# Submit to App Store
-eas submit --platform ios
-
-# Check build status
+# View build status
 eas build:list
 
-# View build logs
-eas build:view [build-id]
-
-# Update app version (before building)
-# Edit app.json: version and buildNumber
+# Submit to App Store (if not auto-submitted)
+eas submit --platform ios --latest
 ```
 
----
+## Timeline Estimate
 
-## Troubleshooting
+- **Apple Developer Enrollment**: 24-48 hours
+- **App Store Connect Setup**: 1-2 hours
+- **Asset Preparation**: 2-4 hours
+- **Build Process**: 15-30 minutes per build
+- **App Review**: 24-48 hours (can be up to 7 days)
+- **Total**: 3-7 days from start to live
 
-### Build Fails
+## Support Resources
 
-```bash
-# Check build logs
-eas build:view [build-id]
-
-# Common issues:
-# - Missing environment variables
-# - Invalid app.json
-# - Certificate issues
-```
-
-### Submission Fails
-
-```bash
-# Check submission status in App Store Connect
-# Verify build is "Ready to Submit"
-# Ensure all metadata is complete
-```
-
-### App Rejected
-
-1. Read rejection email carefully
-2. Check App Store Connect for details
-3. Fix issues
-4. Rebuild if needed: `eas build --platform ios --profile production`
-5. Resubmit: `eas submit --platform ios`
-
----
-
-## Next Steps After Launch
-
-1. ✅ **Monitor Reviews**: Respond to user feedback
-2. ✅ **Track Analytics**: Use App Store Connect Analytics
-3. ✅ **Plan Updates**: Regular updates improve visibility
-4. ✅ **Marketing**: Share on social media, website
-5. ✅ **Iterate**: Use feedback to improve app
-
----
-
-## Resources
-
-- **App Store Connect**: https://appstoreconnect.apple.com
-- **Apple Developer**: https://developer.apple.com
-- **EAS Build Docs**: https://docs.expo.dev/build/introduction/
-- **EAS Submit Docs**: https://docs.expo.dev/submit/introduction/
-- **App Store Review Guidelines**: https://developer.apple.com/app-store/review/guidelines/
-
----
-
-## Support
-
-If you encounter issues:
-
-1. Check EAS build logs
-2. Review App Store Connect status
-3. Check Expo Discord: https://discord.gg/expo
-4. Review Apple Developer Forums
+- [App Store Connect Help](https://help.apple.com/app-store-connect/)
+- [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
+- [EAS Build Documentation](https://docs.expo.dev/build/introduction/)
+- [Expo App Store Submission](https://docs.expo.dev/submit/introduction/)
 
 ---
 
 **Good luck with your App Store submission! 🚀**
-
