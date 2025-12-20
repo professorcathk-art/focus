@@ -56,12 +56,16 @@ Backend API server for the Focus app using Supabase and AIMLAPI.
 
 ## AIMLAPI Integration
 
-The backend uses AIMLAPI as a drop-in replacement for OpenAI:
-- **Whisper-1**: Speech-to-text transcription
+The backend uses AIMLAPI for transcription and embeddings:
+- **#g1_nova-2-general**: Speech-to-text transcription (two-step polling API)
 - **text-embedding-3-small**: Text embeddings for semantic search
 - **gpt-4o-mini**: Cluster labeling (future)
 
-All AIMLAPI calls use the same OpenAI SDK syntax.
+Transcription uses a two-step process:
+1. POST to `/v1/stt/create` to create a transcription task (returns `generation_id`)
+2. Poll GET `/v1/stt/{generation_id}` until transcription is ready
+
+Embeddings use the OpenAI SDK syntax via `aimlClient`.
 
 ## Database
 

@@ -5,3 +5,4 @@ ALTER TABLE ideas ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_ideas_is_favorite ON ideas(user_id, is_favorite) WHERE is_favorite = TRUE;
 
 
+

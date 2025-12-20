@@ -31,7 +31,7 @@ export default function InboxScreen() {
   const router = useRouter();
   const { clusters, isLoading, updateCategory, refetch: refetchClusters } = useClusters();
   const { ideas, isLoading: ideasLoading, error: ideasError, refetch: refetchIdeas } = useIdeas();
-  const { results, aiAnswer, isFallback, isLoading: isSearching, search } = useSearch();
+  const { results, isLoading: isSearching, search } = useSearch();
   const isDark = useColorScheme() === "dark";
   const [editingCategory, setEditingCategory] = useState<{ id: string; label: string } | null>(null);
   const [editText, setEditText] = useState("");
@@ -180,7 +180,7 @@ export default function InboxScreen() {
 
   if (isLoading || ideasLoading) {
     return (
-      <SafeAreaView className="flex-1" style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
+      <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#34C759" />
         </View>
@@ -191,7 +191,7 @@ export default function InboxScreen() {
   // Show error if ideas failed to load
   if (ideasError) {
     return (
-      <SafeAreaView className="flex-1" style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
+      <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
         <View className="flex-1 items-center justify-center px-6">
           <Ionicons name="alert-circle-outline" size={64} color="#FF3B30" />
           <Text className="text-lg font-medium text-gray-900 dark:text-white mt-4 text-center">
@@ -234,10 +234,10 @@ export default function InboxScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
+    <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
       <View className="flex-1 px-6">
         {/* Header */}
-        <View className="pt-6 pb-4">
+        <View className="pt-8 pb-6" style={{ minHeight: 100 }}>
           <Text className="text-3xl font-bold text-black dark:text-white mb-2">
             Notes
           </Text>
@@ -289,43 +289,30 @@ export default function InboxScreen() {
                   Searching...
                 </Text>
               </View>
-            ) : aiAnswer ? (
+            ) : results.length > 0 ? (
               <>
-                {/* AI Answer */}
-                <View className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 rounded-xl p-4 mb-4 border border-green-200 dark:border-green-800">
-                  <View className="flex-row items-center mb-2">
-                    <Ionicons name="sparkles" size={20} color="#34C759" />
-                    <Text className="text-sm font-semibold text-green-700 dark:text-green-400 ml-2">
-                      {isFallback ? "AI Answer" : "AI Suggestion"}
-                    </Text>
-                  </View>
-                  <Text className="text-base text-gray-800 dark:text-gray-200">
-                    {aiAnswer}
-                  </Text>
-                </View>
-                
                 {/* Search Results */}
-                {results.length > 0 && (
-                  <>
-                    <Text className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-3">
-                      Related Notes:
-                    </Text>
-                    {results.map((result) => (
+                <Text className="text-lg font-bold text-black dark:text-white mb-3">
+                  Related Notes:
+                </Text>
+                {results.map((result) => (
                       <TouchableOpacity
                         key={result.idea.id}
                         onPress={() => handleIdeaPress(result.idea.id)}
                         className="bg-white dark:bg-card-dark rounded-xl p-4 mb-3"
                         style={{
-                          shadowColor: "#000",
-                          shadowOffset: { width: 0, height: 1 },
-                          shadowOpacity: 0.05,
-                          shadowRadius: 4,
-                          elevation: 2,
+                          shadowColor: "#34C759",
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.08,
+                          shadowRadius: 6,
+                          elevation: 3,
+                          borderWidth: 1,
+                          borderColor: isDark ? "rgba(52, 199, 89, 0.1)" : "rgba(52, 199, 89, 0.15)",
                         }}
                       >
                         <View className="flex-row items-center justify-between mb-2">
-                          <View className="bg-primary/10 rounded-full px-3 py-1">
-                            <Text className="text-primary text-xs font-semibold">
+                          <View className="rounded-full px-3 py-1" style={{ backgroundColor: "rgba(52, 199, 89, 0.15)" }}>
+                            <Text className="text-xs font-bold" style={{ color: "#34C759" }}>
                               {(result.similarity * 100).toFixed(0)}% match
                             </Text>
                           </View>
@@ -344,63 +331,17 @@ export default function InboxScreen() {
                       </TouchableOpacity>
                     ))}
                   </>
-                )}
-                {results.length === 0 && (
+                ) : searchQuery.length > 0 ? (
                   <View className="flex-1 items-center justify-center py-12">
                     <Ionicons name="search-outline" size={64} color="#8E8E93" />
                     <Text className="text-lg font-medium text-gray-500 dark:text-gray-400 mt-4">
                       No matching notes found
                     </Text>
-                  </View>
-                )}
-              </>
-            ) : results.length > 0 ? (
-              <>
-                {results.map((result) => (
-                  <TouchableOpacity
-                    key={result.idea.id}
-                    onPress={() => handleIdeaPress(result.idea.id)}
-                    className="bg-white dark:bg-card-dark rounded-xl p-4 mb-3"
-                    style={{
-                      shadowColor: "#000",
-                      shadowOffset: { width: 0, height: 1 },
-                      shadowOpacity: 0.05,
-                      shadowRadius: 4,
-                      elevation: 2,
-                    }}
-                  >
-                    <View className="flex-row items-center justify-between mb-2">
-                      <View className="bg-primary/10 rounded-full px-3 py-1">
-                        <Text className="text-primary text-xs font-semibold">
-                          {(result.similarity * 100).toFixed(0)}% match
-                        </Text>
-                      </View>
-                      <Text className="text-xs text-gray-500 dark:text-gray-400">
-                        {formatDistanceToNow(new Date(result.idea.createdAt), {
-                          addSuffix: true,
-                        })}
-                      </Text>
-                    </View>
-                    <Text
-                      className="text-base text-black dark:text-white mb-2"
-                      numberOfLines={3}
-                    >
-                      {result.idea.transcript}
+                    <Text className="text-sm text-gray-400 dark:text-gray-500 mt-2 text-center">
+                      Try searching with different words
                     </Text>
-                  </TouchableOpacity>
-                ))}
-              </>
-            ) : searchQuery.length > 0 ? (
-              <View className="flex-1 items-center justify-center py-12">
-                <Ionicons name="search-outline" size={64} color="#8E8E93" />
-                <Text className="text-lg font-medium text-gray-500 dark:text-gray-400 mt-4">
-                  No results found
-                </Text>
-                <Text className="text-sm text-gray-400 dark:text-gray-500 mt-2 text-center">
-                  Try searching with different words
-                </Text>
-              </View>
-            ) : null}
+                  </View>
+                ) : null}
           </ScrollView>
         ) : (
           <>
@@ -432,11 +373,13 @@ export default function InboxScreen() {
                 onPress={() => handleClusterPress(cluster)}
                 className="bg-white dark:bg-card-dark rounded-xl p-5 mb-3 flex-row items-center justify-between"
                 style={{
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.05,
-                  shadowRadius: 4,
-                  elevation: 2,
+                  shadowColor: "#34C759",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 6,
+                  elevation: 3,
+                  borderWidth: 1,
+                  borderColor: isDark ? "rgba(52, 199, 89, 0.1)" : "rgba(52, 199, 89, 0.15)",
                 }}
                 activeOpacity={0.7}
                 delayPressIn={0}
@@ -446,7 +389,7 @@ export default function InboxScreen() {
                     <Text className="text-2xl mr-3">
                       {cluster.id === "uncategorised" ? "📋" : cluster.id === "favourite" ? "⭐" : getClusterEmoji(cluster.label)}
                     </Text>
-                    <Text className="text-lg font-semibold text-black dark:text-white flex-1">
+                    <Text className="text-xl font-bold text-black dark:text-white flex-1">
                       {cluster.label}
                     </Text>
                     {cluster.id !== "uncategorised" && cluster.id !== "favourite" && (
@@ -485,9 +428,14 @@ export default function InboxScreen() {
                       </View>
                     )}
                   </View>
-                  <Text className="text-sm text-gray-500 dark:text-gray-400">
-                    {cluster.ideaIds.length} idea{cluster.ideaIds.length !== 1 ? "s" : ""}
-                  </Text>
+                  <View className="flex-row items-center mt-1">
+                    <Text className="text-sm font-semibold" style={{ color: "#34C759" }}>
+                      {cluster.ideaIds.length}
+                    </Text>
+                    <Text className="text-sm text-gray-500 dark:text-gray-400 ml-1">
+                      idea{cluster.ideaIds.length !== 1 ? "s" : ""}
+                    </Text>
+                  </View>
                 </View>
                 <Ionicons
                   name="chevron-forward"

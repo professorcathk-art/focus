@@ -12,11 +12,9 @@ import {
   Animated,
   ScrollView,
   Platform,
-  Vibration,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 const { width, height } = Dimensions.get("window");
@@ -26,10 +24,10 @@ const onboardingPages = [
     title: "Focus Makes You",
     subtitle: "Who You Want To Be",
     description: "Transform your scattered thoughts into powerful action. Every moment of focus builds the future you envision.",
-    gradient: ["#FF6B9D", "#C44569", "#F8B500"],
+    gradient: ["#4ECDC4", "#44A08D", "#7EC8E3"],
   },
   {
-    title: "Ideas Flow",
+    title: "The Flow of Ideas",
     subtitle: "Is A Gift",
     description: "Capture every spark of inspiration. Your ideas are valuable—preserve them, organize them, and watch them grow.",
     gradient: ["#4ECDC4", "#44A08D", "#7EC8E3"],
@@ -50,6 +48,7 @@ export default function OnboardingScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current; // Slide from right
 
   // Animated background particles
   const particles = useRef(
@@ -107,51 +106,72 @@ export default function OnboardingScreen() {
   }, []);
 
   useEffect(() => {
-    // Reset and type text when page changes
+    const fullText = `${onboardingPages[currentPage].title}\n${onboardingPages[currentPage].subtitle}`;
+    
+    // Reset animation values for slide-in effect
+    slideAnim.setValue(50); // Start from right (positive = right side)
+    fadeAnim.setValue(0);
+    scaleAnim.setValue(0.9);
+    
+    // Start with empty text - don't show words before typing
     setDisplayedText("");
     setIsTyping(true);
-    fadeAnim.setValue(0);
-    scaleAnim.setValue(0.8);
 
-    const fullText = `${onboardingPages[currentPage].title}\n${onboardingPages[currentPage].subtitle}`;
-    let index = 0;
+    // Smooth slide-in animation - starts immediately
+    // Container slides in, but text will type inside it
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: 0, // Slide to center
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 0.8, // Slightly visible during typing
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1, // Keep at full scale to prevent position changes
+        friction: 7,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
-    // Vibration on start
-    if (Platform.OS !== 'web') {
-      Vibration.vibrate(50);
-    }
+    // Start typing animation after slide-in completes
+    let typeInterval: NodeJS.Timeout | null = null;
+    
+    const timeoutId = setTimeout(() => {
+      let index = 0;
 
-    const typeInterval = setInterval(() => {
-      if (index < fullText.length) {
-        setDisplayedText(fullText.slice(0, index + 1));
-        index++;
-        
-        // Light vibration on each character (every 3rd character to avoid too much)
-        if (index % 3 === 0 && Platform.OS !== 'web') {
-          Vibration.vibrate(10);
-        }
-      } else {
-        clearInterval(typeInterval);
-        setIsTyping(false);
-        
-        // Animate text appearance
-        Animated.parallel([
+      typeInterval = setInterval(() => {
+        if (index < fullText.length) {
+          setDisplayedText(fullText.slice(0, index + 1));
+          index++;
+        } else {
+          if (typeInterval) {
+            clearInterval(typeInterval);
+            typeInterval = null;
+          }
+          setIsTyping(false);
+          
+          // Final animation - only fade, no scale or position change to prevent flashing
           Animated.timing(fadeAnim, {
             toValue: 1,
-            duration: 500,
+            duration: 200,
             useNativeDriver: true,
-          }),
-          Animated.spring(scaleAnim, {
-            toValue: 1,
-            friction: 8,
-            tension: 40,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      }
-    }, 50);
+          }).start();
+          // Note: Keep scaleAnim and slideAnim unchanged to prevent any position shifts
+        }
+      }, 100); // Slower typing speed (100ms per character) for better readability
+    }, 450); // Start typing after slide-in animation completes
 
-    return () => clearInterval(typeInterval);
+    return () => {
+      clearTimeout(timeoutId);
+      if (typeInterval) {
+        clearInterval(typeInterval);
+      }
+    };
   }, [currentPage]);
 
   const handleScroll = (event: any) => {
@@ -169,7 +189,17 @@ export default function OnboardingScreen() {
         animated: true,
       });
     } else {
-      router.replace("/(auth)/signin");
+      // Navigate to signin screen
+      router.push("/(auth)/signin");
+    }
+  };
+
+  const goToPrevious = () => {
+    if (currentPage > 0) {
+      scrollViewRef.current?.scrollTo({
+        x: (currentPage - 1) * width,
+        animated: true,
+      });
     }
   };
 
@@ -178,12 +208,12 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: "#000000" }}>
+    <View style={{ flex: 1, backgroundColor: "#000000" }}>
       <LinearGradient
         colors={onboardingPages[currentPage].gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        className="flex-1"
+        style={{ flex: 1 }}
       >
         {/* Animated background particles */}
         <View className="absolute inset-0">
@@ -214,6 +244,17 @@ export default function OnboardingScreen() {
         >
           <Text className="text-white font-semibold text-sm">Skip</Text>
         </TouchableOpacity>
+
+        {/* Back button - show on pages after first */}
+        {currentPage > 0 && (
+          <TouchableOpacity
+            onPress={goToPrevious}
+            className="absolute top-12 left-6 z-10 px-4 py-2 rounded-full"
+            style={{ backgroundColor: "rgba(255,255,255,0.2)" }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
 
         {/* Page indicators */}
         <View className="absolute top-16 left-0 right-0 flex-row justify-center gap-2 z-10">
@@ -246,13 +287,16 @@ export default function OnboardingScreen() {
             >
               <Animated.View
                 style={{
-                  opacity: fadeAnim,
-                  transform: [{ scale: scaleAnim }],
+                  opacity: index === currentPage ? fadeAnim : 1,
+                  transform: [
+                    { translateX: index === currentPage ? slideAnim : 0 },
+                    { scale: index === currentPage ? scaleAnim : 1 }
+                  ],
                 }}
-                className="items-center"
+                className="items-start w-full px-4"
               >
                 <Text
-                  className="text-5xl font-bold text-white text-center mb-4"
+                  className="text-5xl font-bold text-white text-left mb-4"
                   style={{
                     textShadowColor: "rgba(0,0,0,0.3)",
                     textShadowOffset: { width: 0, height: 2 },
@@ -274,7 +318,7 @@ export default function OnboardingScreen() {
                     }}
                   >
                     <Text
-                      className="text-lg text-white text-center px-4 leading-6"
+                      className="text-lg text-white text-left px-4 leading-6"
                       style={{
                         textShadowColor: "rgba(0,0,0,0.2)",
                         textShadowOffset: { width: 0, height: 1 },
@@ -314,7 +358,7 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         </View>
       </LinearGradient>
-    </SafeAreaView>
+    </View>
   );
 }
 

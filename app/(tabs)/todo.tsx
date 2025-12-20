@@ -12,6 +12,8 @@ import {
   ActivityIndicator,
   Modal,
   Dimensions,
+  AppState,
+  AppStateStatus,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "react-native";
@@ -27,14 +29,16 @@ import {
   setCachedTodos,
   getAllTodosIncludingPending,
   clearCacheForDate,
+  memoryCache,
 } from "@/lib/todos-cache";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function TodoScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [todos, setTodos] = useState<Todo[]>([]);
   const [input, setInput] = useState("");
@@ -49,11 +53,161 @@ export default function TodoScreen() {
   const [lastMoveDate, setLastMoveDate] = useState<string | null>(null);
   const [isMovingTasks, setIsMovingTasks] = useState(false);
   const fetchingRef = useRef(false);
-
-  const loadTodos = useCallback(async (useCache = true) => {
-    if (!isAuthenticated) return;
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const checkingRef = useRef<Set<string>>(new Set()); // Track which dates we've checked for moving
+  
+  // Get user's timezone offset in minutes (e.g., -480 for PST which is UTC-8)
+  const getTimezoneOffset = useCallback(() => {
+    return new Date().getTimezoneOffset(); // Returns offset in minutes, negative for timezones ahead of UTC
+  }, []);
+  
+  // Load lastMoveDate from AsyncStorage on mount
+  useEffect(() => {
+    if (!user?.id) return;
     
-    // Prevent concurrent fetches
+    const loadLastMoveDate = async () => {
+      try {
+        const key = `lastMoveDate_${user.id}`;
+        const stored = await AsyncStorage.getItem(key);
+        const todayStr = format(new Date(), "yyyy-MM-dd");
+        
+        if (stored) {
+          // Validate stored date - if it's a future date or invalid, clear it
+          if (stored > todayStr || stored.length !== 10) {
+            console.log(`[TodoScreen] ⚠️ Invalid lastMoveDate in storage: ${stored}, clearing it`);
+            await AsyncStorage.removeItem(key);
+            setLastMoveDate(null);
+          } else if (stored === todayStr) {
+            // If lastMoveDate is today, check if it's still early in the day
+            // If it's before 2 AM, it might have been set incorrectly, so clear it
+            const now = new Date();
+            const hoursSinceMidnight = now.getHours() + (now.getMinutes() / 60);
+            if (hoursSinceMidnight < 2) {
+              console.log(`[TodoScreen] ⚠️ lastMoveDate is today but it's only ${hoursSinceMidnight.toFixed(2)} hours since midnight, clearing it to allow retry`);
+              await AsyncStorage.removeItem(key);
+              setLastMoveDate(null);
+            } else {
+              setLastMoveDate(stored);
+              console.log(`[TodoScreen] Loaded lastMoveDate from storage: ${stored} (today: ${todayStr})`);
+            }
+          } else {
+            // Stored date is in the past, which is fine
+            setLastMoveDate(stored);
+            console.log(`[TodoScreen] Loaded lastMoveDate from storage: ${stored} (today: ${todayStr})`);
+          }
+        } else {
+          console.log(`[TodoScreen] No lastMoveDate in storage (today: ${todayStr})`);
+        }
+      } catch (error) {
+        console.error("[TodoScreen] Error loading lastMoveDate:", error);
+      }
+    };
+    
+    loadLastMoveDate();
+  }, [user?.id]);
+  
+  // Save lastMoveDate to AsyncStorage whenever it changes
+  const saveLastMoveDate = useCallback(async (date: string) => {
+    if (!user?.id) return;
+    try {
+      const key = `lastMoveDate_${user.id}`;
+      await AsyncStorage.setItem(key, date);
+      console.log(`[TodoScreen] Saved lastMoveDate to storage: ${date}`);
+    } catch (error) {
+      console.error("[TodoScreen] Error saving lastMoveDate:", error);
+    }
+  }, [user?.id]);
+
+  const loadTodos = useCallback(async (useCache = true, dateOverride?: Date) => {
+    if (!isAuthenticated || !user?.id) return;
+    
+    // Use dateOverride if provided (for goToToday), otherwise use selectedDate
+    // Capture the date at the start to avoid stale closure issues
+    const targetDate = dateOverride || selectedDate;
+    const dateStr = format(targetDate, "yyyy-MM-dd");
+    const userId = user.id;
+    
+    console.log(`[TodoScreen] Loading todos for date: ${dateStr}`);
+    
+    // Check cache FIRST before checking fetchingRef - cache is instant
+    // BUT: Skip cache check when useCache=false (e.g., on date change) to prevent flashing
+    if (useCache) {
+      const cachedTodos = await getAllTodosIncludingPending(dateStr, userId);
+      if (cachedTodos !== null && cachedTodos.length >= 0) {
+        // ALWAYS filter cached todos to only include those matching the requested date
+        // This prevents showing wrong-date todos even if cache is corrupted
+        const filteredCachedTodos = cachedTodos.filter(todo => todo.date === dateStr);
+        
+        // Only use cache if we have todos that match the date
+        if (filteredCachedTodos.length > 0) {
+          console.log(`[TodoScreen] ✅ Using ${filteredCachedTodos.length} cached todos for ${dateStr} (filtered from ${cachedTodos.length} total)`);
+          
+          // CRITICAL: Double-check we're still on the same date before showing cache
+          // This prevents showing cached data for wrong date if user navigated quickly
+          const currentDateStr = format(dateOverride || selectedDate, "yyyy-MM-dd");
+          if (currentDateStr !== dateStr) {
+            console.log(`[TodoScreen] ⚠️ Date changed during cache check (${dateStr} -> ${currentDateStr}), skipping cache`);
+            // Continue to API fetch below
+          } else {
+            // Show cached data immediately - don't wait for fetchingRef
+            setTodos(filteredCachedTodos);
+            setIsLoading(false);
+            
+            // If cached todos had wrong dates, clear and re-cache only correct ones
+            if (filteredCachedTodos.length < cachedTodos.length) {
+              console.log(`[TodoScreen] ⚠️ Found ${cachedTodos.length - filteredCachedTodos.length} todos with wrong dates in cache, cleaning up...`);
+              await clearCacheForDate(dateStr, userId);
+              // Re-cache only the filtered (correct) todos
+              await setCachedTodos(dateStr, userId, filteredCachedTodos);
+            }
+            
+            // If a fetch is already in progress, don't start another one
+            if (fetchingRef.current) {
+              console.log("[TodoScreen] ⏭️ Using cache, fetch already in progress, skipping duplicate API call");
+              return;
+            }
+            
+            // Fetch from API in background (non-blocking)
+            fetchingRef.current = true;
+            apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr))
+              .then(async (data) => {
+                // Double-check we're still on the same date before updating
+                const currentDateStr = format(dateOverride || selectedDate, "yyyy-MM-dd");
+                if (currentDateStr === dateStr) {
+                  // Filter API data to only include todos matching the date
+                  const filteredData = data.filter(todo => todo.date === dateStr);
+                  if (filteredData.length === data.length) {
+                    // All data matches - safe to cache
+                    await setCachedTodos(dateStr, userId, filteredData);
+                    setTodos(filteredData);
+                  } else {
+                    console.log(`[TodoScreen] ⚠️ API returned ${data.length - filteredData.length} todos with wrong dates, caching only correct ones`);
+                    await setCachedTodos(dateStr, userId, filteredData);
+                    setTodos(filteredData);
+                  }
+                } else {
+                  console.log(`[TodoScreen] Date changed during fetch (${dateStr} -> ${currentDateStr}), ignoring response`);
+                }
+                fetchingRef.current = false;
+              })
+              .catch((error) => {
+                console.error("[TodoScreen] Background refresh error:", error);
+                fetchingRef.current = false;
+                // Keep using cached data on error
+              });
+            
+            return;
+          }
+        } else if (cachedTodos.length > 0) {
+          // Cache has todos but none match the requested date - clear it
+          console.log(`[TodoScreen] ⚠️ Cached todos date mismatch for ${dateStr}. Found ${cachedTodos.length} todos with dates:`, cachedTodos.map(t => t.date));
+          await clearCacheForDate(dateStr, userId);
+        }
+        // If cachedTodos.length === 0, continue to API fetch below
+      }
+    }
+    
+    // Prevent concurrent fetches (only if no cache available)
     if (fetchingRef.current) {
       console.log("[TodoScreen] ⏭️ Fetch already in progress, skipping...");
       return;
@@ -63,89 +217,132 @@ export default function TodoScreen() {
     setIsLoading(true);
     
     try {
-      const dateStr = format(selectedDate, "yyyy-MM-dd");
-      
-      // Try cache first for instant UI update
-      if (useCache) {
-        const cachedTodos = await getAllTodosIncludingPending(dateStr);
-        if (cachedTodos !== null) {
-          // Show cached data immediately
-          setTodos(cachedTodos);
-          setIsLoading(false);
-          
-          // Fetch from API in background (non-blocking)
-          // Don't await - let it update cache and state when done
-          apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr))
-            .then(async (data) => {
-              await setCachedTodos(dateStr, data);
-              setTodos(data);
-            })
-            .catch((error) => {
-              console.error("[TodoScreen] Background refresh error:", error);
-              // Keep using cached data on error
-            });
-          
-          // Return early - we have cache, API will update in background
-          fetchingRef.current = false;
-          return;
-        }
-      }
-
       // No cache available - fetch from API (blocking)
       const endpoint = API_ENDPOINTS.todos.today(dateStr);
-      const data = await apiClient.get<Todo[]>(endpoint);
       
-      // Update cache and state
-      await setCachedTodos(dateStr, data);
-      setTodos(data);
+      // Add timeout to prevent hanging on network errors
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Request timeout")), 10000); // 10 second timeout
+      });
+      
+      const data = await Promise.race([
+        apiClient.get<Todo[]>(endpoint),
+        timeoutPromise
+      ]);
+      
+      // Double-check we're still on the same date before updating
+      const currentDateStr = format(dateOverride || selectedDate, "yyyy-MM-dd");
+      if (currentDateStr === dateStr) {
+        // Verify API data matches date before caching
+        const apiDataMatchesDate = data.every(todo => todo.date === dateStr);
+        if (apiDataMatchesDate) {
+          // Update cache and state
+          await setCachedTodos(dateStr, userId, data);
+          setTodos(data);
+          console.log(`[TodoScreen] ✅ Loaded ${data.length} todos for ${dateStr}`);
+        } else {
+          console.log(`[TodoScreen] ⚠️ API returned todos with wrong dates for ${dateStr}. Dates found:`, data.map(t => t.date));
+          // Filter to only show todos matching the requested date
+          const filteredData = data.filter(todo => todo.date === dateStr);
+          await setCachedTodos(dateStr, userId, filteredData);
+          setTodos(filteredData);
+          console.log(`[TodoScreen] ✅ Loaded ${filteredData.length} filtered todos for ${dateStr}`);
+        }
+      } else {
+        console.log(`[TodoScreen] Date changed during fetch, ignoring response for ${dateStr}`);
+      }
     } catch (error) {
-      console.error("Load todos error:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[TodoScreen] Load todos error: ${errorMessage}`);
+      
+      // Check if it's a network/connection error
+      const isNetworkError = errorMessage.includes("Network connection lost") || 
+                            errorMessage.includes("timeout") ||
+                            errorMessage.includes("ECONNREFUSED") ||
+                            errorMessage.includes("ENOTFOUND") ||
+                            errorMessage.includes("Failed to fetch");
+      
+      if (isNetworkError) {
+        console.log("[TodoScreen] ⚠️ Network error detected, using cache if available");
+      }
+      
       // If API fails but we have cache, keep using it
-      const cachedTodos = await getAllTodosIncludingPending(dateStr);
-      if (cachedTodos !== null) {
-        setTodos(cachedTodos);
-        console.log("[TodoScreen] API failed but using cached data");
+      try {
+        const cachedTodos = await getAllTodosIncludingPending(dateStr, userId);
+        if (cachedTodos !== null) {
+          setTodos(cachedTodos);
+          console.log("[TodoScreen] API failed but using cached data");
+        } else {
+          // No cache available - show empty state instead of hanging
+          setTodos([]);
+          console.log("[TodoScreen] No cache available, showing empty state");
+        }
+      } catch (cacheError) {
+        console.error("[TodoScreen] Error reading cache:", cacheError);
+        setTodos([]); // Show empty state on cache error too
       }
     } finally {
       setIsLoading(false);
       fetchingRef.current = false;
     }
-  }, [isAuthenticated, selectedDate]);
+  }, [isAuthenticated, selectedDate, user?.id]);
 
-  const moveIncompleteTasks = async () => {
+  const moveIncompleteTasks = useCallback(async () => {
     // Prevent multiple simultaneous calls
-    if (isMovingTasks) {
-      console.log("[TodoScreen] Move already in progress, skipping");
+    if (isMovingTasks || !user?.id) {
+      console.log("[TodoScreen] Move already in progress or no user, skipping");
       return;
     }
 
     try {
-      const todayStr = format(new Date(), "yyyy-MM-dd");
+      // Get today's date in user's timezone
+      const now = new Date();
+      const todayStr = format(now, "yyyy-MM-dd");
+      const userId = user.id;
+      const timezoneOffset = getTimezoneOffset();
       
-      // Only move if we haven't moved today yet
+      // Only move if we haven't moved today yet (in user's timezone)
       if (lastMoveDate === todayStr) {
         console.log("[TodoScreen] Already moved tasks today, skipping");
         return;
       }
 
       setIsMovingTasks(true);
-      console.log("[TodoScreen] Calling move-incomplete endpoint...");
+      console.log(`[TodoScreen] Calling move-incomplete endpoint with timezone offset: ${timezoneOffset} minutes`);
       
+      // Send timezone offset to backend so it can calculate dates in user's timezone
       const result = await apiClient.post<{ success: boolean; moved: number; message?: string }>(
-        API_ENDPOINTS.todos.moveIncompleteToNextDay
+        API_ENDPOINTS.todos.moveIncompleteToNextDay,
+        { timezoneOffset } // Send timezone offset in minutes
       );
       
       if (result.success) {
-        setLastMoveDate(todayStr);
-        console.log(`[TodoScreen] ✅ Moved ${result.moved} incomplete tasks to today`);
-        // Clear cache for yesterday and today since tasks were moved
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = format(yesterday, "yyyy-MM-dd");
-        await clearCacheForDate(yesterdayStr);
-        await clearCacheForDate(todayStr);
-        // Reload todos after moving
-        await loadTodos();
+        // CRITICAL: Only set lastMoveDate if tasks were actually moved
+        // If 0 tasks moved, don't set lastMoveDate so it can retry later
+        if (result.moved > 0) {
+          setLastMoveDate(todayStr);
+          await saveLastMoveDate(todayStr);
+          console.log(`[TodoScreen] ✅ Moved ${result.moved} incomplete tasks to today`);
+          // Clear cache for yesterday and today since tasks were moved
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = format(yesterday, "yyyy-MM-dd");
+          await clearCacheForDate(yesterdayStr, userId);
+          await clearCacheForDate(todayStr, userId);
+          // Reload todos after moving to show the moved tasks
+          await loadTodos();
+        } else {
+          // Don't set lastMoveDate if no tasks were moved
+          // This allows the check to run again later (e.g., if user adds incomplete tasks to yesterday)
+          console.log(`[TodoScreen] ⚠️ Backend returned: ${result.message || 'No incomplete tasks found from yesterday'}`);
+          console.log(`[TodoScreen] ⚠️ NOT setting lastMoveDate, so it can retry if tasks are added later`);
+          // Still clear cache to ensure fresh data
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = format(yesterday, "yyyy-MM-dd");
+          await clearCacheForDate(yesterdayStr, userId);
+          await clearCacheForDate(todayStr, userId);
+        }
       }
     } catch (error) {
       // Log error but don't show to user - this is a background operation
@@ -154,44 +351,190 @@ export default function TodoScreen() {
     } finally {
       setIsMovingTasks(false);
     }
-  };
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
+  }, [isMovingTasks, user?.id, lastMoveDate, getTimezoneOffset, loadTodos, saveLastMoveDate]);
+  
+  // Check if it's a new day in user's timezone and move tasks if needed
+  const checkAndMoveTasks = useCallback(() => {
+    const now = new Date();
+    const todayStr = format(now, "yyyy-MM-dd");
+    const hoursSinceMidnight = now.getHours() + (now.getMinutes() / 60);
     
-    // Always load todos for the selected date (with cache)
-    loadTodos(true);
+    console.log("[TodoScreen] checkAndMoveTasks called", {
+      isAuthenticated,
+      hasUser: !!user?.id,
+      isToday: isToday(selectedDate),
+      selectedDate: format(selectedDate, "yyyy-MM-dd"),
+      actualToday: todayStr,
+      lastMoveDate,
+      isMovingTasks,
+      hoursSinceMidnight: hoursSinceMidnight.toFixed(2),
+    });
     
-    // Only auto-move incomplete tasks when viewing today's date
-    // And only if it's past midnight (at least 1 hour into the day)
-    // And only once per day
-    if (isToday(selectedDate)) {
-      const now = new Date();
-      const hoursSinceMidnight = now.getHours() + (now.getMinutes() / 60);
-      const todayStr = format(now, "yyyy-MM-dd");
-      
-      // Only move if:
-      // 1. It's past 1 AM (to ensure it's a new day)
-      // 2. We haven't moved today yet
-      // 3. Not already moving
-      if (hoursSinceMidnight >= 1 && lastMoveDate !== todayStr && !isMovingTasks) {
-        console.log("[TodoScreen] Conditions met for auto-move, calling moveIncompleteTasks");
-        moveIncompleteTasks();
+    if (!isAuthenticated || !user?.id) {
+      console.log("[TodoScreen] ⏭️ Skipping check: not authenticated or no user");
+      return;
+    }
+    
+    // Always check and move tasks if it's a new day, regardless of which date is selected
+    // This ensures tasks are moved even if user is viewing a different date
+    if (!isToday(selectedDate)) {
+      console.log("[TodoScreen] ⚠️ Not viewing today, but will still check for task movement");
+      // Don't return - continue to check if tasks need to be moved
+    }
+    
+    console.log("[TodoScreen] Checking conditions:", {
+      todayStr,
+      hoursSinceMidnight: hoursSinceMidnight.toFixed(2),
+      lastMoveDate,
+      isMovingTasks,
+      shouldMove: hoursSinceMidnight >= 1 && lastMoveDate !== todayStr && !isMovingTasks,
+    });
+    
+    // Only move if:
+    // 1. It's past midnight (right after 12:00 AM) in user's timezone
+    // 2. We haven't moved today yet
+    // 3. Not already moving
+    if (hoursSinceMidnight >= 0 && lastMoveDate !== todayStr && !isMovingTasks) {
+      console.log("[TodoScreen] ✅ All conditions met! Calling moveIncompleteTasks...");
+      moveIncompleteTasks();
+    } else {
+      if (lastMoveDate === todayStr) {
+        console.log("[TodoScreen] ⏭️ Already moved tasks today, skipping");
+      } else if (isMovingTasks) {
+        console.log("[TodoScreen] ⏭️ Already moving tasks, skipping");
+      } else {
+        console.log("[TodoScreen] ⏭️ Conditions not met, skipping move");
       }
     }
-  }, [isAuthenticated, selectedDate, loadTodos]);
+  }, [isAuthenticated, user?.id, selectedDate, lastMoveDate, isMovingTasks, moveIncompleteTasks]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    
+    // Capture the current selectedDate to avoid stale closure
+    const currentDate = selectedDate;
+    const dateStr = format(currentDate, "yyyy-MM-dd");
+    const userId = user.id;
+    
+    console.log(`[TodoScreen] useEffect triggered for date: ${dateStr}`);
+    
+    // Clear todos immediately when date changes to prevent showing stale data
+    // This ensures we don't show previous date's todos while loading new date
+    setTodos([]);
+    setIsLoading(true);
+    
+    // Clear memory cache for ALL dates for this user to prevent stale data
+    // This must happen synchronously before loadTodos to prevent flashing
+    try {
+      const memoryKeys = Array.from(memoryCache.keys());
+      let clearedCount = 0;
+      for (const key of memoryKeys) {
+        // Clear ALL memory cache entries for this user to prevent date confusion
+        if (key.startsWith(`${userId}_`)) {
+          memoryCache.delete(key);
+          clearedCount++;
+        }
+      }
+      if (clearedCount > 0) {
+        console.log(`[TodoScreen] Cleared ${clearedCount} memory cache entries for user`);
+      }
+    } catch (error) {
+      console.error("[TodoScreen] Error clearing memory cache:", error);
+    }
+    
+    // Clear AsyncStorage cache for the previous date asynchronously (non-blocking)
+    // This helps prevent wrong-date todos from showing
+    const prevDate = new Date(currentDate);
+    prevDate.setDate(prevDate.getDate() - 1);
+    const prevDateStr = format(prevDate, "yyyy-MM-dd");
+    clearCacheForDate(prevDateStr, userId).catch(err => {
+      console.error(`[TodoScreen] Error clearing previous date cache:`, err);
+    });
+    
+    // Load todos for the selected date
+    // Skip cache on date change to force fresh API fetch and prevent flashing
+    // This ensures we always get correct data for the new date
+    loadTodos(false, currentDate).catch((error) => {
+      console.error(`[TodoScreen] Error loading todos for ${dateStr}:`, error);
+    });
+    
+    // Check and move incomplete tasks if it's a new day
+    // Only check once per date to avoid excessive calls
+    if (isToday(selectedDate)) {
+      const checkKey = `moveCheck_${dateStr}`;
+      if (!checkingRef.current.has(checkKey)) {
+        checkingRef.current.add(checkKey);
+        setTimeout(() => {
+          checkAndMoveTasks();
+        }, 1000); // Wait for loadTodos to complete
+      }
+    }
+  }, [isAuthenticated, selectedDate, loadTodos, checkAndMoveTasks]);
+  
+  // Listen for app state changes (foreground/background) to check for new day
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === "active"
+      ) {
+        // App has come to the foreground - check if it's a new day
+        console.log("[TodoScreen] App came to foreground, checking for new day...");
+        checkAndMoveTasks();
+      }
+      appStateRef.current = nextAppState;
+    });
+    
+    return () => {
+      subscription.remove();
+    };
+  }, [isAuthenticated, user?.id, checkAndMoveTasks]);
+  
+  // Also check on initial mount if viewing today
+  useEffect(() => {
+    if (isAuthenticated && user?.id && isToday(selectedDate)) {
+      // Small delay to ensure component is fully mounted
+      const timer = setTimeout(() => {
+        checkAndMoveTasks();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, user?.id, selectedDate, checkAndMoveTasks]);
 
   const handleDateChange = (days: number) => {
+    // Clear todos immediately when changing date to prevent flashing wrong-date todos
+    setTodos([]);
+    setIsLoading(true);
+    // Update date - this will trigger useEffect which will load correct todos
     setSelectedDate(addDays(selectedDate, days));
   };
 
   const handleSelectDate = (date: Date) => {
+    // Clear todos immediately when selecting date to prevent flashing wrong-date todos
+    setTodos([]);
+    setIsLoading(true);
+    // Update date - this will trigger useEffect which will load correct todos
     setSelectedDate(date);
     setShowCalendarModal(false);
   };
 
   const goToToday = () => {
-    setSelectedDate(new Date());
+    const today = new Date();
+    const todayStr = format(today, "yyyy-MM-dd");
+    const currentDateStr = format(selectedDate, "yyyy-MM-dd");
+    
+    // If already on today, do nothing
+    if (currentDateStr === todayStr) {
+      return;
+    }
+    
+    // Clear todos immediately to prevent flashing wrong-date todos
+    setTodos([]);
+    setIsLoading(true);
+    // Set date - this will trigger useEffect which will load correct todos
+    setSelectedDate(today);
   };
 
   const handleOpenCalendar = () => {
@@ -202,11 +545,12 @@ export default function TodoScreen() {
   };
 
   const handleAddTodo = async () => {
-    if (!input.trim() || !isAuthenticated || addingTodo) return;
+    if (!input.trim() || !isAuthenticated || !user?.id || addingTodo) return;
 
     const tempId = `temp-${Date.now()}`;
     const todoText = input.trim();
     const todoDate = format(selectedDate, "yyyy-MM-dd"); // Use selected date
+    const userId = user.id;
     
     const tempTodo: Todo = {
       id: tempId,
@@ -225,9 +569,9 @@ export default function TodoScreen() {
     // Optimistic update
     setTodos(prevTodos => [...prevTodos, tempTodo]);
     // Update cache optimistically
-    const cachedTodos = await getAllTodosIncludingPending(todoDate);
+    const cachedTodos = await getAllTodosIncludingPending(todoDate, userId);
     if (cachedTodos) {
-      await setCachedTodos(todoDate, [...cachedTodos, tempTodo]);
+      await setCachedTodos(todoDate, userId, [...cachedTodos, tempTodo]);
     }
 
     try {
@@ -238,19 +582,19 @@ export default function TodoScreen() {
       // Replace temp todo with real one using functional update
       setTodos(prevTodos => prevTodos.map(t => t.id === tempId ? newTodo : t));
       // Update cache with real todo
-      const updatedCached = await getAllTodosIncludingPending(todoDate);
+      const updatedCached = await getAllTodosIncludingPending(todoDate, userId);
       if (updatedCached) {
         const finalTodos = updatedCached.map(t => t.id === tempId ? newTodo : t);
-        await setCachedTodos(todoDate, finalTodos);
+        await setCachedTodos(todoDate, userId, finalTodos);
       }
     } catch (error) {
       console.error("Add todo error:", error);
       // Revert optimistic update
       setTodos(prevTodos => prevTodos.filter(t => t.id !== tempId));
       // Revert cache
-      const cachedTodos = await getAllTodosIncludingPending(todoDate);
+      const cachedTodos = await getAllTodosIncludingPending(todoDate, userId);
       if (cachedTodos) {
-        await setCachedTodos(todoDate, cachedTodos.filter(t => t.id !== tempId));
+        await setCachedTodos(todoDate, userId, cachedTodos.filter(t => t.id !== tempId));
       }
       setInput(todoText);
       Alert.alert("Error", "Failed to add todo");
@@ -261,17 +605,18 @@ export default function TodoScreen() {
 
 
   const handleToggleTodo = async (id: string, completed: boolean) => {
-    if (!isAuthenticated || togglingTodoId === id) return;
+    if (!isAuthenticated || !user?.id || togglingTodoId === id) return;
 
     // Optimistic update
     const newCompleted = !completed;
     const todoDate = todos.find(t => t.id === id)?.date || format(selectedDate, "yyyy-MM-dd");
+    const userId = user.id;
     setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t)));
     // Update cache optimistically
-    const cachedTodos = await getAllTodosIncludingPending(todoDate);
+    const cachedTodos = await getAllTodosIncludingPending(todoDate, userId);
     if (cachedTodos) {
       const updatedCached = cachedTodos.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t));
-      await setCachedTodos(todoDate, updatedCached);
+      await setCachedTodos(todoDate, userId, updatedCached);
     }
     setTogglingTodoId(id);
 
@@ -282,20 +627,20 @@ export default function TodoScreen() {
       );
       setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? updatedTodo : t)));
       // Update cache with real todo
-      const cachedTodos = await getAllTodosIncludingPending(todoDate);
+      const cachedTodos = await getAllTodosIncludingPending(todoDate, userId);
       if (cachedTodos) {
         const finalTodos = cachedTodos.map((t) => (t.id === id ? updatedTodo : t));
-        await setCachedTodos(todoDate, finalTodos);
+        await setCachedTodos(todoDate, userId, finalTodos);
       }
     } catch (error) {
       console.error("Toggle todo error:", error);
       // Revert optimistic update
       setTodos(prevTodos => prevTodos.map((t) => (t.id === id ? { ...t, completed } : t)));
       // Revert cache
-      const cachedTodos = await getAllTodosIncludingPending(todoDate);
+      const cachedTodos = await getAllTodosIncludingPending(todoDate, userId);
       if (cachedTodos) {
         const revertedCached = cachedTodos.map((t) => (t.id === id ? { ...t, completed } : t));
-        await setCachedTodos(todoDate, revertedCached);
+        await setCachedTodos(todoDate, userId, revertedCached);
       }
       Alert.alert("Error", "Failed to update todo");
     } finally {
@@ -304,7 +649,7 @@ export default function TodoScreen() {
   };
 
   const handleDeleteTodo = async (id: string) => {
-    if (!isAuthenticated || deletingTodoId === id) return;
+    if (!isAuthenticated || !user?.id || deletingTodoId === id) return;
 
     Alert.alert(
       "Delete Todo",
@@ -318,13 +663,14 @@ export default function TodoScreen() {
             // Store deleted todo for potential revert
             const deletedTodo = todos.find(t => t.id === id);
             const todoDate = deletedTodo?.date || format(selectedDate, "yyyy-MM-dd");
+            const userId = user.id;
             
             // Optimistic update - remove from list
             setTodos(prevTodos => prevTodos.filter((t) => t.id !== id));
             // Update cache optimistically
-            const cachedTodos = await getAllTodosIncludingPending(todoDate);
+            const cachedTodos = await getAllTodosIncludingPending(todoDate, userId);
             if (cachedTodos) {
-              await setCachedTodos(todoDate, cachedTodos.filter((t) => t.id !== id));
+              await setCachedTodos(todoDate, userId, cachedTodos.filter((t) => t.id !== id));
             }
             setDeletingTodoId(id);
 
@@ -336,9 +682,9 @@ export default function TodoScreen() {
               if (deletedTodo) {
                 setTodos(prevTodos => [...prevTodos, deletedTodo]);
                 // Revert cache
-                const cachedTodos = await getAllTodosIncludingPending(todoDate);
+                const cachedTodos = await getAllTodosIncludingPending(todoDate, userId);
                 if (cachedTodos) {
-                  await setCachedTodos(todoDate, [...cachedTodos, deletedTodo]);
+                  await setCachedTodos(todoDate, userId, [...cachedTodos, deletedTodo]);
                 }
               }
               Alert.alert("Error", "Failed to delete todo");
@@ -357,94 +703,110 @@ export default function TodoScreen() {
   const progress = totalCount > 0 ? completedCount / totalCount : 0;
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
+    <View className="flex-1" style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
+      {/* Header - extends to top */}
+      <LinearGradient
+        colors={isDark 
+          ? ["#0A0A0A", "#1A1A2E", "#16213E"] 
+          : ["#A8E6CF", "#88D8C0", "#7EC8E3", "#4ECDC4"]
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        className="border-b"
+        style={{
+          borderBottomColor: isDark ? "#38383A" : "rgba(255,255,255,0.3)",
+          paddingTop: Platform.OS === "ios" ? 50 : 20, // Safe area top padding
+          minHeight: Platform.OS === "ios" ? 140 : 120, // Fixed minimum height
+        }}
+      >
+        <SafeAreaView edges={['left', 'right']}>
+          <View className="px-6 pb-5" style={{ minHeight: 140 }}>
+            <View className="flex-row items-center justify-between mb-3 mt-2">
+              <View className="flex-1">
+                <View className="flex-row items-center gap-2">
+                  <TouchableOpacity
+                    onPress={() => handleDateChange(-1)}
+                    className="p-2.5 rounded-full"
+                    style={{ backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.3)" }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="chevron-back" size={20} color={isDark ? "#FFFFFF" : "#1A1A1A"} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleOpenCalendar}
+                    className="flex-1 flex-row items-center justify-center gap-2"
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-3xl font-bold text-white dark:text-white text-center" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 }}>
+                      {isToday(selectedDate) ? "Today's Tasks" : format(selectedDate, "EEE, MMM d")}
+                    </Text>
+                    <Ionicons 
+                      name="calendar-outline" 
+                      size={20} 
+                      color={isDark ? "#FFFFFF" : "#1A1A1A"} 
+                      style={{ opacity: 0.8 }}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDateChange(1)}
+                    className="p-2.5 rounded-full"
+                    style={{ backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.3)" }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="chevron-forward" size={20} color={isDark ? "#FFFFFF" : "#1A1A1A"} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+            
+            {/* Progress Bar - Reserve space even when hidden */}
+            <View style={{ minHeight: 48 }}>
+              {totalCount > 0 && (
+                <View className="mt-4">
+                  <View className="flex-row items-center justify-between mb-2 px-1">
+                    <Text className="text-sm font-medium text-white" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>
+                      Progress
+                    </Text>
+                    <Text className="text-sm font-semibold text-white" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>
+                      {completedCount} / {totalCount}
+                    </Text>
+                  </View>
+                  <View
+                    className="h-2 rounded-full overflow-hidden"
+                    style={{ backgroundColor: isDark ? "#38383A" : "#E5E5EA" }}
+                  >
+                    <View
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${progress * 100}%`,
+                        backgroundColor: "#34C759",
+                      }}
+                    />
+                  </View>
+                </View>
+              )}
+            </View>
+            
+            {/* Go to Today Button - at bottom of banner */}
+            {!isToday(selectedDate) && (
+              <TouchableOpacity
+                onPress={goToToday}
+                className="self-center mt-3"
+              >
+                <Text className="text-xs font-medium text-white" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>
+                  Go to Today
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
-        {/* Header */}
-        <LinearGradient
-          colors={isDark 
-            ? ["#0A0A0A", "#1A1A2E", "#16213E"] 
-            : ["#A8E6CF", "#88D8C0", "#7EC8E3", "#4ECDC4"]
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          className="px-6 py-5 border-b"
-          style={{
-            borderBottomColor: isDark ? "#38383A" : "rgba(255,255,255,0.3)",
-          }}
-        >
-          <View className="flex-row items-center justify-between mb-3">
-            <View className="flex-1">
-              <View className="flex-row items-center gap-3">
-                <TouchableOpacity
-                  onPress={() => handleDateChange(-1)}
-                  className="p-2 rounded-full"
-                  style={{ backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.3)" }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="chevron-back" size={20} color={isDark ? "#FFFFFF" : "#1A1A1A"} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleOpenCalendar}
-                  className="flex-1"
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-2xl font-bold text-white dark:text-white text-center" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 }}>
-                    {isToday(selectedDate) ? "Today's Tasks" : format(selectedDate, "EEEE, MMMM d")}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleDateChange(1)}
-                  className="p-2 rounded-full"
-                  style={{ backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.3)" }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="chevron-forward" size={20} color={isDark ? "#FFFFFF" : "#1A1A1A"} />
-                </TouchableOpacity>
-              </View>
-              {!isToday(selectedDate) && (
-                <TouchableOpacity
-                  onPress={goToToday}
-                  className="mt-2 self-center"
-                >
-                  <Text className="text-xs font-medium text-white" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>
-                    Go to Today
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          {/* Progress Bar */}
-          {totalCount > 0 && (
-            <View className="mt-4">
-              <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-sm font-medium text-white" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>
-                  Progress
-                </Text>
-                <Text className="text-sm font-semibold text-white" style={{ textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>
-                  {completedCount} / {totalCount}
-                </Text>
-              </View>
-              <View
-                className="h-2 rounded-full overflow-hidden"
-                style={{ backgroundColor: isDark ? "#38383A" : "#E5E5EA" }}
-              >
-                <View
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${progress * 100}%`,
-                    backgroundColor: "#FF6B9D",
-                  }}
-                />
-              </View>
-            </View>
-          )}
-        </LinearGradient>
-
         {/* Todos List */}
         <ScrollView
           className="flex-1 px-4"
@@ -485,13 +847,13 @@ export default function TodoScreen() {
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   {togglingTodoId === todo.id ? (
-                    <ActivityIndicator size="small" color="#FF6B9D" />
+                    <ActivityIndicator size="small" color="#34C759" />
                   ) : (
                     <View
                       className="w-6 h-6 rounded-full border-2 items-center justify-center"
                       style={{
-                        borderColor: todo.completed ? "#FF6B9D" : "#D1D1D6",
-                        backgroundColor: todo.completed ? "#FF6B9D" : "transparent",
+                        borderColor: todo.completed ? "#34C759" : "#D1D1D6",
+                        backgroundColor: todo.completed ? "#34C759" : "transparent",
                       }}
                     >
                       {todo.completed && (
@@ -567,7 +929,7 @@ export default function TodoScreen() {
               style={{
                 backgroundColor:
                   input.trim() && isAuthenticated && !addingTodo
-                    ? "#FF6B9D"
+                    ? "#34C759"
                     : isDark
                     ? "#38383A"
                     : "#E5E5EA",
@@ -640,7 +1002,7 @@ export default function TodoScreen() {
                   <Ionicons name="chevron-back" size={20} color={isDark ? "#FFFFFF" : "#000000"} />
                 </TouchableOpacity>
                 <Text className="text-lg font-semibold text-black dark:text-white">
-                  {format(new Date(calendarYear, calendarMonth, 1), "MMMM yyyy")}
+                  {format(new Date(calendarYear, calendarMonth, 1), "MMM yyyy")}
                 </Text>
                 <TouchableOpacity
                   onPress={() => {
@@ -691,66 +1053,73 @@ export default function TodoScreen() {
                     rows.push(days.slice(i, i + 7));
                   }
 
+                  // Calculate fixed width for each day cell to ensure consistent alignment
+                  const dayCellWidth = (SCREEN_WIDTH - 48) / 7; // 48 = padding (24 * 2)
+                  
                   return (
                     <View>
                       {rows.map((row, rowIndex) => {
-                        const isLastRow = rowIndex === rows.length - 1;
-                        const firstNonNullIndex = row.findIndex(d => d !== null);
-                        const lastRowDates = row.filter(d => d !== null);
                         return (
                           <View 
                             key={rowIndex} 
                             className="flex-row mb-1"
-                            style={isLastRow && firstNonNullIndex > 0 ? { justifyContent: 'flex-start' } : {}}
+                            style={{ justifyContent: 'space-between' }}
                           >
                             {row.map((date, colIndex) => {
                               if (!date) {
-                                // For last row, skip empty cells at the start
-                                if (isLastRow && colIndex < firstNonNullIndex) {
-                                  return null;
-                                }
-                                // For other rows or empty cells after dates, render placeholder
-                                return <View key={`${rowIndex}-${colIndex}`} className="flex-1 h-10" style={{ minWidth: (SCREEN_WIDTH - 48) / 7 }} />;
+                                // Always render empty placeholder with fixed width to maintain alignment
+                                return (
+                                  <View 
+                                    key={`${rowIndex}-${colIndex}`} 
+                                    style={{ 
+                                      width: dayCellWidth,
+                                      height: 40,
+                                    }} 
+                                  />
+                                );
                               }
-                            const isSelected = format(date, "yyyy-MM-dd") === format(selectedDate, "yyyy-MM-dd");
-                            const isTodayDate = isToday(date);
-                            const isPast = date < startOfDay(new Date()) && !isTodayDate;
+                              
+                              const isSelected = format(date, "yyyy-MM-dd") === format(selectedDate, "yyyy-MM-dd");
+                              const isTodayDate = isToday(date);
+                              const isPast = date < startOfDay(new Date()) && !isTodayDate;
 
-                            return (
-                              <TouchableOpacity
-                                key={`${rowIndex}-${colIndex}`}
-                                onPress={() => handleSelectDate(date)}
-                                className="flex-1 h-10 items-center justify-center rounded-lg mx-0.5"
-                                style={{
-                                  backgroundColor: isSelected
-                                    ? "#FF6B9D"
-                                    : isTodayDate
-                                    ? isDark
-                                      ? "#38383A"
-                                      : "#E8F5E9"
-                                    : "transparent",
-                                }}
-                              >
-                                <Text
-                                  className="text-sm"
+                              return (
+                                <TouchableOpacity
+                                  key={`${rowIndex}-${colIndex}`}
+                                  onPress={() => handleSelectDate(date)}
+                                  className="items-center justify-center rounded-lg"
                                   style={{
-                                    color: isSelected
-                                      ? "#FFFFFF"
-                                      : isPast
+                                    width: dayCellWidth,
+                                    height: 40,
+                                    backgroundColor: isSelected
+                                      ? "#34C759"
+                                      : isTodayDate
                                       ? isDark
-                                        ? "#8E8E93"
-                                        : "#8E8E93"
-                                      : isDark
-                                      ? "#FFFFFF"
-                                      : "#000000",
-                                    fontWeight: isSelected || isTodayDate ? "bold" : "normal",
+                                        ? "#38383A"
+                                        : "#E8F5E9"
+                                      : "transparent",
                                   }}
                                 >
-                                  {format(date, "d")}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
+                                  <Text
+                                    className="text-sm"
+                                    style={{
+                                      color: isSelected
+                                        ? "#FFFFFF"
+                                        : isPast
+                                        ? isDark
+                                          ? "#8E8E93"
+                                          : "#8E8E93"
+                                        : isDark
+                                        ? "#FFFFFF"
+                                        : "#000000",
+                                      fontWeight: isSelected || isTodayDate ? "bold" : "normal",
+                                    }}
+                                  >
+                                    {format(date, "d")}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
                           </View>
                         );
                       })}
@@ -775,7 +1144,7 @@ export default function TodoScreen() {
           </View>
         </Modal>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

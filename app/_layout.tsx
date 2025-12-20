@@ -4,7 +4,7 @@
 
 import { useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -15,6 +15,7 @@ import "../global.css";
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const router = useRouter();
   const { checkAuth, isLoading } = useAuthStore();
 
   useEffect(() => {
@@ -32,14 +33,41 @@ export default function RootLayout() {
         url.includes('#access_token') ||
         url.includes('error=') ||
         url.includes('error_description=') ||
-        url.includes('/auth/v1/callback');
+        url.includes('/auth/v1/callback') ||
+        url.startsWith('focus://auth-callback') || // Deep link from OAuth redirect
+        url.startsWith('focus://'); // Any focus:// deep link
       
       if (isAuthCallback) {
         console.log("[Deep Link] 🔐 Auth callback detected");
         
+        // If it's a focus://auth-callback URL, navigate to the route handler
+        if (url.startsWith('focus://auth-callback')) {
+          console.log("[Deep Link] Navigating to auth-callback route...");
+          // Extract query params and navigate to route
+          const urlObj = new URL(url.replace('focus://', 'https://'));
+          const params = new URLSearchParams(urlObj.search);
+          const queryString = params.toString();
+          router.push(`/auth-callback${queryString ? `?${queryString}` : ''}`);
+          return;
+        }
+        
         try {
-          // Parse the URL to extract tokens
-          const urlObj = new URL(url);
+          // Parse the URL to extract tokens/errors
+          let urlObj: URL;
+          try {
+            urlObj = new URL(url);
+          } catch {
+            // If URL parsing fails, try to construct a proper URL
+            // Deep links like focus://auth/callback?code=... need special handling
+            if (url.startsWith('focus://')) {
+              // Convert focus:// to https:// temporarily for parsing
+              const httpsUrl = url.replace('focus://', 'https://');
+              urlObj = new URL(httpsUrl);
+            } else {
+              throw new Error('Invalid URL format');
+            }
+          }
+          
           const hashParams = new URLSearchParams(urlObj.hash.substring(1));
           const queryParams = new URLSearchParams(urlObj.search);
           
@@ -49,35 +77,29 @@ export default function RootLayout() {
             console.error("[Deep Link] ❌ OAuth error:", error);
             const errorDesc = hashParams.get('error_description') || queryParams.get('error_description');
             console.error("[Deep Link] Error description:", errorDesc);
+            router.push('/(auth)/signin');
             return;
           }
           
-          // Try to get session - Supabase should handle URL parsing automatically
-          const { data, error: sessionError } = await supabase.auth.getSession();
+          // Extract code from URL
+          const code = hashParams.get('code') || queryParams.get('code');
+          const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
           
-          if (sessionError) {
-            console.error("[Deep Link] Error getting session:", sessionError);
-            // Try to exchange code for session if we have a code
-            const code = hashParams.get('code') || queryParams.get('code');
-            if (code) {
-              console.log("[Deep Link] Attempting to exchange code for session...");
-              // Supabase should handle this automatically via getSession()
-            }
-          }
-          
-          if (data?.session) {
-            console.log("[Deep Link] ✅ Session found, refreshing auth state");
+          if (code) {
+            console.log("[Deep Link] Found OAuth code, navigating to callback handler...");
+            // Navigate to auth-callback route which will handle the code exchange
+            router.push(`/auth-callback?code=${code}`);
+          } else if (accessToken) {
+            // If we have access_token directly, session should be available
+            console.log("[Deep Link] Found access token, checking session...");
             await checkAuth();
           } else {
-            console.log("[Deep Link] ⚠️ No session found, checking auth state...");
-            // Wait a bit and check again (OAuth flow might need time)
-            setTimeout(async () => {
-              await checkAuth();
-            }, 1000);
+            console.log("[Deep Link] No code or token found, checking auth state...");
+            await checkAuth();
           }
         } catch (err) {
           console.error("[Deep Link] Error processing auth callback:", err);
-          // Still try to check auth state
+          // Still try to check auth state - Supabase might have processed it
           await checkAuth();
         }
       } else {
@@ -129,6 +151,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="idea/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="cluster/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
       </Stack>
     </SafeAreaProvider>
   );

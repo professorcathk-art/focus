@@ -184,13 +184,41 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, deepgramApiKe
     
     if (!transcript || typeof transcript !== 'string') {
       console.error(`[Async Transcription] No transcript in Deepgram response:`, JSON.stringify(responseData));
+      // Check if Deepgram returned an empty transcript (no words detected)
+      const hasEmptyTranscript = responseData.results?.channels?.[0]?.alternatives?.[0]?.transcript === '' ||
+                                 responseData.results?.channels?.[0]?.alternatives?.[0]?.transcript === null;
+      
+      if (hasEmptyTranscript) {
+        // Save user-friendly error message
+        await supabase
+          .from('ideas')
+          .update({
+            transcription_error: 'No words detected in recording',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', ideaId)
+          .eq('user_id', userId)
+          .catch(err => console.error(`[Async Transcription] Failed to save error:`, err));
+        throw new Error('No words detected in recording');
+      }
+      
       throw new Error('No transcript returned from Deepgram API');
     }
     
     const trimmedTranscript = transcript.trim();
     if (!trimmedTranscript) {
-      console.error(`[Async Transcription] Transcript is empty after trimming`);
-      throw new Error('Transcript is empty');
+      console.error(`[Async Transcription] Transcript is empty after trimming - no words detected`);
+      // Save user-friendly error message for empty transcript
+      await supabase
+        .from('ideas')
+        .update({
+          transcription_error: 'No words detected in recording',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ideaId)
+        .eq('user_id', userId)
+        .catch(err => console.error(`[Async Transcription] Failed to save error:`, err));
+      throw new Error('No words detected in recording');
     }
     
     console.log(`[Async Transcription] ✅ Transcription complete for idea ${ideaId}: "${trimmedTranscript.substring(0, 100)}..."`);

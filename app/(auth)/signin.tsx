@@ -22,6 +22,7 @@ import { useRouter } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as AppleAuthentication from "expo-apple-authentication";
 
 const { width, height } = Dimensions.get("window");
 
@@ -31,7 +32,24 @@ export default function SignInScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const { signIn, signInWithGoogle } = useAuthStore();
+  const { signIn, signInWithGoogle, signInWithApple } = useAuthStore();
+  const [isAppleAvailable, setIsAppleAvailable] = useState(false);
+  
+  // Check if Apple Sign-In is available
+  useEffect(() => {
+    const checkAppleAuth = async () => {
+      if (Platform.OS === 'ios') {
+        try {
+          const available = await AppleAuthentication.isAvailableAsync();
+          setIsAppleAvailable(available);
+        } catch (error) {
+          console.log("[SignIn] Apple Sign-In not available:", error);
+          setIsAppleAvailable(false);
+        }
+      }
+    };
+    checkAppleAuth();
+  }, []);
   
   // Animation values for fluid green elements
   const flow1 = useRef(new Animated.Value(0)).current;
@@ -131,92 +149,43 @@ export default function SignInScreen() {
     }
   };
 
+  const handleAppleSignIn = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await signInWithApple();
+      router.replace("/(tabs)/record");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Apple sign in failed";
+      // Don't show error if user cancelled
+      if (!errorMessage.includes("cancelled")) {
+        setError(errorMessage);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <View className="flex-1">
-      {/* Light Blue Base Background */}
+      {/* Gradient Background matching onboarding style */}
       <LinearGradient
-        colors={["#E3F2FD", "#BBDEFB", "#90CAF9", "#64B5F6"]}
+        colors={["#A8E6CF", "#88D8C0", "#7EC8E3", "#4ECDC4"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{ position: "absolute", width: "100%", height: "100%" }}
       />
       
-      {/* Flowing Green Fluid Element 1 */}
-      <Animated.View
-        style={{
-          position: "absolute",
-          width: width * 1.2,
-          height: height * 0.8,
-          borderRadius: width * 0.6,
-          transform: [
-            { translateX: flow1X },
-            { translateY: flow1Y },
-            { rotate: "45deg" },
-          ],
-          opacity: 0.4,
-        }}
-      >
-        <LinearGradient
-          colors={["#34C759", "#30D158", "#5FE27A", "#34C759"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ flex: 1, borderRadius: width * 0.6 }}
-        />
-      </Animated.View>
-      
-      {/* Flowing Green Fluid Element 2 */}
-      <Animated.View
-        style={{
-          position: "absolute",
-          width: width * 1.0,
-          height: height * 0.6,
-          borderRadius: width * 0.5,
-          transform: [
-            { translateX: flow2X },
-            { translateY: flow2Y },
-            { rotate: "-30deg" },
-          ],
-          opacity: 0.35,
-        }}
-      >
-        <LinearGradient
-          colors={["#5FE27A", "#34C759", "#30D158", "#5FE27A"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ flex: 1, borderRadius: width * 0.5 }}
-        />
-      </Animated.View>
-      
-      {/* Flowing Green Fluid Element 3 */}
-      <Animated.View
-        style={{
-          position: "absolute",
-          width: width * 0.9,
-          height: height * 0.7,
-          borderRadius: width * 0.45,
-          transform: [
-            { translateX: flow3X },
-            { translateY: flow3Y },
-            { rotate: "60deg" },
-          ],
-          opacity: 0.3,
-        }}
-      >
-        <LinearGradient
-          colors={["#30D158", "#5FE27A", "#34C759", "#30D158"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ flex: 1, borderRadius: width * 0.45 }}
-        />
-      </Animated.View>
-      
-      {/* Subtle overlay for depth */}
-      <LinearGradient
-        colors={["rgba(255,255,255,0.1)", "rgba(255,255,255,0.05)", "rgba(255,255,255,0.1)"]}
-        style={{ position: "absolute", width: "100%", height: "100%" }}
-      />
-      
       <SafeAreaView className="flex-1">
+        {/* Back button to onboarding */}
+        <TouchableOpacity
+          onPress={() => router.replace("/(auth)/onboarding")}
+          className="absolute top-12 left-6 z-10 px-4 py-2 rounded-full"
+          style={{ backgroundColor: "rgba(255,255,255,0.2)" }}
+        >
+          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+        
         <Pressable 
           onPress={Keyboard.dismiss}
           className="flex-1"
@@ -375,6 +344,27 @@ export default function SignInScreen() {
                 Continue with Google
               </Text>
             </TouchableOpacity>
+
+            {/* Apple Sign In Button (iOS only) */}
+            {isAppleAvailable && (
+              <TouchableOpacity
+                className="bg-black rounded-xl py-4 items-center justify-center mb-4 flex-row"
+                onPress={handleAppleSignIn}
+                disabled={isLoading}
+                style={{
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 4,
+                  elevation: 2,
+                }}
+              >
+                <Ionicons name="logo-apple" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text className="text-white text-base font-semibold">
+                  Continue with Apple
+                </Text>
+              </TouchableOpacity>
+            )}
 
             <View className="flex-row justify-center items-center">
               <Text className="text-gray-600">

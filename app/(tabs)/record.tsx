@@ -34,6 +34,7 @@ export default function RecordScreen() {
   const [status, setStatus] = useState<"idle" | "recording" | "transcribing" | "saved">("idle");
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const savingRef = useRef(false); // Prevent duplicate saves
   const [textInput, setTextInput] = useState("");
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null); // null = auto-categorize
   const [showNewClusterModal, setShowNewClusterModal] = useState(false);
@@ -45,6 +46,7 @@ export default function RecordScreen() {
   const [isAssigningCategory, setIsAssigningCategory] = useState(false);
   const [showCategoryPickerInModal, setShowCategoryPickerInModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isCategorizing, setIsCategorizing] = useState(false); // Loading state for auto-categorize
   const { ideas, createIdea, refetch } = useIdeas();
   const { clusters, createCluster, assignIdeaToCluster, refetch: refetchClusters } = useClusters();
   
@@ -225,9 +227,9 @@ export default function RecordScreen() {
       return;
     }
 
-    // Minimum recording duration check (prevent accidental releases)
-    // Allow recordings >= 0.5 seconds (500ms) to account for timing delays
-    if (recordingTime < 0.5) {
+    // Minimum recording duration check (prevent accidental releases and API errors)
+    // Require recordings >= 1 second - Deepgram API needs at least 1 second of audio
+    if (recordingTime < 1.0) {
       console.log(`Recording too short (${recordingTime}s), ignoring release`);
       setIsRecording(false);
       if (timerRef.current) {
@@ -239,6 +241,14 @@ export default function RecordScreen() {
         recordingRef.current = null;
       }
       setRecordingTime(0);
+      setStatus("idle");
+      
+      // Show user-friendly warning
+      Alert.alert(
+        "Recording Too Short",
+        "Please record for at least 1 second. The recording was not saved.",
+        [{ text: "OK" }]
+      );
       return;
     }
 
@@ -361,7 +371,9 @@ export default function RecordScreen() {
         setShowSuggestedCategoryModal(true);
         setStatus("idle");
       } else {
-        // Auto-assigned or no category - just reset status after delay
+        // Auto-assigned or no category - show option to categorize later
+        // For voice recordings, allow user to save first and categorize later
+        setPendingIdeaId(idea.id); // Store idea ID for later categorization
         setTimeout(() => setStatus("idle"), 2000);
       }
 
@@ -372,7 +384,7 @@ export default function RecordScreen() {
       
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       
-      // Only show error, don't force logout - let user decide
+      // Handle specific error cases
       if (errorMessage.includes("token") || errorMessage.includes("auth") || errorMessage.includes("401")) {
         Alert.alert(
           "Recording Failed",
@@ -380,6 +392,27 @@ export default function RecordScreen() {
           [
             { text: "OK" }
           ]
+        );
+      } else if (errorMessage.includes("too short") || errorMessage.includes("RECORDING_TOO_SHORT")) {
+        // Recording too short - already handled above, but catch backend response too
+        Alert.alert(
+          "Recording Too Short",
+          "Please record for at least 1 second. The recording was not saved.",
+          [{ text: "OK" }]
+        );
+      } else if (errorMessage.includes("No words detected") || errorMessage.includes("no words")) {
+        // No words detected in recording
+        Alert.alert(
+          "No Words Detected",
+          "No words were detected in the recording. Please try speaking more clearly or check your microphone.",
+          [{ text: "OK" }]
+        );
+      } else if (errorMessage.includes("Transcription failed") || errorMessage.includes("no transcript")) {
+        // Transcription error - likely due to API issue
+        Alert.alert(
+          "Transcription Failed",
+          "Could not transcribe the recording. Please try recording again.",
+          [{ text: "OK" }]
         );
       } else {
         Alert.alert(
@@ -404,7 +437,7 @@ export default function RecordScreen() {
   };
 
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
-  
+
   const handleCreateNewCluster = async () => {
     if (!newClusterName.trim() || isCreatingCategory) return;
 
@@ -465,18 +498,40 @@ export default function RecordScreen() {
     // Hide keyboard first
     Keyboard.dismiss();
 
-    // Prevent double-save
-    if (status === "saved" || isAssigningCategory) return;
+    // Prevent double-save - check both state and ref
+    if (status === "saved" || isAssigningCategory || savingRef.current) {
+      console.log("[RecordScreen] ⏭️ Save already in progress, skipping duplicate save");
+      return;
+    }
 
-    setStatus("saved");
+    // Mark as saving immediately (but don't set status to "saved" yet - wait for category approval)
+    savingRef.current = true;
+    const textToSave = textInput.trim();
     setIsAssigningCategory(false); // Reset assignment state at start
+    
+    // Show loading indicator if auto-categorize is enabled (no manual category selected)
+    if (!selectedClusterId) {
+      setIsCategorizing(true);
+    }
+    
+    // Clear input immediately to prevent duplicate saves
+    setTextInput("");
+    
     try {
-      const newIdea = await createIdea(textInput.trim());
-      setTextInput("");
+      // Add timeout to prevent hanging on slow API
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Save timeout after 30 seconds")), 30000);
+      });
+      
+      const newIdea = await Promise.race([
+        createIdea(textToSave),
+        timeoutPromise
+      ]);
       
       // If a cluster was manually selected, assign the idea to it
       // This overrides automatic clustering (backend won't auto-assign if already assigned)
       if (selectedClusterId && newIdea) {
+        setStatus("saved"); // Mark as saved after manual category assignment
         setIsAssigningCategory(true);
         try {
           let actualClusterId: string | null = null;
@@ -504,7 +559,7 @@ export default function RecordScreen() {
                 // This should rarely happen since plus button creates with waitForSync=true
                 console.log(`[Frontend] Creating cluster "${selectedCategory.label}" for assignment`);
                 const newCluster = await createCluster(selectedCategory.label, true);
-                actualClusterId = newCluster.id;
+              actualClusterId = newCluster.id;
                 // Refresh clusters to include the new one
                 await refetchClusters();
               }
@@ -526,45 +581,54 @@ export default function RecordScreen() {
             console.log(`[Frontend] Assigning idea ${newIdea.id} to cluster ${actualClusterId}`);
             await assignIdeaToCluster(actualClusterId, newIdea.id);
             console.log(`[Frontend] Successfully assigned idea ${newIdea.id} to cluster ${actualClusterId}`);
-            await refetch();
-            await refetchClusters();
+            // Refetch in background - don't block on errors
+            refetch().catch(err => console.error("Error refetching ideas:", err));
+            refetchClusters().catch(err => console.error("Error refetching clusters:", err));
             setStatus("idle");
           } else {
             console.error(`[Frontend] ERROR: Could not determine actual cluster ID for ${selectedClusterId}. ActualClusterId: ${actualClusterId}`);
             Alert.alert("Warning", "Note saved but category assignment failed. Please assign manually.");
-            await refetch();
-            await refetchClusters();
+            // Refetch in background - don't block on errors
+            refetch().catch(err => console.error("Error refetching ideas:", err));
+            refetchClusters().catch(err => console.error("Error refetching clusters:", err));
             setStatus("idle");
           }
         } catch (err) {
           console.error("Failed to assign to cluster:", err);
           // Don't fail the save if assignment fails, but reset status
-          await refetch();
-          await refetchClusters();
+          // Refetch in background - don't block on errors
+          refetch().catch(refetchErr => console.error("Error refetching ideas:", refetchErr));
+          refetchClusters().catch(refetchErr => console.error("Error refetching clusters:", refetchErr));
           setStatus("idle");
         } finally {
           setIsAssigningCategory(false);
         }
       } else {
         // No manual selection - check backend response
+        setIsCategorizing(false); // Stop loading indicator
         if (newIdea.suggestedClusterLabel && !newIdea.clusterId) {
-          // Backend suggests a new category - show modal for approval
+          // Backend suggests a new category - show modal BEFORE marking as saved
           console.log(`[Frontend] Backend suggested category: "${newIdea.suggestedClusterLabel}"`);
           setSuggestedCategoryLabel(newIdea.suggestedClusterLabel);
           setEditableCategoryName(newIdea.suggestedClusterLabel);
           setPendingIdeaId(newIdea.id);
           setShowSuggestedCategoryModal(true);
-          setStatus("idle"); // Reset status so user can interact
+          // DON'T set status to "saved" yet - wait for user approval
+          // Status stays as "idle" so user can interact with modal
         } else if (newIdea.clusterId) {
-          // Backend auto-assigned to existing cluster
+          // Backend auto-assigned to existing cluster - mark as saved
           console.log(`[Frontend] Backend auto-assigned idea ${newIdea.id} to cluster ${newIdea.clusterId}`);
-          await refetch();
-          await refetchClusters();
+          setStatus("saved");
+          // Refetch in background - don't block on errors
+          refetch().catch(err => console.error("Error refetching ideas:", err));
+          refetchClusters().catch(err => console.error("Error refetching clusters:", err));
           setTimeout(() => setStatus("idle"), 2000);
         } else {
-          // No assignment and no suggestion - just refresh
-          await refetch();
-          await refetchClusters();
+          // No assignment and no suggestion - mark as saved
+          setStatus("saved");
+          // Refetch in background - don't block on errors
+          refetch().catch(err => console.error("Error refetching ideas:", err));
+          refetchClusters().catch(err => console.error("Error refetching clusters:", err));
           setTimeout(() => setStatus("idle"), 2000);
         }
       }
@@ -572,15 +636,22 @@ export default function RecordScreen() {
       // Reset selection only after all operations complete
       // Don't reset if assignment is still in progress (shouldn't happen, but safety check)
       if (!isAssigningCategory) {
-        setSelectedClusterId(null);
+      setSelectedClusterId(null);
       }
     } catch (error) {
       console.error("Failed to save idea:", error);
+      
+      // Restore input text if save failed (unless it was a timeout)
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const isTimeout = errorMessage.includes("timeout");
+      
+      if (!isTimeout) {
+        setTextInput(textToSave); // Restore text on error
+      }
+      
       setStatus("idle");
       setIsAssigningCategory(false);
       setSelectedClusterId(null);
-      
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       
       // Handle authentication errors
       if (errorMessage.includes("token") || errorMessage.includes("auth") || errorMessage.includes("401")) {
@@ -591,6 +662,12 @@ export default function RecordScreen() {
             { text: "OK", onPress: () => router.push("/(auth)/signin") }
           ]
         );
+      } else if (isTimeout) {
+        Alert.alert(
+          "Save Timeout",
+          "Save is taking longer than expected. Your note may still be saved. Please check your notes in a moment.",
+          [{ text: "OK" }]
+        );
       } else {
         Alert.alert(
           "Failed to Save",
@@ -598,6 +675,9 @@ export default function RecordScreen() {
           [{ text: "OK" }]
         );
       }
+    } finally {
+      // Always reset saving flag
+      savingRef.current = false;
     }
   };
 
@@ -622,7 +702,7 @@ export default function RecordScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
+    <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
@@ -631,7 +711,7 @@ export default function RecordScreen() {
           className="flex-1"
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ flexGrow: 1 }}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -648,12 +728,13 @@ export default function RecordScreen() {
         >
         <View className="flex-1 px-6">
           {/* Header - Clean minimalist design with greeting */}
-          <View className="pt-8 pb-4 flex-row items-start justify-between" style={{
+          <View className="pt-8 pb-6 flex-row items-start justify-between" style={{
             marginHorizontal: -24,
             paddingHorizontal: 24,
+            minHeight: 80,
           }}>
-            <View className="flex-1">
-              <Text className="text-lg text-gray-500 dark:text-gray-400 font-medium">
+            <View className="flex-1" style={{ paddingRight: 12 }}>
+              <Text className="text-3xl font-bold text-black dark:text-white">
                 Hi {getUserName()}
               </Text>
               <Text className="text-sm text-gray-400 dark:text-gray-500 mt-1">
@@ -662,7 +743,8 @@ export default function RecordScreen() {
             </View>
             <TouchableOpacity
               onPress={() => router.push("/(tabs)/profile")}
-              className="p-2 -mt-1"
+              className="p-2"
+              style={{ marginTop: 4 }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Ionicons name="settings-outline" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
@@ -790,10 +872,15 @@ export default function RecordScreen() {
                       elevation: 4,
                     }}
                     activeOpacity={0.8}
-                    disabled={status === "saved" || isAssigningCategory}
+                    disabled={status === "saved" || isAssigningCategory || savingRef.current || isCategorizing}
                   >
-                    {(status === "saved" || isAssigningCategory) ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    {(status === "saved" || isAssigningCategory || isCategorizing) ? (
+                      <View className="flex-row items-center">
+                        <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text className="text-white font-bold text-base">
+                          {isCategorizing ? "Suggesting category..." : isAssigningCategory ? "Assigning..." : "Saving..."}
+                        </Text>
+                      </View>
                     ) : (
                       <Text className="text-white font-bold text-base">Save</Text>
                     )}
@@ -818,12 +905,22 @@ export default function RecordScreen() {
                 <View className="items-center">
                   {/* Status Text */}
                   {status !== "idle" && (
-                    <Text className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-6">
-                      {status === "recording" && `Recording... ${formatTime(recordingTime)}`}
-                      {status === "transcribing" && "Transcribing..."}
-                      {status === "saved" && !isAssigningCategory && "✓ Idea saved!"}
-                      {isAssigningCategory && "Assigning category..."}
-                    </Text>
+                    <View className="items-center mb-6">
+                      <Text className="text-lg font-medium text-gray-700 dark:text-gray-300">
+                        {status === "recording" && `Recording... ${formatTime(recordingTime)}`}
+                        {status === "transcribing" && "Transcribing..."}
+                        {status === "saved" && !isAssigningCategory && "✓ Idea saved!"}
+                        {isAssigningCategory && "Assigning category..."}
+                      </Text>
+                      {isCategorizing && status === "idle" && (
+                        <View className="flex-row items-center mt-2">
+                          <ActivityIndicator size="small" color="#34C759" style={{ marginRight: 8 }} />
+                          <Text className="text-sm text-gray-500 dark:text-gray-400">
+                            Suggesting category...
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   )}
 
                   {/* Record Button with gradient - fixed position */}
@@ -1039,7 +1136,7 @@ export default function RecordScreen() {
                     <Text className="text-white font-semibold">Creating...</Text>
                   </View>
                 ) : (
-                  <Text className="text-white font-semibold">Create</Text>
+                <Text className="text-white font-semibold">Create</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1072,50 +1169,49 @@ export default function RecordScreen() {
           >
             {!showCategoryPickerInModal ? (
               <>
-                <View className="items-center mb-4">
-                  <Ionicons name="sparkles" size={32} color="#34C759" />
-                </View>
-                <Text className="text-xl font-bold text-black dark:text-white mb-2 text-center">
-                  Suggested Category
-                </Text>
-                <Text className="text-sm text-gray-600 dark:text-gray-400 mb-4 text-center">
-                  We couldn't find a similar category. You can edit the suggested name or create a new one.
-                </Text>
-                
-                <View className="mb-6">
-                  <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Category Name
-                  </Text>
-                  <TextInput
-                    className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 text-base text-black dark:text-white"
-                    placeholder="Enter category name"
-                    placeholderTextColor="#9CA3AF"
-                    value={editableCategoryName}
-                    onChangeText={setEditableCategoryName}
-                    autoFocus={false}
-                    returnKeyType="done"
-                    blurOnSubmit={true}
-                    onSubmitEditing={Keyboard.dismiss}
-                  />
-                </View>
+            <View className="items-center mb-4">
+              <Ionicons name="sparkles" size={32} color="#34C759" />
+            </View>
+            <Text className="text-xl font-bold text-black dark:text-white mb-2 text-center">
+              Suggested Category
+            </Text>
+            <Text className="text-sm text-gray-600 dark:text-gray-400 mb-4 text-center">
+              We couldn't find a similar category. You can edit the suggested name or create a new one.
+            </Text>
+            
+            <View className="mb-6">
+              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Category Name
+              </Text>
+              <TextInput
+                className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 text-base text-black dark:text-white"
+                placeholder="Enter category name"
+                placeholderTextColor="#9CA3AF"
+                value={editableCategoryName}
+                onChangeText={setEditableCategoryName}
+                autoFocus={false}
+                returnKeyType="done"
+                blurOnSubmit={true}
+                onSubmitEditing={Keyboard.dismiss}
+              />
+            </View>
 
-                <View className="flex-row gap-3 mb-3">
-                  <TouchableOpacity
-                    onPress={async () => {
+            <View className="flex-row gap-3 mb-3">
+              <TouchableOpacity
+                onPress={async () => {
                       // Prevent double-clicks
                       if (isAssigningCategory) return;
                       
-                      // User approves suggested category (with edited name if changed)
-                      const categoryName = editableCategoryName.trim() || suggestedCategoryLabel || "New Category";
-                      if (pendingIdeaId && categoryName) {
-                        try {
+                  // User approves suggested category (with edited name if changed)
+                  const categoryName = editableCategoryName.trim() || suggestedCategoryLabel || "New Category";
+                  if (pendingIdeaId && categoryName) {
+                    try {
                           setIsAssigningCategory(true);
-                          setStatus("saved"); // Show loading state
                           // Wait for sync to complete since we need the real cluster ID for assignment
                           const newCluster = await createCluster(categoryName, true);
-                          await assignIdeaToCluster(newCluster.id, pendingIdeaId);
-                          await refetch();
-                          await refetchClusters();
+                      await assignIdeaToCluster(newCluster.id, pendingIdeaId);
+                      await refetch();
+                      await refetchClusters();
                           
                           // Close modal on success
                           setShowSuggestedCategoryModal(false);
@@ -1123,9 +1219,10 @@ export default function RecordScreen() {
                           setSuggestedCategoryLabel(null);
                           setEditableCategoryName("");
                           setPendingIdeaId(null);
-                          setStatus("idle");
-                        } catch (err) {
-                          console.error("Failed to create and assign cluster:", err);
+                          setStatus("saved"); // Mark as saved after category approval
+                          setTimeout(() => setStatus("idle"), 2000);
+                    } catch (err) {
+                      console.error("Failed to create and assign cluster:", err);
                           const errorMessage = err instanceof Error ? err.message : "Failed to create category";
                           
                           // Handle duplicate error gracefully
@@ -1139,12 +1236,13 @@ export default function RecordScreen() {
                                 await assignIdeaToCluster(existingCluster.id, pendingIdeaId);
                                 await refetch();
                                 await refetchClusters();
-                                setShowSuggestedCategoryModal(false);
+                  setShowSuggestedCategoryModal(false);
                                 setShowCategoryPickerInModal(false);
-                                setSuggestedCategoryLabel(null);
-                                setEditableCategoryName("");
-                                setPendingIdeaId(null);
-                                setStatus("idle");
+                  setSuggestedCategoryLabel(null);
+                  setEditableCategoryName("");
+                  setPendingIdeaId(null);
+                                setStatus("saved"); // Mark as saved after category assignment
+                                setTimeout(() => setStatus("idle"), 2000);
                                 return; // Success, exit early
                               } catch (assignErr) {
                                 Alert.alert("Error", "Category exists but failed to assign idea");
@@ -1162,54 +1260,83 @@ export default function RecordScreen() {
                           setIsAssigningCategory(false);
                         }
                       }
-                    }}
+                }}
                     disabled={isAssigningCategory}
-                    className="flex-1 px-6 py-3 rounded-xl"
+                className="flex-1 px-6 py-3 rounded-xl"
                     style={{ 
                       backgroundColor: isAssigningCategory ? "#9CA3AF" : "#34C759",
                       opacity: isAssigningCategory ? 0.6 : 1
                     }}
-                  >
+              >
                     {isAssigningCategory ? (
                       <View className="flex-row items-center justify-center">
                         <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
                         <Text className="text-white font-semibold text-center">Creating...</Text>
                       </View>
                     ) : (
-                      <Text className="text-white font-semibold text-center">Create Category</Text>
+                <Text className="text-white font-semibold text-center">Create Category</Text>
                     )}
-                  </TouchableOpacity>
-                </View>
+              </TouchableOpacity>
+            </View>
 
-                <TouchableOpacity
-                  onPress={() => {
+            <TouchableOpacity
+              onPress={async () => {
+                    // Ensure clusters are loaded before showing picker
+                    await refetchClusters();
                     // Show category picker
                     setShowCategoryPickerInModal(true);
-                  }}
+              }}
                   className="px-6 py-3 rounded-xl border-2 mb-3"
-                  style={{ borderColor: "#34C759" }}
-                >
-                  <Text className="text-green-600 dark:text-green-400 font-semibold text-center">
-                    Choose Existing Category
-                  </Text>
-                </TouchableOpacity>
+              style={{ borderColor: "#34C759" }}
+            >
+              <Text className="text-green-600 dark:text-green-400 font-semibold text-center">
+                Choose Existing Category
+              </Text>
+            </TouchableOpacity>
 
-                <TouchableOpacity
-                  onPress={() => {
-                    // User skips categorization
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={() => {
+                  // User wants to categorize later - save first, then allow categorization later
+                  if (pendingIdeaId) {
+                    // Mark as saved, but keep idea ID for later categorization
                     setShowSuggestedCategoryModal(false);
                     setShowCategoryPickerInModal(false);
                     setSuggestedCategoryLabel(null);
                     setEditableCategoryName("");
-                    setPendingIdeaId(null);
+                    // Don't clear pendingIdeaId - user can categorize later from idea detail page
+                    setStatus("saved");
+                    setTimeout(() => setStatus("idle"), 2000);
                     refetch();
-                  }}
-                  className="px-6 py-3"
-                >
-                  <Text className="text-gray-500 dark:text-gray-400 text-center text-sm">
-                    Skip for now
-                  </Text>
-                </TouchableOpacity>
+                  }
+                }}
+                className="flex-1 px-6 py-3 rounded-xl border-2"
+                style={{ borderColor: "#34C759" }}
+              >
+                <Text className="text-green-600 dark:text-green-400 text-center text-sm font-semibold">
+                  Categorize Later
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                onPress={() => {
+                  // User skips categorization completely
+                  setShowSuggestedCategoryModal(false);
+                  setShowCategoryPickerInModal(false);
+                  setSuggestedCategoryLabel(null);
+                  setEditableCategoryName("");
+                  setPendingIdeaId(null);
+                  setStatus("saved"); // Mark as saved even when skipping category
+                  setTimeout(() => setStatus("idle"), 2000);
+                  refetch();
+                }}
+                className="px-6 py-3"
+              >
+                <Text className="text-gray-500 dark:text-gray-400 text-center text-sm">
+                  Skip
+                </Text>
+              </TouchableOpacity>
+            </View>
               </>
             ) : (
               <>
@@ -1223,10 +1350,15 @@ export default function RecordScreen() {
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
                     <Ionicons name="arrow-back" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
-                  </TouchableOpacity>
+            </TouchableOpacity>
                 </View>
                 
-                <ScrollView className="max-h-64 mb-4">
+                <ScrollView 
+                  className="mb-4"
+                  style={{ maxHeight: 400 }}
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true}
+                >
                   {isAssigningCategory ? (
                     <View className="py-8 items-center">
                       <ActivityIndicator size="large" color="#34C759" />
@@ -1252,6 +1384,8 @@ export default function RecordScreen() {
                               setSuggestedCategoryLabel(null);
                               setEditableCategoryName("");
                               setPendingIdeaId(null);
+                              setStatus("saved"); // Mark as saved after removing category
+                              setTimeout(() => setStatus("idle"), 2000);
                             } catch (err) {
                               Alert.alert("Error", err instanceof Error ? err.message : "Failed to remove category");
                             } finally {
@@ -1265,6 +1399,7 @@ export default function RecordScreen() {
                       >
                         <Text className="text-base text-black dark:text-white">Uncategorized</Text>
                       </TouchableOpacity>
+                      {/* Show ALL clusters (excluding temporary 'cat-' prefixed ones) */}
                       {clusters.filter(c => !c.id.startsWith('cat-')).map((cluster) => (
                         <TouchableOpacity
                           key={cluster.id}
@@ -1280,6 +1415,8 @@ export default function RecordScreen() {
                                 setSuggestedCategoryLabel(null);
                                 setEditableCategoryName("");
                                 setPendingIdeaId(null);
+                                setStatus("saved"); // Mark as saved after category assignment
+                                setTimeout(() => setStatus("idle"), 2000);
                               } catch (err) {
                                 Alert.alert("Error", err instanceof Error ? err.message : "Failed to assign category");
                               } finally {
@@ -1302,6 +1439,13 @@ export default function RecordScreen() {
                     </>
                   )}
                 </ScrollView>
+                
+                {/* Debug info - shows total categories available */}
+                {__DEV__ && (
+                  <Text className="text-xs text-gray-400 dark:text-gray-500 text-center mt-2">
+                    Total categories: {clusters.filter(c => !c.id.startsWith('cat-')).length}
+                  </Text>
+                )}
 
                 <TouchableOpacity
                   onPress={() => {

@@ -303,8 +303,8 @@ class ClusterCache {
     this.syncTimeout = setTimeout(() => {
       if (this.syncFunction) {
         this.syncPendingCategories(this.syncFunction, this.fetchClustersFunction || undefined).catch((err) => {
-          console.error("[ClusterCache] Sync error:", err);
-        });
+        console.error("[ClusterCache] Sync error:", err);
+      });
       } else {
         console.warn("[ClusterCache] No sync function set, skipping background sync");
       }
@@ -366,8 +366,8 @@ class ClusterCache {
         
         // Only mark as failed if we couldn't resolve it
         if (!resolved) {
-          await this.markCategoryFailed(category.id, errorMsg);
-          console.error(`[ClusterCache] Failed to sync category ${category.label}:`, err);
+        await this.markCategoryFailed(category.id, errorMsg);
+        console.error(`[ClusterCache] Failed to sync category ${category.label}:`, err);
         }
       }
     }

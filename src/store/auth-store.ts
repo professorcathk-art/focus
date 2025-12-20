@@ -84,18 +84,13 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signUp: async (email: string, password: string, name?: string): Promise<SignUpResult> => {
     try {
-      // For email confirmation, Supabase requires a web-accessible URL (HTTP/HTTPS)
-      // Use Site URL (not callback URL) - Supabase will redirect here after processing confirmation
-      // The app will detect the session via onAuthStateChange listener
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "https://wqvevludffkemgicrfos.supabase.co";
-      
-      // Use Site URL as redirectTo - this MUST be set as Site URL in Supabase settings
-      // Go to: Supabase Dashboard → Authentication → URL Configuration → Site URL
-      const redirectUrl = supabaseUrl; // Site URL, not callback URL
+      // For email confirmation, use deep link so app can intercept
+      // Use simple format that Supabase accepts: focus://auth-callback
+      const redirectUrl = 'focus://auth-callback'; // Simple deep link format
       
       console.log("[Auth] Attempting sign up for:", email);
       console.log("[Auth] Email redirect URL:", redirectUrl);
-      console.log("[Auth] Note: This URL must be added to Supabase's allowed redirect URLs");
+      console.log("[Auth] Note: This deep link must be added to Supabase's allowed redirect URLs");
       
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -165,22 +160,19 @@ export const useAuthStore = create<AuthState>((set) => ({
       // For React Native OAuth flow:
       // 1. Google redirects to Supabase callback (/auth/v1/callback)
       // 2. Supabase processes OAuth and creates session
-      // 3. Supabase redirects to redirectTo URL (should be Site URL, not callback URL)
-      // 4. App detects session via onAuthStateChange listener
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "https://wqvevludffkemgicrfos.supabase.co";
-      // Use Site URL as redirectTo, NOT callback URL
-      // After Supabase processes callback, it redirects here (which is fine for web)
-      // For mobile, the app will detect the session regardless
-      const redirectUrl = supabaseUrl; // Site URL, not callback URL
+      // 3. Supabase redirects to redirectTo URL (deep link)
+      // 4. App intercepts deep link and exchanges code for session
+      // Use simple format that Supabase accepts: focus://auth-callback
+      const redirectUrl = 'focus://auth-callback'; // Simple deep link format
       
       console.log("[Auth] 🔵 Initiating Google sign in");
-      console.log("[Auth] Redirect URL (Site URL):", redirectUrl);
-      console.log("[Auth] Note: Using Site URL, not callback URL, to avoid redirect loop");
+      console.log("[Auth] Redirect URL (Deep Link):", redirectUrl);
+      console.log("[Auth] Note: Using deep link so app can intercept OAuth callback");
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: redirectUrl, // Site URL - Supabase will redirect here after processing callback
+          redirectTo: redirectUrl, // Deep link - app will intercept this
           skipBrowserRedirect: false,
         },
       });
@@ -272,10 +264,10 @@ export const useAuthStore = create<AuthState>((set) => ({
             error.message?.includes('bundle identifier')) {
           const errorMsg = `Apple Sign-In configuration error: ${error.message}\n\n` +
             `This usually means:\n` +
-            `1. Supabase Apple Sign-In Client ID doesn't match your app's bundle identifier\n` +
+            `1. Supabase Apple Sign-In Client ID doesn't match the token audience\n` +
             `2. Your bundle identifier is: com.focuscircle\n` +
-            `3. Make sure Supabase → Authentication → Providers → Apple → Client ID is set to: com.focuscircle.signin\n` +
-            `4. Verify your Apple Developer Portal Service ID matches: com.focuscircle.signin`;
+            `3. For native iOS apps, Supabase Client ID must be the App ID: com.focuscircle\n` +
+            `4. Go to Supabase → Authentication → Providers → Apple → Client ID and set it to: com.focuscircle`;
           throw new Error(errorMsg);
         }
         

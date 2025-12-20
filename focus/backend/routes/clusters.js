@@ -56,23 +56,23 @@ router.get('/', requireAuth, async (req, res) => {
       clusters.map(async (cluster) => {
         try {
           const { data: ideas, error: ideasError } = await supabase
-            .from('ideas')
-            .select('id')
-            .eq('cluster_id', cluster.id);
+          .from('ideas')
+          .select('id')
+          .eq('cluster_id', cluster.id);
 
           if (ideasError) {
             console.error(`Error fetching ideas for cluster ${cluster.id}:`, ideasError);
             // Continue with empty ideaIds array if query fails
           }
 
-          return {
-            id: cluster.id,
-            userId: cluster.user_id,
-            label: cluster.label,
-            ideaIds: ideas?.map(i => i.id) || [],
-            createdAt: cluster.created_at,
-            updatedAt: cluster.updated_at,
-          };
+        return {
+          id: cluster.id,
+          userId: cluster.user_id,
+          label: cluster.label,
+          ideaIds: ideas?.map(i => i.id) || [],
+          createdAt: cluster.created_at,
+          updatedAt: cluster.updated_at,
+        };
         } catch (err) {
           console.error(`Error processing cluster ${cluster.id}:`, err);
           // Return cluster with empty ideaIds if processing fails

@@ -2,7 +2,7 @@
  * Sign up screen
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -15,23 +15,47 @@ import {
   Keyboard,
   Pressable,
   Alert,
+  useColorScheme,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as Linking from "expo-linking";
+import * as AppleAuthentication from "expo-apple-authentication";
 
 export default function SignUpScreen() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const { signUp, signInWithGoogle } = useAuthStore();
+  const { signUp, signInWithGoogle, signInWithApple } = useAuthStore();
+  const [isAppleAvailable, setIsAppleAvailable] = useState(false);
+
+  // Check if Apple Sign-In is available
+  useEffect(() => {
+    const checkAppleAuth = async () => {
+      if (Platform.OS === 'ios') {
+        try {
+          const available = await AppleAuthentication.isAvailableAsync();
+          setIsAppleAvailable(available);
+        } catch (error) {
+          console.log("[SignUp] Apple Sign-In not available:", error);
+          setIsAppleAvailable(false);
+        }
+      }
+    };
+    checkAppleAuth();
+  }, []);
 
   const handleSignUp = async () => {
+    if (!name || !name.trim()) {
+      setError("Please enter your name");
+      return;
+    }
     if (!email || !password) {
       setError("Please fill in email and password");
       return;
@@ -41,7 +65,7 @@ export default function SignUpScreen() {
     setError(null);
 
     try {
-      const result = await signUp(email, password, name || undefined);
+      const result = await signUp(email, password, name.trim());
       
       // Check if email confirmation is required
       if (result.requiresEmailConfirmation) {
@@ -86,6 +110,23 @@ export default function SignUpScreen() {
     }
   };
 
+  const handleAppleSignIn = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await signInWithApple();
+      router.replace("/(tabs)/record");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Apple sign in failed";
+      // Don't show error if user cancelled
+      if (!errorMessage.includes("cancelled")) {
+        setError(errorMessage);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-white dark:bg-black">
       <Pressable onPress={Keyboard.dismiss} className="flex-1">
@@ -116,7 +157,7 @@ export default function SignUpScreen() {
 
           <View className="mb-4">
             <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Name (Optional)
+              Name <Text className="text-red-500">*</Text>
             </Text>
             <TextInput
               className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 text-base text-black dark:text-white"
@@ -202,6 +243,27 @@ export default function SignUpScreen() {
               Continue with Google
             </Text>
           </TouchableOpacity>
+
+          {/* Apple Sign In Button (iOS only) */}
+          {isAppleAvailable && (
+            <TouchableOpacity
+              className="bg-black dark:bg-white rounded-xl py-4 items-center justify-center mb-4 flex-row"
+              onPress={handleAppleSignIn}
+              disabled={isLoading}
+              style={{
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.2,
+                shadowRadius: 4,
+                elevation: 2,
+              }}
+            >
+              <Ionicons name="logo-apple" size={20} color={isDark ? "#000000" : "#FFFFFF"} style={{ marginRight: 8 }} />
+              <Text className={`text-base font-semibold ${isDark ? "text-black" : "text-white"}`}>
+                Continue with Apple
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <View className="flex-row justify-center items-center">
             <Text className="text-gray-600 dark:text-gray-400">

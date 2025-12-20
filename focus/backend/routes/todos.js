@@ -58,25 +58,50 @@ router.get('/today', requireAuth, async (req, res) => {
 router.post('/move-incomplete', requireAuth, async (req, res) => {
   console.log('[MOVE-INCOMPLETE] Route hit!', req.method, req.path, req.originalUrl);
   try {
+    // Get timezone offset from request body (in minutes from UTC)
+    // JavaScript's getTimezoneOffset() returns:
+    // - Positive values for timezones behind UTC (e.g., PST UTC-8 = +480)
+    // - Negative values for timezones ahead of UTC (e.g., JST UTC+9 = -540)
+    // Example: PST is UTC-8, so offset is +480 minutes
+    const timezoneOffset = req.body.timezoneOffset || 0;
+    
+    // Calculate current time in user's timezone
+    // Since getTimezoneOffset() returns offset FROM UTC, we subtract it to get local time
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const userNow = new Date(now.getTime() - (timezoneOffset * 60 * 1000));
+    
+    // Get today and yesterday in user's timezone
+    const today = new Date(userNow.getFullYear(), userNow.getMonth(), userNow.getDate());
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
-    const todayStr = today.toISOString().split('T')[0];
+    
+    // Format dates as YYYY-MM-DD strings using local date components (NOT toISOString which converts to UTC)
+    const formatLocalDate = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    
+    const yesterdayStr = formatLocalDate(yesterday);
+    const todayStr = formatLocalDate(today);
+    
+    console.log(`[MOVE-INCOMPLETE] User timezone offset: ${timezoneOffset} minutes`);
+    console.log(`[MOVE-INCOMPLETE] User's today: ${todayStr}, yesterday: ${yesterdayStr}`);
+    console.log(`[MOVE-INCOMPLETE] User's current time: ${userNow.toISOString()}`);
 
-    // Check if it's past midnight (at least 1 hour into the new day)
-    // This prevents moving tasks during the same day
-    const hoursSinceMidnight = now.getHours() + (now.getMinutes() / 60);
-    if (hoursSinceMidnight < 1) {
-      // Too early in the day, don't move yet
-      return res.json({ success: true, moved: 0, message: 'Too early in the day' });
+    // Check if it's past midnight in user's timezone (right after 12:00 AM)
+    // Allow moving tasks immediately after midnight
+    const hoursSinceMidnight = userNow.getHours() + (userNow.getMinutes() / 60);
+    if (hoursSinceMidnight < 0) {
+      // This shouldn't happen, but safety check
+      console.log(`[MOVE-INCOMPLETE] Invalid time calculation (${hoursSinceMidnight.toFixed(2)} hours since midnight), skipping`);
+      return res.json({ success: true, moved: 0, message: 'Invalid time calculation' });
     }
 
     // Get incomplete todos from yesterday
-    // Only get tasks that were NOT manually added for a future date
-    // We check: created_at date <= task date (meaning task wasn't manually set to future)
-    // OR task is already rolled over (can be rolled again)
+    console.log(`[MOVE-INCOMPLETE] Looking for incomplete todos with date: ${yesterdayStr} for user: ${req.user.id}`);
+    
     const { data: incompleteTodos, error: fetchError } = await supabase
       .from('todos')
       .select('*')
@@ -85,14 +110,38 @@ router.post('/move-incomplete', requireAuth, async (req, res) => {
       .eq('completed', false);
     
     if (fetchError) {
-      console.error('Error fetching incomplete todos:', fetchError);
+      console.error('[MOVE-INCOMPLETE] Error fetching incomplete todos:', fetchError);
       return res.status(500).json({ message: 'Failed to fetch incomplete todos' });
+    }
+
+    console.log(`[MOVE-INCOMPLETE] Found ${incompleteTodos?.length || 0} incomplete todos from yesterday (${yesterdayStr})`);
+    
+    // Log all todos for debugging
+    if (incompleteTodos && incompleteTodos.length > 0) {
+      incompleteTodos.forEach(todo => {
+        console.log(`[MOVE-INCOMPLETE] Todo to move: id=${todo.id}, text="${todo.text?.substring(0, 30)}...", date=${todo.date}, completed=${todo.completed}`);
+      });
+    } else {
+      // Check if there are any todos from yesterday at all (completed or not)
+      const { data: allYesterdayTodos, error: checkError } = await supabase
+        .from('todos')
+        .select('id, text, date, completed')
+        .eq('user_id', req.user.id)
+        .eq('date', yesterdayStr);
+      
+      if (!checkError && allYesterdayTodos) {
+        console.log(`[MOVE-INCOMPLETE] Total todos from yesterday (${yesterdayStr}): ${allYesterdayTodos.length}`);
+        allYesterdayTodos.forEach(todo => {
+          console.log(`[MOVE-INCOMPLETE]   - id=${todo.id}, completed=${todo.completed}, text="${todo.text?.substring(0, 30)}..."`);
+        });
+      }
     }
 
     // Simplified: Move ALL incomplete tasks from yesterday to today
     // No need to filter or track rolled_over - simpler calendar approach
     if (!incompleteTodos || incompleteTodos.length === 0) {
-      return res.json({ success: true, moved: 0 });
+      console.log(`[MOVE-INCOMPLETE] No incomplete tasks to move from ${yesterdayStr} to ${todayStr}`);
+      return res.json({ success: true, moved: 0, message: `No incomplete tasks found from ${yesterdayStr}` });
     }
 
     // Move each incomplete todo to today

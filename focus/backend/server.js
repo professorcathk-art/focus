@@ -112,9 +112,9 @@ module.exports = app;
 
 // Only listen on PORT if running locally (not on Vercel)
 if (process.env.VERCEL !== '1') {
-  app.listen(PORT, () => {
-    console.log(`🚀 Focus API server running on port ${PORT}`);
-    console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
-  });
+app.listen(PORT, () => {
+  console.log(`🚀 Focus API server running on port ${PORT}`);
+  console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
+});
 }
 
