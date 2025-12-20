@@ -510,69 +510,97 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ message: 'Transcript is required' });
     }
 
-    // Generate embedding
-    console.log(`[Create Idea] Generating embedding for transcript: "${transcript.substring(0, 50)}..."`);
-    const embeddingResponse = await aimlClient.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: transcript.trim(),
-    });
-
-    const embedding = embeddingResponse.data[0].embedding;
-    console.log(`[Create Idea] Embedding generated: ${embedding.length} dimensions (expected: 1536)`);
+    // Save idea first (without embedding) to avoid timeout
+    // Embedding will be generated in background
+    const trimmedTranscript = transcript.trim();
     
-    if (embedding.length !== 1536) {
-      console.error(`[Create Idea] ⚠️  WARNING: Embedding dimension mismatch! Got ${embedding.length}, expected 1536`);
-    }
-
-    // Create idea
-    const ideaId = require('crypto').randomUUID();
-    const now = new Date().toISOString();
-
-    const { data: idea, error } = await supabase
+    console.log(`[Create Idea] Creating idea with transcript: "${trimmedTranscript.substring(0, 50)}..."`);
+    
+    // Insert idea without embedding first (embedding added in background)
+    const { data: idea, error: insertError } = await supabase
       .from('ideas')
       .insert({
-        id: ideaId,
         user_id: req.user.id,
-        transcript: transcript.trim(),
-        embedding,
-        created_at: now,
-        updated_at: now,
+        transcript: trimmedTranscript,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .select('id, user_id, transcript, audio_url, duration, created_at, updated_at, cluster_id, is_favorite, transcription_error')
       .single();
 
-    if (error) {
-      console.error('Create idea error:', error);
+    if (insertError || !idea) {
+      console.error('[Create Idea] Error inserting idea:', insertError);
       return res.status(500).json({ message: 'Failed to create idea' });
     }
 
-    console.log(`[Create Idea] ✅ Idea created successfully: ${ideaId}`);
-    console.log(`[Create Idea] User ID: ${req.user.id}`);
-    console.log(`[Create Idea] Embedding length: ${embedding.length}`);
+    console.log(`[Create Idea] ✅ Idea created: ${idea.id}`);
 
-    // Check for similar clusters and suggest category
-    const { findBestCluster, generateClusterLabel } = require('../lib/clustering');
-    const existingClusterId = await findBestCluster(req.user.id, embedding);
+    // Generate embedding synchronously to get category suggestion immediately
+    // This allows frontend to show modal BEFORE marking as saved
     let suggestedClusterLabel = null;
+    let existingClusterId = null;
+    
+    try {
+      console.log(`[Create Idea] Generating embedding for idea ${idea.id}...`);
+      const embeddingResponse = await aimlClient.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: trimmedTranscript,
+      });
 
-    if (!existingClusterId) {
-      // No similar cluster found - generate suggested label
-      console.log(`[Create Idea] No similar cluster found, generating suggested label...`);
-      suggestedClusterLabel = await generateClusterLabel(transcript.trim());
-      console.log(`[Create Idea] Suggested cluster label: "${suggestedClusterLabel}"`);
-    } else {
-      // Similar cluster found - auto-assign
-      console.log(`[Create Idea] Found similar cluster ${existingClusterId}, auto-assigning...`);
-      const { error: updateError } = await supabase
-        .from('ideas')
-        .update({ cluster_id: existingClusterId })
-        .eq('id', ideaId);
+      const embedding = embeddingResponse.data[0].embedding;
+      console.log(`[Create Idea] Embedding generated: ${embedding.length} dimensions (expected: 1536)`);
       
-      if (!updateError) {
-        console.log(`[Create Idea] ✅ Auto-assigned idea ${ideaId} to cluster ${existingClusterId}`);
+      if (embedding.length === 1536) {
+        // Update idea with embedding
+        const { error: updateError } = await supabase
+          .from('ideas')
+          .update({ 
+            embedding,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', idea.id);
+
+        if (updateError) {
+          console.error(`[Create Idea] Error updating embedding:`, updateError);
+        } else {
+          console.log(`[Create Idea] ✅ Embedding updated for idea ${idea.id}`);
+
+          // Check for similar clusters and suggest category
+          const { findBestCluster, generateClusterLabel } = require('../lib/clustering');
+          existingClusterId = await findBestCluster(req.user.id, embedding);
+
+          if (!existingClusterId) {
+            // No similar cluster found - generate suggested label
+            console.log(`[Create Idea] No similar cluster found, generating suggested label...`);
+            suggestedClusterLabel = await generateClusterLabel(trimmedTranscript);
+            console.log(`[Create Idea] Suggested cluster label: "${suggestedClusterLabel}"`);
+          } else {
+            // Similar cluster found - auto-assign
+            console.log(`[Create Idea] Found similar cluster ${existingClusterId}, auto-assigning...`);
+            const { error: assignError } = await supabase
+              .from('ideas')
+              .update({ 
+                cluster_id: existingClusterId,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', idea.id);
+            
+            if (!assignError) {
+              console.log(`[Create Idea] ✅ Auto-assigned idea ${idea.id} to cluster ${existingClusterId}`);
+            } else {
+              console.error(`[Create Idea] Error assigning cluster:`, assignError);
+            }
+          }
+        }
+      } else {
+        console.error(`[Create Idea] ⚠️  WARNING: Embedding dimension mismatch! Got ${embedding.length}, expected 1536`);
       }
+    } catch (embeddingError) {
+      console.error(`[Create Idea] Error generating embedding (non-fatal):`, embeddingError);
+      // Continue without embedding - idea is still saved
     }
 
+    // Return response with suggestion (if any) and cluster assignment status
     res.json({
       id: idea.id,
       userId: idea.user_id,
@@ -581,10 +609,9 @@ router.post('/', requireAuth, async (req, res) => {
       duration: idea.duration,
       createdAt: idea.created_at,
       updatedAt: idea.updated_at,
-      clusterId: idea.cluster_id || existingClusterId || null,
-      embedding: idea.embedding,
+      clusterId: existingClusterId || idea.cluster_id || null,
       isFavorite: idea.is_favorite || false,
-      suggestedClusterLabel: suggestedClusterLabel, // Include suggested label if no match found
+      suggestedClusterLabel: suggestedClusterLabel, // Return suggestion immediately
       transcriptionError: idea.transcription_error || null,
     });
   } catch (error) {
@@ -600,6 +627,16 @@ router.post('/upload-audio', requireAuth, upload.single('file'), async (req, res
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'Audio file is required' });
+    }
+
+    // Validate minimum duration (1 second required for Deepgram API)
+    const duration = parseFloat(req.body.duration) || 0;
+    if (duration < 1.0) {
+      console.log(`[Upload Audio] ⚠️ Recording too short: ${duration}s, rejecting upload`);
+      return res.status(400).json({ 
+        message: 'Recording too short. Please record for at least 1 second.',
+        code: 'RECORDING_TOO_SHORT'
+      });
     }
 
     // Use Deepgram API with nova-3 model

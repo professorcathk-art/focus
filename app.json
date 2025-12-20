@@ -16,8 +16,9 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.focus.app",
+      "bundleIdentifier": "com.focuscircle",
       "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Focus needs access to your microphone to record your ideas.",
         "NSSpeechRecognitionUsageDescription": "Focus uses speech recognition to transcribe your ideas.",
@@ -25,7 +26,7 @@
       }
     },
     "android": {
-      "package": "com.focus.app",
+      "package": "com.focuscircle",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -49,7 +50,8 @@
           "microphonePermission": "Allow Focus to access your microphone to record ideas."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-apple-authentication"
     ],
     "scheme": "focus",
     "extra": {
