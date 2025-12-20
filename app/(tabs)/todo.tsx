@@ -427,40 +427,45 @@ export default function TodoScreen() {
     
     console.log(`[TodoScreen] useEffect triggered for date: ${dateStr}`);
     
+    // INSTANT LOAD: Check memory cache FIRST (synchronous, instant)
+    const memoryKey = `${userId}_${dateStr}`;
+    const memoryCached = memoryCache.get(memoryKey);
+    const isMemoryCacheValid = memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000;
+    
+    if (isMemoryCacheValid && lastLoadedDateRef.current !== dateStr) {
+      const filteredMemoryTodos = memoryCached.todos.filter(todo => todo.date === dateStr);
+      if (filteredMemoryTodos.length > 0) {
+        console.log(`[TodoScreen] ⚡ INSTANT: Showing ${filteredMemoryTodos.length} todos from memory cache`);
+        setTodos(filteredMemoryTodos);
+        setIsLoading(false);
+        lastLoadedDateRef.current = dateStr;
+        // Load from AsyncStorage/API in background to refresh (non-blocking)
+        loadTodos(true, currentDate).catch((error) => {
+          console.error(`[TodoScreen] Error refreshing todos for ${dateStr}:`, error);
+        });
+        return; // Exit early - we have instant data
+      }
+    }
+    
     // Only clear todos and load if date actually changed (not on every render)
     if (lastLoadedDateRef.current !== dateStr) {
       // CRITICAL: Filter todos by date BEFORE clearing
-      // This prevents showing wrong-date todos even if they're in state
       const filteredTodos = todos.filter(todo => todo.date === dateStr);
       if (filteredTodos.length !== todos.length) {
         console.log(`[TodoScreen] ⚠️ Filtered out ${todos.length - filteredTodos.length} todos with wrong dates before date change`);
         setTodos(filteredTodos);
       }
-      console.log(`[TodoScreen] Date changed from ${lastLoadedDateRef.current} to ${dateStr}, clearing todos`);
-      setTodos([]); // Clear immediately
-      setIsLoading(true);
+      
+      console.log(`[TodoScreen] Date changed from ${lastLoadedDateRef.current} to ${dateStr}`);
+      // Only clear if we don't have valid memory cache
+      if (!isMemoryCacheValid) {
+        setTodos([]);
+        setIsLoading(true);
+      }
       lastLoadedDateRef.current = dateStr;
       
-      // Clear memory cache for ALL dates for this user to prevent stale data
-      try {
-        const memoryKeys = Array.from(memoryCache.keys());
-        let clearedCount = 0;
-        for (const key of memoryKeys) {
-          if (key.startsWith(`${userId}_`)) {
-            memoryCache.delete(key);
-            clearedCount++;
-          }
-        }
-        if (clearedCount > 0) {
-          console.log(`[TodoScreen] Cleared ${clearedCount} memory cache entries for user`);
-        }
-      } catch (error) {
-        console.error("[TodoScreen] Error clearing memory cache:", error);
-      }
-      
-      // Load todos for the selected date
-      // Skip cache on date change to force fresh API fetch and prevent flashing
-      loadTodos(false, currentDate).catch((error) => {
+      // Load todos - use cache for instant display if available
+      loadTodos(true, currentDate).catch((error) => {
         console.error(`[TodoScreen] Error loading todos for ${dateStr}:`, error);
       });
       
@@ -475,8 +480,6 @@ export default function TodoScreen() {
         }
       }
     }
-    // Note: We don't filter todos here if date hasn't changed to avoid infinite loops
-    // The render filter below will handle any wrong-date todos
   }, [isAuthenticated, selectedDate, loadTodos, checkAndMoveTasks]);
   
   // Listen for app state changes (foreground/background) to check for new day
@@ -500,10 +503,24 @@ export default function TodoScreen() {
     };
   }, [isAuthenticated, user?.id, checkAndMoveTasks]);
   
-  // Also check on initial mount if viewing today
+  // Preload today's todos on mount/foreground for instant display
   useEffect(() => {
     if (isAuthenticated && user?.id && isToday(selectedDate)) {
-      // Small delay to ensure component is fully mounted
+      const todayStr = format(new Date(), "yyyy-MM-dd");
+      const memoryKey = `${user.id}_${todayStr}`;
+      
+      // Check memory cache immediately (synchronous)
+      const memoryCached = memoryCache.get(memoryKey);
+      if (memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000) {
+        const filteredTodos = memoryCached.todos.filter(todo => todo.date === todayStr);
+        if (filteredTodos.length > 0 && todos.length === 0) {
+          console.log(`[TodoScreen] ⚡ Preloading ${filteredTodos.length} todos from memory cache`);
+          setTodos(filteredTodos);
+          setIsLoading(false);
+        }
+      }
+      
+      // Also check and move tasks
       const timer = setTimeout(() => {
         checkAndMoveTasks();
       }, 1000);

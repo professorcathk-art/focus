@@ -18,7 +18,7 @@ import {
   Pressable,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useRouter, Redirect } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -32,8 +32,16 @@ export default function SignInScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const { signIn, signInWithGoogle, signInWithApple } = useAuthStore();
+  const { signIn, signInWithGoogle, signInWithApple, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
+  
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      console.log("[SignIn] Already authenticated, redirecting...");
+      router.replace("/(tabs)/record");
+    }
+  }, [isAuthenticated, authLoading, router]);
   
   // Check if Apple Sign-In is available
   useEffect(() => {
@@ -50,6 +58,11 @@ export default function SignInScreen() {
     };
     checkAppleAuth();
   }, []);
+  
+  // Don't render if already authenticated
+  if (!authLoading && isAuthenticated) {
+    return <Redirect href="/(tabs)/record" />;
+  }
   
   // Animation values for fluid green elements
   const flow1 = useRef(new Animated.Value(0)).current;

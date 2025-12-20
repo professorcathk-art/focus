@@ -3,7 +3,7 @@
  * Handles: focus://auth-callback?code=...
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { View, ActivityIndicator, Text } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
@@ -17,9 +17,24 @@ export default function AuthCallbackScreen() {
   const params = useLocalSearchParams();
   const { checkAuth, isAuthenticated } = useAuthStore();
   const [status, setStatus] = useState<string>("Processing...");
+  const hasRedirectedRef = useRef(false); // Prevent multiple redirects
 
   useEffect(() => {
     const handleCallback = async () => {
+      // Prevent multiple redirects
+      if (hasRedirectedRef.current) {
+        console.log("[Auth Callback] ⚠️ Already processed, skipping...");
+        return;
+      }
+
+      // If already authenticated, redirect immediately
+      if (isAuthenticated) {
+        console.log("[Auth Callback] ✅ Already authenticated, redirecting...");
+        hasRedirectedRef.current = true;
+        router.replace("/(tabs)/record");
+        return;
+      }
+
       console.log("[Auth Callback] Processing OAuth callback...");
       console.log("[Auth Callback] Params:", params);
 
@@ -33,9 +48,12 @@ export default function AuthCallbackScreen() {
           console.error("[Auth Callback] ❌ OAuth error:", error);
           console.error("[Auth Callback] Error description:", errorDescription);
           setStatus("Authentication failed");
-          setTimeout(() => {
-            router.replace("/(auth)/signin");
-          }, 2000);
+          if (!hasRedirectedRef.current) {
+            hasRedirectedRef.current = true;
+            setTimeout(() => {
+              router.replace("/(auth)/signin");
+            }, 2000);
+          }
           return;
         }
 
@@ -183,42 +201,75 @@ export default function AuthCallbackScreen() {
         }
 
         // Wait a moment then check if authenticated
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Final check - verify session exists
-        const { data: finalCheck } = await supabase.auth.getSession();
-        if (finalCheck?.session) {
+        // Final check - verify session exists (check multiple times to be sure)
+        let finalSession = null;
+        for (let i = 0; i < 3; i++) {
+          const { data: checkData } = await supabase.auth.getSession();
+          if (checkData?.session) {
+            finalSession = checkData.session;
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        if (finalSession) {
           console.log("[Auth Callback] ✅ Final check: Session confirmed!");
-          console.log("[Auth Callback] User ID:", finalCheck.session.user.id);
-          console.log("[Auth Callback] User email:", finalCheck.session.user.email);
+          console.log("[Auth Callback] User ID:", finalSession.user.id);
+          console.log("[Auth Callback] User email:", finalSession.user.email);
           setStatus("Sign in successful!");
+          
           // Ensure auth store is updated
           await checkAuth();
-          setTimeout(() => {
+          
+          // Wait a moment for auth store to update
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // Final verification before redirecting
+          const { data: verifySession } = await supabase.auth.getSession();
+          if (verifySession?.session && !hasRedirectedRef.current) {
+            hasRedirectedRef.current = true;
+            console.log("[Auth Callback] ✅ Redirecting to app...");
+            // Use replace to prevent back navigation to callback
             router.replace("/(tabs)/record");
-          }, 500);
+            return; // Exit early to prevent further processing
+          }
         } else {
-          console.log("[Auth Callback] ⚠️ Final check: No session");
-          console.log("[Auth Callback] This might be a code exchange issue");
+          console.log("[Auth Callback] ⚠️ Final check: No session after retries");
           setStatus("Authentication failed - no session");
+          
           // Try one more checkAuth call
           await checkAuth();
-          setTimeout(() => {
+          
+          // Wait and do final check
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const { data: retrySession } = await supabase.auth.getSession();
+          if (!retrySession?.session && !hasRedirectedRef.current) {
+            hasRedirectedRef.current = true;
+            console.log("[Auth Callback] ❌ No session found, redirecting to signin");
             router.replace("/(auth)/signin");
-          }, 2000);
+          } else if (retrySession?.session && !hasRedirectedRef.current) {
+            hasRedirectedRef.current = true;
+            console.log("[Auth Callback] ✅ Session found on retry, redirecting...");
+            router.replace("/(tabs)/record");
+          }
         }
       } catch (err) {
         console.error("[Auth Callback] Error processing callback:", err);
         setStatus("Error occurred");
         await checkAuth();
-        setTimeout(() => {
-          router.replace("/(auth)/signin");
-        }, 2000);
+        if (!hasRedirectedRef.current) {
+          hasRedirectedRef.current = true;
+          setTimeout(() => {
+            router.replace("/(auth)/signin");
+          }, 2000);
+        }
       }
     };
 
     handleCallback();
-  }, [params]);
+  }, [params, isAuthenticated, router, checkAuth]);
 
   return (
     <SafeAreaView style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFFFF" }}>
