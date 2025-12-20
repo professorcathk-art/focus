@@ -432,53 +432,72 @@ export default function TodoScreen() {
     const memoryCached = memoryCache.get(memoryKey);
     const isMemoryCacheValid = memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000;
     
-    if (isMemoryCacheValid && lastLoadedDateRef.current !== dateStr) {
-      const filteredMemoryTodos = memoryCached.todos.filter(todo => todo.date === dateStr);
-      if (filteredMemoryTodos.length > 0) {
-        console.log(`[TodoScreen] ⚡ INSTANT: Showing ${filteredMemoryTodos.length} todos from memory cache`);
-        setTodos(filteredMemoryTodos);
-        setIsLoading(false);
-        lastLoadedDateRef.current = dateStr;
-        // Load from AsyncStorage/API in background to refresh (non-blocking)
-        loadTodos(true, currentDate).catch((error) => {
-          console.error(`[TodoScreen] Error refreshing todos for ${dateStr}:`, error);
-        });
-        return; // Exit early - we have instant data
-      }
-    }
-    
-    // Only clear todos and load if date actually changed (not on every render)
+    // Also check AsyncStorage cache for instant display (faster than API)
     if (lastLoadedDateRef.current !== dateStr) {
-      // CRITICAL: Filter todos by date BEFORE clearing
-      const filteredTodos = todos.filter(todo => todo.date === dateStr);
-      if (filteredTodos.length !== todos.length) {
-        console.log(`[TodoScreen] ⚠️ Filtered out ${todos.length - filteredTodos.length} todos with wrong dates before date change`);
-        setTodos(filteredTodos);
-      }
-      
-      console.log(`[TodoScreen] Date changed from ${lastLoadedDateRef.current} to ${dateStr}`);
-      // Only clear if we don't have valid memory cache
-      if (!isMemoryCacheValid) {
+      // Try AsyncStorage cache first (instant, synchronous check)
+      getAllTodosIncludingPending(dateStr, userId).then((cachedTodos) => {
+        if (cachedTodos !== null && cachedTodos.length >= 0) {
+          const filteredCached = cachedTodos.filter(todo => todo.date === dateStr);
+          if (filteredCached.length > 0) {
+            console.log(`[TodoScreen] ⚡ INSTANT: Showing ${filteredCached.length} todos from AsyncStorage cache`);
+            setTodos(filteredCached);
+            setIsLoading(false);
+            lastLoadedDateRef.current = dateStr;
+            // Refresh from API in background
+            loadTodos(false, currentDate).catch((error) => {
+              console.error(`[TodoScreen] Error refreshing todos for ${dateStr}:`, error);
+            });
+            return;
+          }
+        }
+        
+        // No cache - check memory cache
+        if (isMemoryCacheValid) {
+          const filteredMemoryTodos = memoryCached.todos.filter(todo => todo.date === dateStr);
+          if (filteredMemoryTodos.length > 0) {
+            console.log(`[TodoScreen] ⚡ INSTANT: Showing ${filteredMemoryTodos.length} todos from memory cache`);
+            setTodos(filteredMemoryTodos);
+            setIsLoading(false);
+            lastLoadedDateRef.current = dateStr;
+            // Load from AsyncStorage/API in background to refresh (non-blocking)
+            loadTodos(true, currentDate).catch((error) => {
+              console.error(`[TodoScreen] Error refreshing todos for ${dateStr}:`, error);
+            });
+            return; // Exit early - we have instant data
+          }
+        }
+        
+        // No cache available - load from API
+        console.log(`[TodoScreen] Date changed from ${lastLoadedDateRef.current} to ${dateStr}`);
         setTodos([]);
         setIsLoading(true);
-      }
-      lastLoadedDateRef.current = dateStr;
-      
-      // Load todos - use cache for instant display if available
-      loadTodos(true, currentDate).catch((error) => {
-        console.error(`[TodoScreen] Error loading todos for ${dateStr}:`, error);
-      });
-      
-      // Check and move incomplete tasks if it's a new day
-      if (isToday(selectedDate)) {
-        const checkKey = `moveCheck_${dateStr}`;
-        if (!checkingRef.current.has(checkKey)) {
-          checkingRef.current.add(checkKey);
-          setTimeout(() => {
-            checkAndMoveTasks();
-          }, 1000);
+        lastLoadedDateRef.current = dateStr;
+        
+        // Load todos from API
+        loadTodos(false, currentDate).catch((error) => {
+          console.error(`[TodoScreen] Error loading todos for ${dateStr}:`, error);
+        });
+        
+        // Check and move incomplete tasks if it's a new day
+        if (isToday(selectedDate)) {
+          const checkKey = `moveCheck_${dateStr}`;
+          if (!checkingRef.current.has(checkKey)) {
+            checkingRef.current.add(checkKey);
+            setTimeout(() => {
+              checkAndMoveTasks();
+            }, 1000);
+          }
         }
-      }
+      }).catch((error) => {
+        console.error(`[TodoScreen] Error checking cache for ${dateStr}:`, error);
+        // Fallback to API load
+        setTodos([]);
+        setIsLoading(true);
+        lastLoadedDateRef.current = dateStr;
+        loadTodos(false, currentDate).catch((err) => {
+          console.error(`[TodoScreen] Error loading todos for ${dateStr}:`, err);
+        });
+      });
     }
   }, [isAuthenticated, selectedDate, loadTodos, checkAndMoveTasks]);
   
@@ -528,15 +547,50 @@ export default function TodoScreen() {
     }
   }, [isAuthenticated, user?.id, selectedDate, checkAndMoveTasks]);
 
+  // Preload todos for a date (non-blocking, for smooth calendar browsing)
+  const preloadTodosForDate = useCallback(async (date: Date) => {
+    if (!isAuthenticated || !user?.id) return;
+    const dateStr = format(date, "yyyy-MM-dd");
+    const userId = user.id;
+    
+    // Check if already cached
+    const cached = await getAllTodosIncludingPending(dateStr, userId);
+    if (cached !== null && cached.length >= 0) {
+      return; // Already cached
+    }
+    
+    // Preload in background (don't await - non-blocking)
+    apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr))
+      .then(async (data) => {
+        const filteredData = data.filter(todo => todo.date === dateStr);
+        await setCachedTodos(dateStr, userId, filteredData);
+        console.log(`[TodoScreen] ✅ Preloaded ${filteredData.length} todos for ${dateStr}`);
+      })
+      .catch((error) => {
+        console.log(`[TodoScreen] Preload failed for ${dateStr}:`, error.message);
+        // Ignore preload errors - they're non-critical
+      });
+  }, [isAuthenticated, user?.id]);
+
   const handleDateChange = (days: number) => {
+    const newDate = addDays(selectedDate, days);
+    
+    // Preload adjacent dates for smooth browsing
+    preloadTodosForDate(addDays(newDate, -1)); // Previous day
+    preloadTodosForDate(addDays(newDate, 1)); // Next day
+    
     // Clear todos immediately when changing date to prevent flashing wrong-date todos
     setTodos([]);
     setIsLoading(true);
     // Update date - this will trigger useEffect which will load correct todos
-    setSelectedDate(addDays(selectedDate, days));
+    setSelectedDate(newDate);
   };
 
   const handleSelectDate = (date: Date) => {
+    // Preload adjacent dates for smooth browsing
+    preloadTodosForDate(addDays(date, -1)); // Previous day
+    preloadTodosForDate(addDays(date, 1)); // Next day
+    
     // Clear todos immediately when selecting date to prevent flashing wrong-date todos
     setTodos([]);
     setIsLoading(true);
@@ -554,6 +608,10 @@ export default function TodoScreen() {
     if (currentDateStr === todayStr) {
       return;
     }
+    
+    // Preload adjacent dates for smooth browsing
+    preloadTodosForDate(addDays(today, -1)); // Previous day
+    preloadTodosForDate(addDays(today, 1)); // Next day
     
     // Clear todos immediately to prevent flashing wrong-date todos
     setTodos([]);

@@ -108,12 +108,24 @@ export const useAuthStore = create<AuthState>((set) => ({
           message: error.message,
           status: error.status,
           name: error.name,
+          code: (error as any).code,
         });
         
-        // Check if email already exists
-        if (error.message?.toLowerCase().includes('already registered') || 
-            error.message?.toLowerCase().includes('user already registered') ||
-            error.message?.toLowerCase().includes('email already exists')) {
+        // Check if email already exists - Supabase returns various error messages and codes
+        const errorMsg = error.message?.toLowerCase() || '';
+        const errorCode = (error as any).code?.toLowerCase() || '';
+        
+        // Common Supabase error codes/messages for existing email:
+        // - "User already registered"
+        // - "Email already registered"  
+        // - Error code: "user_already_registered"
+        // - Status 422 (validation error)
+        if (errorMsg.includes('already registered') || 
+            errorMsg.includes('user already registered') ||
+            errorMsg.includes('email already exists') ||
+            errorMsg.includes('already been registered') ||
+            errorCode.includes('user_already_registered') ||
+            error.status === 422) {
           throw new Error("EMAIL_EXISTS");
         }
         
@@ -121,15 +133,36 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       // If email confirmation is required, no session will be returned
+      // BUT: Supabase might return data.user even for existing users
+      // So we need to check if this is truly a new signup
       if (!data.session) {
-        // User created but needs to confirm email
-        console.log("[Auth] ✅ Sign up successful - email confirmation required");
-        console.log("[Auth] User ID:", data.user?.id);
-        // Return success result indicating email confirmation is needed
-        return {
-          success: true,
-          requiresEmailConfirmation: true,
-        };
+        // Check if user was just created (new signup) vs existing user
+        // For new signups, Supabase returns data.user with recent created_at
+        // For existing users trying to sign up again, Supabase might return data.user but with old created_at
+        if (data.user) {
+          const userCreatedAt = new Date(data.user.created_at);
+          const now = new Date();
+          const timeDiff = now.getTime() - userCreatedAt.getTime();
+          const secondsDiff = timeDiff / 1000;
+          
+          // If user was created more than 30 seconds ago, they likely already exist
+          // (new signups should have created_at within last few seconds)
+          if (secondsDiff > 30) {
+            console.log("[Auth] ⚠️ User exists (created " + Math.round(secondsDiff) + " seconds ago), redirecting to sign in");
+            throw new Error("EMAIL_EXISTS");
+          }
+          
+          // User created but needs to confirm email (new signup)
+          console.log("[Auth] ✅ Sign up successful - email confirmation required");
+          console.log("[Auth] User ID:", data.user?.id);
+          return {
+            success: true,
+            requiresEmailConfirmation: true,
+          };
+        } else {
+          // No user returned - this shouldn't happen, but treat as error
+          throw new Error("Sign up failed - no user data returned");
+        }
       }
 
       if (!data.user) {

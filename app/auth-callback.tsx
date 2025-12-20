@@ -347,7 +347,19 @@ export default function AuthCallbackScreen() {
             hasRedirectedRef.current = true;
             console.log("[Auth Callback] ✅ Redirecting to app...");
             // Use replace to prevent back navigation to callback
-            router.replace("/(tabs)/record");
+            try {
+              router.replace("/(tabs)/record");
+            } catch (redirectError) {
+              console.error("[Auth Callback] Redirect error:", redirectError);
+              // Fallback: try navigating after a delay
+              setTimeout(() => {
+                try {
+                  router.replace("/(tabs)/record");
+                } catch (e) {
+                  console.error("[Auth Callback] Fallback redirect failed:", e);
+                }
+              }, 500);
+            }
             return; // Exit early to prevent further processing
           }
         } else {
@@ -367,7 +379,18 @@ export default function AuthCallbackScreen() {
           } else if (retrySession?.session && !hasRedirectedRef.current) {
             hasRedirectedRef.current = true;
             console.log("[Auth Callback] ✅ Session found on retry, redirecting...");
-            router.replace("/(tabs)/record");
+            try {
+              router.replace("/(tabs)/record");
+            } catch (redirectError) {
+              console.error("[Auth Callback] Redirect error:", redirectError);
+              setTimeout(() => {
+                try {
+                  router.replace("/(tabs)/record");
+                } catch (e) {
+                  console.error("[Auth Callback] Fallback redirect failed:", e);
+                }
+              }, 500);
+            }
           }
         }
       } catch (err) {

@@ -144,28 +144,37 @@ router.post('/move-incomplete', requireAuth, async (req, res) => {
       return res.json({ success: true, moved: 0, message: `No incomplete tasks found from ${yesterdayStr}` });
     }
 
-    // Move each incomplete todo to today
-    const movedTodos = [];
+    // DUPLICATE each incomplete todo to today (don't delete original)
+    const duplicatedTodos = [];
+    const now = new Date().toISOString();
+    
     for (const todo of incompleteTodos) {
-      const { data: movedTodo, error: updateError } = await supabase
+      // Create a new todo for today with same content
+      const newTodoId = require('crypto').randomUUID();
+      const { data: duplicatedTodo, error: insertError } = await supabase
         .from('todos')
-        .update({
+        .insert({
+          id: newTodoId,
+          user_id: req.user.id,
+          text: todo.text,
+          completed: false, // Always incomplete when duplicated
           date: todayStr,
-          updated_at: new Date().toISOString(),
+          created_at: now,
+          updated_at: now,
+          is_rolled_over: true, // Mark as rolled over from previous day
         })
-        .eq('id', todo.id)
-        .eq('user_id', req.user.id)
         .select('*')
         .single();
 
-      if (updateError) {
-        console.error(`Error moving todo ${todo.id}:`, updateError);
+      if (insertError) {
+        console.error(`Error duplicating todo ${todo.id}:`, insertError);
       } else {
-        movedTodos.push(movedTodo);
+        duplicatedTodos.push(duplicatedTodo);
+        console.log(`[MOVE-INCOMPLETE] ✅ Duplicated todo "${todo.text?.substring(0, 30)}..." from ${yesterdayStr} to ${todayStr}`);
       }
     }
 
-    res.json({ success: true, moved: movedTodos.length });
+    res.json({ success: true, moved: duplicatedTodos.length, message: `Duplicated ${duplicatedTodos.length} incomplete tasks from ${yesterdayStr} to ${todayStr}` });
   } catch (error) {
     console.error('Move incomplete todos error:', error);
     res.status(500).json({ message: 'Internal server error' });
