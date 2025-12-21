@@ -410,12 +410,14 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       if (error) {
         console.log("[Auth] Error getting session:", error);
-        set({ user: null, session: null, isAuthenticated: false, isLoading: false });
+        // Use functional update to prevent race conditions
+        set((state) => ({ ...state, user: null, session: null, isAuthenticated: false, isLoading: false }));
         return;
       }
 
       if (!session || !session.user) {
-        set({ user: null, session: null, isAuthenticated: false, isLoading: false });
+        // Use functional update to prevent race conditions
+        set((state) => ({ ...state, user: null, session: null, isAuthenticated: false, isLoading: false }));
         return;
       }
 
@@ -427,14 +429,21 @@ export const useAuthStore = create<AuthState>((set) => ({
         updatedAt: session.user.updated_at || session.user.created_at,
       };
 
-      // Atomic state update to prevent crashes
-      set({ user, session, isAuthenticated: true, isLoading: false });
+      // Atomic state update using functional form to prevent crashes
+      set((state) => ({
+        ...state,
+        user,
+        session,
+        isAuthenticated: true,
+        isLoading: false,
+      }));
       
       // Note: onAuthStateChange listener is handled in app/_layout.tsx and app/auth-callback.tsx
       // Don't add another listener here to prevent conflicts and crashes
     } catch (error) {
       console.error("[Auth] Error in checkAuth:", error);
-      set({ user: null, session: null, isAuthenticated: false, isLoading: false });
+      // Use functional update to prevent race conditions
+      set((state) => ({ ...state, user: null, session: null, isAuthenticated: false, isLoading: false }));
     }
   },
 }));
