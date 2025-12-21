@@ -130,7 +130,7 @@ router.delete('/delete', requireAuth, async (req, res) => {
     const userId = req.user.id;
     console.log(`[Delete Account] Deleting account for user: ${userId}`);
     
-    // Delete all user data from database tables
+    // Step 1: Delete all user data from database tables
     // Note: Supabase RLS will ensure user can only delete their own data
     const { error: ideasError } = await supabase.from('ideas').delete().eq('user_id', userId);
     if (ideasError) console.error('[Delete Account] Error deleting ideas:', ideasError);
@@ -144,11 +144,22 @@ router.delete('/delete', requireAuth, async (req, res) => {
     const { error: usersError } = await supabase.from('users').delete().eq('id', userId);
     if (usersError) console.error('[Delete Account] Error deleting user record:', usersError);
     
-    // Note: The auth user will be deleted by Supabase Admin API or manually
-    // For now, we delete all user data. The auth user deletion requires admin privileges.
-    // You can set up a Supabase Edge Function or use Admin API to delete auth.users
+    // Step 2: Delete the auth user from Supabase Auth (CRITICAL!)
+    // This prevents the user from logging in after account deletion
+    // Using Admin API requires service role key (already configured in lib/supabase.js)
+    const { error: authDeleteError } = await supabase.auth.admin.deleteUser(userId);
     
-    console.log(`[Delete Account] ✅ Account data deleted for user: ${userId}`);
+    if (authDeleteError) {
+      console.error('[Delete Account] ❌ Error deleting auth user:', authDeleteError);
+      // Even if auth deletion fails, return success since data is deleted
+      // The user won't be able to access their data anyway
+      return res.status(500).json({ 
+        message: 'Account data deleted but auth user deletion failed. Please contact support.',
+        error: authDeleteError.message 
+      });
+    }
+    
+    console.log(`[Delete Account] ✅ Account and auth user deleted for user: ${userId}`);
     res.json({ message: 'Account deleted successfully' });
   } catch (error) {
     console.error('[Delete Account] Error:', error);
