@@ -10,13 +10,23 @@ The backend now uses Supabase Admin API to delete the auth user. This requires t
 
 ### 1. Get Your Supabase Service Role Key
 
-1. Go to your Supabase Dashboard: https://supabase.com/dashboard
+1. Go to your Supabase Dashboard: https://app.supabase.com
 2. Select your project
-3. Go to **Settings** → **API**
-4. Find **Service Role Key** (under "Project API keys")
-5. Copy this key (it starts with `eyJ...`)
+3. Go to **Settings** (gear icon in left sidebar) → **API**
+4. Scroll down to **Project API keys** section
+5. Look for the key labeled **"service_role"** or **"secret"** (NOT the "anon" or "publishable" key)
+   - The service role key starts with `sb_secret_` (newer format) or `eyJ...` (older format)
+   - It's usually the longer key and is marked as "secret" or "service_role"
+   - It's different from the "anon" key which starts with `sb_publishable_`
+6. Click **"Reveal"** or **"Show"** to reveal the key (it's hidden by default for security)
+7. Copy the entire key
 
 ⚠️ **IMPORTANT**: The Service Role Key bypasses Row Level Security (RLS). Keep it secret and never expose it to the frontend!
+
+**If you can't find it:**
+- Make sure you're looking at **Settings** → **API** (not Authentication or Database)
+- The service_role key might be hidden - look for a "Reveal" or "Show" button
+- It's in the same section as your "anon" key, but labeled differently
 
 ### 2. Set Environment Variable in Vercel
 
