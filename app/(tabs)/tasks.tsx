@@ -348,14 +348,14 @@ export default function TasksScreen() {
   const currentDateStr = format(selectedDate, "yyyy-MM-dd");
   const filteredTodos = todos.filter(todo => todo.date === currentDateStr);
   
-  // If filtering removed any todos, log a warning and update state
-  if (filteredTodos.length !== todos.length) {
-    console.warn(`[Tasks] ⚠️ Found ${todos.length - filteredTodos.length} todos with wrong dates in state! Filtering them out.`);
-    // Update state with filtered todos (but don't trigger re-render if already correct)
+  // CRITICAL: Use useEffect to update state if wrong-date todos are found
+  // DO NOT update state during render - this causes race conditions and infinite loops
+  useEffect(() => {
     if (filteredTodos.length !== todos.length) {
+      console.warn(`[Tasks] ⚠️ Found ${todos.length - filteredTodos.length} todos with wrong dates in state! Filtering them out.`);
       setTodos(filteredTodos);
     }
-  }
+  }, [todos.length, filteredTodos.length, currentDateStr]);
   
   const completedCount = filteredTodos.filter(t => t.completed).length;
   const totalCount = filteredTodos.length;
