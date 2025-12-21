@@ -95,34 +95,51 @@ export default function ProfileScreen() {
                 {
                   text: "Yes, Delete Forever",
                   style: "destructive",
-                  onPress: async () => {
-                    try {
-                      // Call backend to delete account
-                      await apiClient.delete(API_ENDPOINTS.user.delete);
-                      
-                      // Sign out and clear local data
-                      await signOut();
-                      
-                      Alert.alert(
-                        "Account Deleted",
-                        "Your account has been successfully deleted.",
-                        [
-                          {
-                            text: "OK",
-                            onPress: () => {
-                              router.replace("/(auth)/signin");
-                            },
-                          },
-                        ]
-                      );
-                    } catch (error) {
-                      console.error("Delete account error:", error);
-                      Alert.alert(
-                        "Error",
-                        "Failed to delete account. Please try again or contact support."
-                      );
-                    }
-                  },
+                      onPress: async () => {
+                        try {
+                          console.log("[Delete Account] Calling backend to delete account...");
+                          // Call backend to delete account
+                          const response = await apiClient.delete(API_ENDPOINTS.user.delete);
+                          console.log("[Delete Account] Backend response:", response);
+                          
+                          // CRITICAL: Sign out FIRST to clear local session
+                          // This prevents the user from staying logged in even if deletion succeeded
+                          console.log("[Delete Account] Signing out...");
+                          await signOut();
+                          
+                          // Also manually clear Supabase session to be extra sure
+                          try {
+                            const { error: signOutError } = await supabase.auth.signOut();
+                            if (signOutError) {
+                              console.error("[Delete Account] Supabase sign out error:", signOutError);
+                            }
+                          } catch (signOutErr) {
+                            console.error("[Delete Account] Error signing out from Supabase:", signOutErr);
+                          }
+                          
+                          Alert.alert(
+                            "Account Deleted",
+                            "Your account has been successfully deleted. You will need to sign up again to use the app.",
+                            [
+                              {
+                                text: "OK",
+                                onPress: () => {
+                                  router.replace("/(auth)/signin");
+                                },
+                              },
+                            ]
+                          );
+                        } catch (error: any) {
+                          console.error("Delete account error:", error);
+                          const errorMessage = error?.response?.data?.message || error?.message || "Unknown error";
+                          Alert.alert(
+                            "Error",
+                            errorMessage.includes("auth user deletion failed") 
+                              ? "Account data was deleted but authentication removal failed. You may still be able to sign in. Please contact support."
+                              : "Failed to delete account. Please try again or contact support."
+                          );
+                        }
+                      },
                 },
               ]
             );

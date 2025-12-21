@@ -150,6 +150,15 @@ router.delete('/delete', requireAuth, async (req, res) => {
     console.log(`[Delete Account] Attempting to delete auth user: ${userId}`);
     
     try {
+      // CRITICAL: Verify service role key is configured
+      if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        console.error('[Delete Account] ❌ SUPABASE_SERVICE_ROLE_KEY is not configured!');
+        return res.status(500).json({ 
+          message: 'Server configuration error: Service role key not set. Please contact support.',
+          error: 'SUPABASE_SERVICE_ROLE_KEY missing'
+        });
+      }
+      
       // First, revoke all refresh tokens to invalidate existing sessions
       // This prevents the user from logging in even if their JWT hasn't expired yet
       console.log(`[Delete Account] Revoking refresh tokens for user: ${userId}`);
@@ -162,7 +171,8 @@ router.delete('/delete', requireAuth, async (req, res) => {
         console.log(`[Delete Account] ✅ Refresh tokens revoked for user: ${userId}`);
       }
       
-      // Now delete the auth user
+      // Now delete the auth user - THIS IS CRITICAL!
+      console.log(`[Delete Account] Attempting to delete auth user ${userId} using admin API...`);
       const { data: deleteResult, error: authDeleteError } = await supabase.auth.admin.deleteUser(userId);
       
       if (authDeleteError) {
@@ -170,20 +180,33 @@ router.delete('/delete', requireAuth, async (req, res) => {
           error: authDeleteError,
           message: authDeleteError.message,
           status: authDeleteError.status,
-          userId: userId
+          code: authDeleteError.code,
+          userId: userId,
+          serviceRoleKeyConfigured: !!process.env.SUPABASE_SERVICE_ROLE_KEY
         });
         
         // Return error so frontend knows deletion failed
         return res.status(500).json({ 
-          message: 'Account data deleted but auth user deletion failed. Please contact support.',
+          message: 'Account data deleted but auth user deletion failed. The user may still be able to sign in. Please contact support.',
           error: authDeleteError.message,
+          code: authDeleteError.code,
           details: process.env.NODE_ENV === 'development' ? authDeleteError : undefined
+        });
+      }
+      
+      // Verify deletion succeeded
+      if (!deleteResult || deleteResult.id !== userId) {
+        console.error('[Delete Account] ❌ Auth user deletion returned unexpected result:', deleteResult);
+        return res.status(500).json({ 
+          message: 'Account data deleted but auth user deletion verification failed. Please contact support.',
+          error: 'Deletion verification failed'
         });
       }
       
       console.log(`[Delete Account] ✅ Auth user deleted successfully:`, {
         userId: userId,
-        deleteResult: deleteResult
+        deletedUserId: deleteResult.id,
+        deletedAt: new Date().toISOString()
       });
     } catch (adminError) {
       // Catch any unexpected errors (e.g., if admin API is not available)
@@ -191,11 +214,12 @@ router.delete('/delete', requireAuth, async (req, res) => {
         error: adminError,
         message: adminError.message,
         stack: adminError.stack,
-        userId: userId
+        userId: userId,
+        serviceRoleKeyConfigured: !!process.env.SUPABASE_SERVICE_ROLE_KEY
       });
       
       return res.status(500).json({ 
-        message: 'Account data deleted but auth user deletion failed. Please contact support.',
+        message: 'Account data deleted but auth user deletion failed. The user may still be able to sign in. Please contact support.',
         error: adminError.message,
         details: process.env.NODE_ENV === 'development' ? adminError.stack : undefined
       });
