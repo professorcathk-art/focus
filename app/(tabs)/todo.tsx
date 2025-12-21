@@ -359,8 +359,45 @@ export default function TodoScreen() {
     
     console.log(`[TodoScreen] useEffect triggered for date: ${dateStr}`);
     
-    // SIMPLIFIED: Only load if date actually changed
+    // INSTANT LOAD: Check memory cache FIRST (synchronous, instant!)
     if (lastLoadedDateRef.current !== dateStr) {
+      const memoryKey = `${userId}_${dateStr}`;
+      const memoryCached = memoryCache.get(memoryKey);
+      const isMemoryCacheValid = memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000;
+      
+      if (isMemoryCacheValid && memoryCached.todos.length > 0) {
+        const filtered = memoryCached.todos.filter(todo => todo.date === dateStr);
+        if (filtered.length > 0) {
+          // INSTANT display from memory cache (synchronous, no delay!)
+          console.log(`[TodoScreen] ⚡ INSTANT: Showing ${filtered.length} todos from memory cache`);
+          setTodos(filtered);
+          setIsLoading(false);
+          lastLoadedDateRef.current = dateStr;
+          
+          // Refresh from AsyncStorage/API in background (non-blocking)
+          loadTodos(true, currentDate).catch((error) => {
+            console.error(`[TodoScreen] Error refreshing todos for ${dateStr}:`, error);
+          });
+          
+          // Check and move incomplete tasks if it's a new day
+          if (isToday(selectedDate)) {
+            const checkKey = `moveCheck_${dateStr}`;
+            if (!checkingRef.current.has(checkKey)) {
+              checkingRef.current.add(checkKey);
+              setTimeout(() => {
+                try {
+                  checkAndMoveTasks();
+                } catch (error) {
+                  console.error("[TodoScreen] ❌ Error calling checkAndMoveTasks:", error);
+                }
+              }, 1000);
+            }
+          }
+          return; // Exit early - we have instant data!
+        }
+      }
+      
+      // No memory cache - proceed with normal load
       console.log(`[TodoScreen] Date changed from ${lastLoadedDateRef.current} to ${dateStr}`);
       lastLoadedDateRef.current = dateStr;
       
@@ -380,12 +417,16 @@ export default function TodoScreen() {
         if (!checkingRef.current.has(checkKey)) {
           checkingRef.current.add(checkKey);
           setTimeout(() => {
-            checkAndMoveTasks();
+            try {
+              checkAndMoveTasks();
+            } catch (error) {
+              console.error("[TodoScreen] ❌ Error calling checkAndMoveTasks:", error);
+            }
           }, 1000);
         }
       }
     }
-  }, [isAuthenticated, selectedDate, loadTodos, checkAndMoveTasks]);
+  }, [isAuthenticated, selectedDate, loadTodos, checkAndMoveTasks, user?.id]);
   
   // Listen for app state changes (foreground/background) to check for new day
   useEffect(() => {
