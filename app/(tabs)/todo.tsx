@@ -46,8 +46,11 @@ export default function TodoScreen() {
   // Even if authenticated, return null to prevent crashes
   // Users should use the Tasks page instead
   return null;
-  
-  /* DISABLED CODE BELOW - Using Tasks page instead
+}
+
+/* DISABLED CODE BELOW - All code after this is commented out
+// This entire component is disabled - use Tasks page instead
+function TodoScreenDisabled() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const { isAuthenticated, user } = useAuthStore();
@@ -1251,4 +1254,4 @@ export default function TodoScreen() {
     </View>
   );
 }
-
+*/
