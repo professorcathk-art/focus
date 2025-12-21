@@ -343,8 +343,22 @@ export default function TasksScreen() {
     );
   }
 
-  const completedCount = todos.filter(t => t.completed).length;
-  const totalCount = todos.length;
+  // CRITICAL: Final safety filter - ensure todos match selected date
+  // This prevents any wrong-date todos from being displayed even if they somehow got into state
+  const currentDateStr = format(selectedDate, "yyyy-MM-dd");
+  const filteredTodos = todos.filter(todo => todo.date === currentDateStr);
+  
+  // If filtering removed any todos, log a warning and update state
+  if (filteredTodos.length !== todos.length) {
+    console.warn(`[Tasks] ⚠️ Found ${todos.length - filteredTodos.length} todos with wrong dates in state! Filtering them out.`);
+    // Update state with filtered todos (but don't trigger re-render if already correct)
+    if (filteredTodos.length !== todos.length) {
+      setTodos(filteredTodos);
+    }
+  }
+  
+  const completedCount = filteredTodos.filter(t => t.completed).length;
+  const totalCount = filteredTodos.length;
   const progress = totalCount > 0 ? completedCount / totalCount : 0;
 
   return (
@@ -410,12 +424,12 @@ export default function TasksScreen() {
           <View className="py-8 items-center">
             <ActivityIndicator size="large" color="#34C759" />
           </View>
-        ) : todos.length === 0 ? (
+        ) : filteredTodos.length === 0 ? (
           <View className="py-8 items-center">
             <Text className="text-gray-500 text-center">No tasks for this day</Text>
           </View>
         ) : (
-          todos.map((todo) => (
+          filteredTodos.map((todo) => (
             <TouchableOpacity
               key={todo.id}
               className="bg-white dark:bg-card-dark rounded-xl p-4 mb-3 flex-row items-center"
