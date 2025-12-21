@@ -84,6 +84,42 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signUp: async (email: string, password: string, name?: string): Promise<SignUpResult> => {
     try {
+      // CRITICAL: Check if user already exists BEFORE attempting signup
+      // Try to sign in first - if it succeeds, user exists
+      console.log("[Auth] Checking if user already exists for:", email);
+      try {
+        const { data: existingUser, error: checkError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        
+        // If sign in succeeds, user already exists!
+        if (existingUser?.user && !checkError) {
+          console.log("[Auth] ⚠️ User already exists - sign in succeeded");
+          // Sign out immediately to prevent auto-login
+          await supabase.auth.signOut();
+          throw new Error("EMAIL_EXISTS");
+        }
+        
+        // If sign in fails with "Invalid login credentials", user doesn't exist (or wrong password)
+        // This is expected - we'll proceed with signup
+        if (checkError && checkError.message?.includes("Invalid login credentials")) {
+          console.log("[Auth] User doesn't exist (or wrong password), proceeding with signup");
+        } else if (checkError && !checkError.message?.includes("Invalid login credentials")) {
+          // Other errors might indicate user exists but password is wrong
+          // Or account is disabled, etc. - still treat as existing user
+          console.log("[Auth] ⚠️ Sign in check returned error (might be existing user):", checkError.message);
+          // Don't throw here - let Supabase signUp handle it, but we'll check response carefully
+        }
+      } catch (checkErr) {
+        // If check throws EMAIL_EXISTS, re-throw it
+        if (checkErr instanceof Error && checkErr.message === "EMAIL_EXISTS") {
+          throw checkErr;
+        }
+        // Otherwise, continue with signup attempt
+        console.log("[Auth] Check error (continuing with signup):", checkErr);
+      }
+      
       // For email confirmation, use deep link so app can intercept
       // Use simple format that Supabase accepts: focus://auth-callback
       const redirectUrl = 'focus://auth-callback'; // Simple deep link format
@@ -134,28 +170,28 @@ export const useAuthStore = create<AuthState>((set) => ({
       // CRITICAL: Check if user already exists BEFORE checking for email confirmation
       // Supabase might return data.user for existing users even without an error
       if (data.user) {
-        const userCreatedAt = new Date(data.user.created_at);
-        const now = new Date();
-        const timeDiff = now.getTime() - userCreatedAt.getTime();
-        const secondsDiff = timeDiff / 1000;
-        
         // Check if email is already confirmed - if so, user definitely exists
         if (data.user.email_confirmed_at) {
           console.log("[Auth] ⚠️ User exists - email already confirmed, redirecting to sign in");
           throw new Error("EMAIL_EXISTS");
         }
         
+        // Additional check: If user has last_sign_in_at, they've logged in before
+        if (data.user.last_sign_in_at) {
+          console.log("[Auth] ⚠️ User exists - has previous sign-in history, redirecting to sign in");
+          throw new Error("EMAIL_EXISTS");
+        }
+        
+        const userCreatedAt = new Date(data.user.created_at);
+        const now = new Date();
+        const timeDiff = now.getTime() - userCreatedAt.getTime();
+        const secondsDiff = timeDiff / 1000;
+        
         // If user was created more than 5 seconds ago, they likely already exist
         // (new signups should have created_at within milliseconds)
         // Using 5 seconds instead of 1 to be more reliable
         if (secondsDiff > 5) {
           console.log("[Auth] ⚠️ User exists (created " + Math.round(secondsDiff) + " seconds ago), redirecting to sign in");
-          throw new Error("EMAIL_EXISTS");
-        }
-        
-        // Additional check: If user has last_sign_in_at, they've logged in before
-        if (data.user.last_sign_in_at) {
-          console.log("[Auth] ⚠️ User exists - has previous sign-in history, redirecting to sign in");
           throw new Error("EMAIL_EXISTS");
         }
       }
