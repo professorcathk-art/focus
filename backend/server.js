@@ -68,8 +68,21 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Favicon handler (ignore favicon requests to prevent 404 spam)
+app.get('/favicon.png', (req, res) => {
+  res.status(204).end(); // No content
+});
+
+app.get('/favicon.ico', (req, res) => {
+  res.status(204).end(); // No content
+});
+
 // 404 handler for unmatched routes
 app.use((req, res, next) => {
+  // Ignore favicon requests (already handled above, but double-check)
+  if (req.path === '/favicon.png' || req.path === '/favicon.ico') {
+    return res.status(204).end();
+  }
   console.error(`[404] Route not found: ${req.method} ${req.originalUrl}`);
   console.error(`[404] Path: ${req.path}, Original URL: ${req.originalUrl}`);
   // Log all registered routes for debugging
