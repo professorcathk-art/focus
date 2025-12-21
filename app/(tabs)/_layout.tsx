@@ -65,6 +65,16 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="checkmark-circle" size={size} color={color} />
           ),
+          href: null, // Hide from tab bar - using Tasks instead
+        }}
+      />
+      <Tabs.Screen
+        name="tasks"
+        options={{
+          title: "Tasks",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="checkmark-circle" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen

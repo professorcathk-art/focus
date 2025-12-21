@@ -1,6 +1,5 @@
 /**
- * SIMPLIFIED Todo Screen - Simple calendar function
- * This is a cleaner, simpler version without complex caching
+ * Tasks Screen - Simple calendar function for task management
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -14,10 +13,11 @@ import { apiClient } from "@/lib/api-client";
 import { API_ENDPOINTS } from "@/config/api";
 import { Todo } from "@/types";
 import { format, isToday, addDays, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay } from "date-fns";
+import { getCachedTodos, setCachedTodos, memoryCache } from "@/lib/todos-cache";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
-export default function TodoScreenSimple() {
+export default function TasksScreen() {
   const isDark = useColorScheme() === "dark";
   const { isAuthenticated, user } = useAuthStore();
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -28,18 +28,77 @@ export default function TodoScreenSimple() {
   const [addingTodo, setAddingTodo] = useState(false);
   const fetchingRef = useRef(false);
 
-  // Simple: Load todos for selected date
-  const loadTodos = useCallback(async (date: Date) => {
+  // Load todos for selected date with instant cache
+  const loadTodos = useCallback(async (date: Date, skipCache = false) => {
     if (!isAuthenticated || !user?.id || fetchingRef.current) return;
     
     const dateStr = format(date, "yyyy-MM-dd");
+    const userId = user.id;
+    
+    // INSTANT: Check memory cache first (synchronous, 0ms delay)
+    if (!skipCache) {
+      const memoryKey = `${userId}_${dateStr}`;
+      const memoryCached = memoryCache.get(memoryKey);
+      if (memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000) {
+        const filtered = memoryCached.todos.filter(todo => todo.date === dateStr);
+        if (filtered.length > 0) {
+          console.log(`[Tasks] ⚡ INSTANT: Showing ${filtered.length} tasks from memory cache`);
+          setTodos(filtered);
+          setIsLoading(false);
+          // Refresh from API in background (non-blocking)
+          fetchingRef.current = true;
+          try {
+            const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
+            const filteredData = data.filter(todo => todo.date === dateStr);
+            await setCachedTodos(dateStr, userId, filteredData);
+            if (format(selectedDate, "yyyy-MM-dd") === dateStr) {
+              setTodos(filteredData);
+            }
+          } catch (error) {
+            console.error("Background refresh error:", error);
+          } finally {
+            fetchingRef.current = false;
+          }
+          return; // Exit early - we have instant data!
+        }
+      }
+      
+      // Check AsyncStorage cache (fast, ~10-50ms)
+      try {
+        const cached = await getCachedTodos(dateStr, userId);
+        if (cached && cached.length > 0) {
+          console.log(`[Tasks] ⚡ FAST: Showing ${cached.length} tasks from AsyncStorage cache`);
+          setTodos(cached);
+          setIsLoading(false);
+          // Refresh from API in background
+          fetchingRef.current = true;
+          try {
+            const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
+            const filteredData = data.filter(todo => todo.date === dateStr);
+            await setCachedTodos(dateStr, userId, filteredData);
+            if (format(selectedDate, "yyyy-MM-dd") === dateStr) {
+              setTodos(filteredData);
+            }
+          } catch (error) {
+            console.error("Background refresh error:", error);
+          } finally {
+            fetchingRef.current = false;
+          }
+          return; // Exit early - we have cached data!
+        }
+      } catch (error) {
+        console.error("Cache read error:", error);
+      }
+    }
+    
+    // No cache hit - fetch from API
     fetchingRef.current = true;
     setIsLoading(true);
     
     try {
       const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
-      // Filter to ensure only todos for this date
       const filtered = data.filter(todo => todo.date === dateStr);
+      await setCachedTodos(dateStr, userId, filtered);
       setTodos(filtered);
     } catch (error) {
       console.error("Load todos error:", error);
@@ -48,7 +107,7 @@ export default function TodoScreenSimple() {
       setIsLoading(false);
       fetchingRef.current = false;
     }
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, selectedDate]);
 
   // Load todos when date changes
   useEffect(() => {
@@ -164,33 +223,33 @@ export default function TodoScreenSimple() {
     <View className="flex-1" style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
       {/* Header */}
       <LinearGradient
-        colors={isDark ? ["#0A0A0A", "#1A1A2E"] : ["#A8E6CF", "#88D8C0"]}
+        colors={isDark ? ["#4ECDC4", "#44A08D", "#7EC8E3"] : ["#4ECDC4", "#44A08D", "#7EC8E3"]}
         className="border-b"
         style={{ paddingTop: Platform.OS === "ios" ? 50 : 20, paddingBottom: 20 }}
       >
         <SafeAreaView edges={['left', 'right']}>
           <View className="px-6">
             <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-2xl font-bold" style={{ color: isDark ? "#FFFFFF" : "#000000" }}>
-                Today
+              <Text className="text-2xl font-bold" style={{ color: "#FFFFFF" }}>
+                Tasks
               </Text>
               <TouchableOpacity onPress={() => setShowCalendar(true)}>
-                <Ionicons name="calendar" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
+                <Ionicons name="calendar" size={24} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
             
             {/* Date Navigation */}
             <View className="flex-row items-center justify-between">
               <TouchableOpacity onPress={() => handleDateChange(-1)}>
-                <Ionicons name="chevron-back" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
+                <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowCalendar(true)}>
-                <Text className="text-lg font-semibold" style={{ color: isDark ? "#FFFFFF" : "#000000" }}>
+                <Text className="text-lg font-semibold" style={{ color: "#FFFFFF" }}>
                   {format(selectedDate, "EEEE, MMMM d")}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => handleDateChange(1)}>
-                <Ionicons name="chevron-forward" size={24} color={isDark ? "#FFFFFF" : "#000000"} />
+                <Ionicons name="chevron-forward" size={24} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
             
@@ -198,16 +257,16 @@ export default function TodoScreenSimple() {
             {totalCount > 0 && (
               <View className="mt-4">
                 <View className="flex-row justify-between mb-1">
-                  <Text className="text-sm" style={{ color: isDark ? "#FFFFFF" : "#000000" }}>
+                  <Text className="text-sm" style={{ color: "#FFFFFF" }}>
                     {completedCount} of {totalCount} completed
                   </Text>
-                  <Text className="text-sm" style={{ color: isDark ? "#FFFFFF" : "#000000" }}>
+                  <Text className="text-sm" style={{ color: "#FFFFFF" }}>
                     {Math.round(progress * 100)}%
                   </Text>
                 </View>
-                <View className="h-2 bg-white/20 rounded-full overflow-hidden">
+                <View className="h-2 bg-white/30 rounded-full overflow-hidden">
                   <View
-                    className="h-full bg-green-500"
+                    className="h-full bg-white"
                     style={{ width: `${progress * 100}%` }}
                   />
                 </View>

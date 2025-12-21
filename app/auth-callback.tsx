@@ -153,17 +153,83 @@ export default function AuthCallbackScreen() {
           setStatus("Signing in...");
           
           try {
-            // For PKCE flow, we need to manually exchange the code for tokens
-            // Supabase's detectSessionInUrl doesn't work with custom deep link schemes
-            const projectRef = SUPABASE_URL.split('//')[1]?.split('.')[0] || 'wqvevludffkemgicrfos';
-            const codeVerifierKey = `sb-${projectRef}-auth-code-verifier`;
-            const codeVerifier = await SecureStore.getItemAsync(codeVerifierKey);
+            // Try to use Supabase's built-in session detection first
+            // Supabase should automatically handle PKCE code exchange if code verifier is stored
+            console.log("[Auth Callback] Attempting to get session from Supabase...");
             
-            console.log("[Auth Callback] Code verifier found:", !!codeVerifier);
+            // Wait a moment for Supabase to process the callback
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Check if Supabase automatically created a session
+            const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+            
+            if (sessionData?.session && sessionData.session.user) {
+              console.log("[Auth Callback] ✅ Session found automatically! User:", sessionData.session.user.email);
+              await checkAuth();
+              if (!hasRedirectedRef.current) {
+                hasRedirectedRef.current = true;
+                setStatus("Sign in successful!");
+                setTimeout(() => {
+                  try {
+                    router.replace("/(tabs)/record");
+                  } catch (err) {
+                    console.error("[Auth Callback] Redirect error:", err);
+                  }
+                }, 100);
+              }
+              return;
+            }
+            
+            // If no session, try manual code exchange with Supabase's stored code verifier
+            console.log("[Auth Callback] No automatic session, trying manual exchange...");
+            
+            // Try different possible key formats for code verifier
+            const projectRef = SUPABASE_URL.split('//')[1]?.split('.')[0] || 'wqvevludffkemgicrfos';
+            const possibleKeys = [
+              `sb-${projectRef}-auth-code-verifier`,
+              `${SUPABASE_URL}#auth-code-verifier`,
+              `sb-auth-code-verifier`,
+            ];
+            
+            let codeVerifier: string | null = null;
+            for (const key of possibleKeys) {
+              try {
+                const verifier = await SecureStore.getItemAsync(key);
+                if (verifier) {
+                  codeVerifier = verifier;
+                  console.log(`[Auth Callback] ✅ Found code verifier with key: ${key}`);
+                  break;
+                }
+              } catch (e) {
+                // Continue to next key
+              }
+            }
             
             if (!codeVerifier) {
-              console.error("[Auth Callback] ❌ Code verifier not found! Cannot exchange code.");
-              setStatus("Authentication error - missing code verifier");
+              console.error("[Auth Callback] ❌ Code verifier not found in any expected location");
+              console.log("[Auth Callback] Tried keys:", possibleKeys);
+              
+              // Try one more time to get session (might have been set by Supabase in the meantime)
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              const { data: retrySession } = await supabase.auth.getSession();
+              if (retrySession?.session) {
+                console.log("[Auth Callback] ✅ Session found on retry!");
+                await checkAuth();
+                if (!hasRedirectedRef.current) {
+                  hasRedirectedRef.current = true;
+                  setStatus("Sign in successful!");
+                  setTimeout(() => {
+                    try {
+                      router.replace("/(tabs)/record");
+                    } catch (err) {
+                      console.error("[Auth Callback] Redirect error:", err);
+                    }
+                  }, 100);
+                }
+                return;
+              }
+              
+              setStatus("Authentication error - please try again");
               if (!hasRedirectedRef.current) {
                 hasRedirectedRef.current = true;
                 setTimeout(() => router.replace("/(auth)/signin"), 2000);
@@ -206,7 +272,7 @@ export default function AuthCallbackScreen() {
               console.log("[Auth Callback] ✅ Token exchange successful!");
               
               // Set the session
-              const { data: sessionData, error: setError } = await supabase.auth.setSession({
+              const { data: setSessionData, error: setError } = await supabase.auth.setSession({
                 access_token: exchangeData.access_token,
                 refresh_token: exchangeData.refresh_token,
               });
@@ -221,68 +287,45 @@ export default function AuthCallbackScreen() {
                 return;
               }
               
-              if (sessionData?.session && sessionData.session.user) {
-                console.log("[Auth Callback] ✅ Session set successfully! User:", sessionData.session.user.email);
-                
-                // Update auth store
+              if (setSessionData?.session && setSessionData.session.user) {
+                console.log("[Auth Callback] ✅ Session set successfully! User:", setSessionData.session.user.email);
                 await checkAuth();
-                
-                // Small delay to ensure state is updated
-                await new Promise(resolve => setTimeout(resolve, 300));
-                
-                // Verify session is set
-                const { data: verifySession } = await supabase.auth.getSession();
-                if (verifySession?.session && !hasRedirectedRef.current) {
+                if (!hasRedirectedRef.current) {
                   hasRedirectedRef.current = true;
-                  console.log("[Auth Callback] ✅ Redirecting to app...");
                   setStatus("Sign in successful!");
-                  
-                  // Use setTimeout to prevent crash during navigation
                   setTimeout(() => {
                     try {
                       router.replace("/(tabs)/record");
                     } catch (err) {
                       console.error("[Auth Callback] Redirect error:", err);
-                      // Try again after delay
-                      setTimeout(() => {
-                        try {
-                          router.replace("/(tabs)/record");
-                        } catch (e) {
-                          console.error("[Auth Callback] Fallback redirect failed:", e);
-                        }
-                      }, 1000);
                     }
                   }, 100);
-                  return;
-                } else {
-                  console.error("[Auth Callback] ❌ Session verification failed");
-                  setStatus("Authentication failed");
-                  if (!hasRedirectedRef.current) {
-                    hasRedirectedRef.current = true;
-                    setTimeout(() => {
-                      try {
-                        router.replace("/(auth)/signin");
-                      } catch (err) {
-                        console.error("[Auth Callback] Redirect to signin error:", err);
-                      }
-                    }, 2000);
-                  }
                 }
-              } else {
-                console.error("[Auth Callback] ❌ No session after setSession");
-                setStatus("Authentication failed");
-                if (!hasRedirectedRef.current) {
-                  hasRedirectedRef.current = true;
-                  setTimeout(() => router.replace("/(auth)/signin"), 2000);
+                return;
+              }
+            }
+            
+            // Final fallback - check session one more time
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const { data: finalSession } = await supabase.auth.getSession();
+            if (finalSession?.session && !hasRedirectedRef.current) {
+              hasRedirectedRef.current = true;
+              await checkAuth();
+              setStatus("Sign in successful!");
+              setTimeout(() => {
+                try {
+                  router.replace("/(tabs)/record");
+                } catch (err) {
+                  console.error("[Auth Callback] Redirect error:", err);
                 }
-              }
-            } else {
-              console.error("[Auth Callback] ❌ No access token in response:", exchangeData);
-              setStatus("Authentication failed");
-              if (!hasRedirectedRef.current) {
-                hasRedirectedRef.current = true;
-                setTimeout(() => router.replace("/(auth)/signin"), 2000);
-              }
+              }, 100);
+              return;
+            }
+            
+            setStatus("Authentication failed");
+            if (!hasRedirectedRef.current) {
+              hasRedirectedRef.current = true;
+              setTimeout(() => router.replace("/(auth)/signin"), 2000);
             }
             
           } catch (err) {
