@@ -147,15 +147,44 @@ router.delete('/delete', requireAuth, async (req, res) => {
     // Step 2: Delete the auth user from Supabase Auth (CRITICAL!)
     // This prevents the user from logging in after account deletion
     // Using Admin API requires service role key (already configured in lib/supabase.js)
-    const { error: authDeleteError } = await supabase.auth.admin.deleteUser(userId);
+    console.log(`[Delete Account] Attempting to delete auth user: ${userId}`);
     
-    if (authDeleteError) {
-      console.error('[Delete Account] ❌ Error deleting auth user:', authDeleteError);
-      // Even if auth deletion fails, return success since data is deleted
-      // The user won't be able to access their data anyway
+    try {
+      const { data: deleteResult, error: authDeleteError } = await supabase.auth.admin.deleteUser(userId);
+      
+      if (authDeleteError) {
+        console.error('[Delete Account] ❌ Error deleting auth user:', {
+          error: authDeleteError,
+          message: authDeleteError.message,
+          status: authDeleteError.status,
+          userId: userId
+        });
+        
+        // Return error so frontend knows deletion failed
+        return res.status(500).json({ 
+          message: 'Account data deleted but auth user deletion failed. Please contact support.',
+          error: authDeleteError.message,
+          details: process.env.NODE_ENV === 'development' ? authDeleteError : undefined
+        });
+      }
+      
+      console.log(`[Delete Account] ✅ Auth user deleted successfully:`, {
+        userId: userId,
+        deleteResult: deleteResult
+      });
+    } catch (adminError) {
+      // Catch any unexpected errors (e.g., if admin API is not available)
+      console.error('[Delete Account] ❌ Exception deleting auth user:', {
+        error: adminError,
+        message: adminError.message,
+        stack: adminError.stack,
+        userId: userId
+      });
+      
       return res.status(500).json({ 
         message: 'Account data deleted but auth user deletion failed. Please contact support.',
-        error: authDeleteError.message 
+        error: adminError.message,
+        details: process.env.NODE_ENV === 'development' ? adminError.stack : undefined
       });
     }
     
