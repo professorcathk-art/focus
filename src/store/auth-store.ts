@@ -90,7 +90,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       
       console.log("[Auth] Attempting sign up for:", email);
       console.log("[Auth] Email redirect URL:", redirectUrl);
-      console.log("[Auth] Note: This deep link must be added to Supabase's allowed redirect URLs");
       
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -134,35 +133,32 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       // If email confirmation is required, no session will be returned
       // BUT: Supabase might return data.user even for existing users
-      // So we need to check if this is truly a new signup
-      if (!data.session) {
-        // Check if user was just created (new signup) vs existing user
-        // For new signups, Supabase returns data.user with recent created_at
-        // For existing users trying to sign up again, Supabase might return data.user but with old created_at
-        if (data.user) {
-          const userCreatedAt = new Date(data.user.created_at);
-          const now = new Date();
-          const timeDiff = now.getTime() - userCreatedAt.getTime();
-          const secondsDiff = timeDiff / 1000;
-          
-          // If user was created more than 30 seconds ago, they likely already exist
-          // (new signups should have created_at within last few seconds)
-          if (secondsDiff > 30) {
-            console.log("[Auth] ⚠️ User exists (created " + Math.round(secondsDiff) + " seconds ago), redirecting to sign in");
-            throw new Error("EMAIL_EXISTS");
-          }
-          
-          // User created but needs to confirm email (new signup)
-          console.log("[Auth] ✅ Sign up successful - email confirmation required");
-          console.log("[Auth] User ID:", data.user?.id);
-          return {
-            success: true,
-            requiresEmailConfirmation: true,
-          };
-        } else {
-          // No user returned - this shouldn't happen, but treat as error
-          throw new Error("Sign up failed - no user data returned");
+      // Check if user was just created (new signup) vs existing user
+      if (!data.session && data.user) {
+        const userCreatedAt = new Date(data.user.created_at);
+        const now = new Date();
+        const timeDiff = now.getTime() - userCreatedAt.getTime();
+        const secondsDiff = timeDiff / 1000;
+        
+        // If user was created more than 5 seconds ago, they likely already exist
+        // (new signups should have created_at within last few seconds)
+        if (secondsDiff > 5) {
+          console.log("[Auth] ⚠️ User exists (created " + Math.round(secondsDiff) + " seconds ago), redirecting to sign in");
+          throw new Error("EMAIL_EXISTS");
         }
+        
+        // User created but needs to confirm email (new signup)
+        console.log("[Auth] ✅ Sign up successful - email confirmation required");
+        console.log("[Auth] User ID:", data.user?.id);
+        return {
+          success: true,
+          requiresEmailConfirmation: true,
+        };
+      }
+      
+      // If no user returned and no session, treat as error
+      if (!data.user && !data.session) {
+        throw new Error("Sign up failed - no user data returned");
       }
 
       if (!data.user) {
@@ -407,7 +403,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   checkAuth: async () => {
     try {
-      // Get current session
+      // Use try-catch to prevent crashes
       const { data: { session }, error } = await supabase.auth.getSession();
 
       if (error) {
@@ -429,16 +425,13 @@ export const useAuthStore = create<AuthState>((set) => ({
         updatedAt: session.user.updated_at || session.user.created_at,
       };
 
+      // Atomic state update to prevent crashes
       set({ user, session, isAuthenticated: true, isLoading: false });
-
-      // Listen for auth changes (including OAuth redirects)
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        console.log("[Auth] 🔄 Auth state changed:", {
-          event,
-          hasSession: !!session,
-          userId: session?.user?.id,
-          email: session?.user?.email,
-        });
+    } catch (error) {
+      console.error("[Auth] Error in checkAuth:", error);
+      set({ user: null, session: null, isAuthenticated: false, isLoading: false });
+    }
+  },
         
         if (session && session.user) {
           const user: User = {

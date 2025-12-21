@@ -120,169 +120,56 @@ export default function TodoScreen() {
     }
   }, [user?.id]);
 
+  // SIMPLIFIED loadTodos - just load and filter by date
   const loadTodos = useCallback(async (useCache = true, dateOverride?: Date) => {
-    if (!isAuthenticated || !user?.id) return;
+    if (!isAuthenticated || !user?.id || fetchingRef.current) return;
     
-    // Use dateOverride if provided (for goToToday), otherwise use selectedDate
-    // Capture the date at the start to avoid stale closure issues
     const targetDate = dateOverride || selectedDate;
     const dateStr = format(targetDate, "yyyy-MM-dd");
     const userId = user.id;
     
-    console.log(`[TodoScreen] Loading todos for date: ${dateStr}`);
+    fetchingRef.current = true;
     
-    // Check cache FIRST before checking fetchingRef - cache is instant
-    // BUT: Skip cache check when useCache=false (e.g., on date change) to prevent flashing
+    // Try cache first if enabled
     if (useCache) {
-      const cachedTodos = await getAllTodosIncludingPending(dateStr, userId);
-      if (cachedTodos !== null && cachedTodos.length >= 0) {
-        // ALWAYS filter cached todos to only include those matching the requested date
-        // This prevents showing wrong-date todos even if cache is corrupted
-        const filteredCachedTodos = cachedTodos.filter(todo => todo.date === dateStr);
-        
-        // Only use cache if we have todos that match the date
-        if (filteredCachedTodos.length > 0) {
-          console.log(`[TodoScreen] ✅ Using ${filteredCachedTodos.length} cached todos for ${dateStr} (filtered from ${cachedTodos.length} total)`);
-          
-          // CRITICAL: Double-check we're still on the same date before showing cache
-          // This prevents showing cached data for wrong date if user navigated quickly
-          const currentDateStr = format(dateOverride || selectedDate, "yyyy-MM-dd");
-          if (currentDateStr !== dateStr) {
-            console.log(`[TodoScreen] ⚠️ Date changed during cache check (${dateStr} -> ${currentDateStr}), skipping cache`);
-            // Continue to API fetch below
-          } else {
-            // Show cached data immediately - don't wait for fetchingRef
-            setTodos(filteredCachedTodos);
+      try {
+        const cached = await getAllTodosIncludingPending(dateStr, userId);
+        if (cached !== null && cached.length > 0) {
+          const filtered = cached.filter(todo => todo.date === dateStr);
+          if (filtered.length > 0) {
+            setTodos(filtered);
             setIsLoading(false);
-            
-            // If cached todos had wrong dates, clear and re-cache only correct ones
-            if (filteredCachedTodos.length < cachedTodos.length) {
-              console.log(`[TodoScreen] ⚠️ Found ${cachedTodos.length - filteredCachedTodos.length} todos with wrong dates in cache, cleaning up...`);
-              await clearCacheForDate(dateStr, userId);
-              // Re-cache only the filtered (correct) todos
-              await setCachedTodos(dateStr, userId, filteredCachedTodos);
-            }
-            
-            // If a fetch is already in progress, don't start another one
-            if (fetchingRef.current) {
-              console.log("[TodoScreen] ⏭️ Using cache, fetch already in progress, skipping duplicate API call");
-              return;
-            }
-            
-            // Fetch from API in background (non-blocking)
-            fetchingRef.current = true;
+            // Refresh in background
+            fetchingRef.current = false;
             apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr))
               .then(async (data) => {
-                // Double-check we're still on the same date before updating
-                const currentDateStr = format(dateOverride || selectedDate, "yyyy-MM-dd");
-                if (currentDateStr === dateStr) {
-                  // Filter API data to only include todos matching the date
-                  const filteredData = data.filter(todo => todo.date === dateStr);
-                  if (filteredData.length === data.length) {
-                    // All data matches - safe to cache
-                    await setCachedTodos(dateStr, userId, filteredData);
-                    setTodos(filteredData);
-                  } else {
-                    console.log(`[TodoScreen] ⚠️ API returned ${data.length - filteredData.length} todos with wrong dates, caching only correct ones`);
-                    await setCachedTodos(dateStr, userId, filteredData);
-                    setTodos(filteredData);
-                  }
-                } else {
-                  console.log(`[TodoScreen] Date changed during fetch (${dateStr} -> ${currentDateStr}), ignoring response`);
+                const filteredData = data.filter(todo => todo.date === dateStr);
+                await setCachedTodos(dateStr, userId, filteredData);
+                if (format(selectedDate, "yyyy-MM-dd") === dateStr) {
+                  setTodos(filteredData);
                 }
-                fetchingRef.current = false;
               })
-              .catch((error) => {
-                console.error("[TodoScreen] Background refresh error:", error);
-                fetchingRef.current = false;
-                // Keep using cached data on error
-              });
-            
+              .catch(() => {});
             return;
           }
-        } else if (cachedTodos.length > 0) {
-          // Cache has todos but none match the requested date - clear it
-          console.log(`[TodoScreen] ⚠️ Cached todos date mismatch for ${dateStr}. Found ${cachedTodos.length} todos with dates:`, cachedTodos.map(t => t.date));
-          await clearCacheForDate(dateStr, userId);
         }
-        // If cachedTodos.length === 0, continue to API fetch below
+      } catch (error) {
+        // Continue to API
       }
     }
     
-    // Prevent concurrent fetches (only if no cache available)
-    if (fetchingRef.current) {
-      console.log("[TodoScreen] ⏭️ Fetch already in progress, skipping...");
-      return;
-    }
-    
-    fetchingRef.current = true;
+    // Fetch from API
     setIsLoading(true);
-    
     try {
-      // No cache available - fetch from API (blocking)
-      const endpoint = API_ENDPOINTS.todos.today(dateStr);
-      
-      // Add timeout to prevent hanging on network errors
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("Request timeout")), 10000); // 10 second timeout
-      });
-      
-      const data = await Promise.race([
-        apiClient.get<Todo[]>(endpoint),
-        timeoutPromise
-      ]);
-      
-      // Double-check we're still on the same date before updating
-      const currentDateStr = format(dateOverride || selectedDate, "yyyy-MM-dd");
-      if (currentDateStr === dateStr) {
-        // Verify API data matches date before caching
-        const apiDataMatchesDate = data.every(todo => todo.date === dateStr);
-        if (apiDataMatchesDate) {
-          // Update cache and state
-          await setCachedTodos(dateStr, userId, data);
-          setTodos(data);
-          console.log(`[TodoScreen] ✅ Loaded ${data.length} todos for ${dateStr}`);
-        } else {
-          console.log(`[TodoScreen] ⚠️ API returned todos with wrong dates for ${dateStr}. Dates found:`, data.map(t => t.date));
-          // Filter to only show todos matching the requested date
-          const filteredData = data.filter(todo => todo.date === dateStr);
-          await setCachedTodos(dateStr, userId, filteredData);
-          setTodos(filteredData);
-          console.log(`[TodoScreen] ✅ Loaded ${filteredData.length} filtered todos for ${dateStr}`);
-        }
-      } else {
-        console.log(`[TodoScreen] Date changed during fetch, ignoring response for ${dateStr}`);
+      const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
+      const filtered = data.filter(todo => todo.date === dateStr);
+      await setCachedTodos(dateStr, userId, filtered);
+      if (format(selectedDate, "yyyy-MM-dd") === dateStr) {
+        setTodos(filtered);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`[TodoScreen] Load todos error: ${errorMessage}`);
-      
-      // Check if it's a network/connection error
-      const isNetworkError = errorMessage.includes("Network connection lost") || 
-                            errorMessage.includes("timeout") ||
-                            errorMessage.includes("ECONNREFUSED") ||
-                            errorMessage.includes("ENOTFOUND") ||
-                            errorMessage.includes("Failed to fetch");
-      
-      if (isNetworkError) {
-        console.log("[TodoScreen] ⚠️ Network error detected, using cache if available");
-      }
-      
-      // If API fails but we have cache, keep using it
-      try {
-        const cachedTodos = await getAllTodosIncludingPending(dateStr, userId);
-        if (cachedTodos !== null) {
-          setTodos(cachedTodos);
-          console.log("[TodoScreen] API failed but using cached data");
-        } else {
-          // No cache available - show empty state instead of hanging
-          setTodos([]);
-          console.log("[TodoScreen] No cache available, showing empty state");
-        }
-      } catch (cacheError) {
-        console.error("[TodoScreen] Error reading cache:", cacheError);
-        setTodos([]); // Show empty state on cache error too
-      }
+      console.error("Load todos error:", error);
+      setTodos([]);
     } finally {
       setIsLoading(false);
       fetchingRef.current = false;
@@ -427,77 +314,31 @@ export default function TodoScreen() {
     
     console.log(`[TodoScreen] useEffect triggered for date: ${dateStr}`);
     
-    // INSTANT LOAD: Check memory cache FIRST (synchronous, instant)
-    const memoryKey = `${userId}_${dateStr}`;
-    const memoryCached = memoryCache.get(memoryKey);
-    const isMemoryCacheValid = memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000;
-    
-    // Also check AsyncStorage cache for instant display (faster than API)
+    // SIMPLIFIED: Only load if date actually changed
     if (lastLoadedDateRef.current !== dateStr) {
-      // Try AsyncStorage cache first (instant, synchronous check)
-      getAllTodosIncludingPending(dateStr, userId).then((cachedTodos) => {
-        if (cachedTodos !== null && cachedTodos.length >= 0) {
-          const filteredCached = cachedTodos.filter(todo => todo.date === dateStr);
-          if (filteredCached.length > 0) {
-            console.log(`[TodoScreen] ⚡ INSTANT: Showing ${filteredCached.length} todos from AsyncStorage cache`);
-            setTodos(filteredCached);
-            setIsLoading(false);
-            lastLoadedDateRef.current = dateStr;
-            // Refresh from API in background
-            loadTodos(false, currentDate).catch((error) => {
-              console.error(`[TodoScreen] Error refreshing todos for ${dateStr}:`, error);
-            });
-            return;
-          }
-        }
-        
-        // No cache - check memory cache
-        if (isMemoryCacheValid) {
-          const filteredMemoryTodos = memoryCached.todos.filter(todo => todo.date === dateStr);
-          if (filteredMemoryTodos.length > 0) {
-            console.log(`[TodoScreen] ⚡ INSTANT: Showing ${filteredMemoryTodos.length} todos from memory cache`);
-            setTodos(filteredMemoryTodos);
-            setIsLoading(false);
-            lastLoadedDateRef.current = dateStr;
-            // Load from AsyncStorage/API in background to refresh (non-blocking)
-            loadTodos(true, currentDate).catch((error) => {
-              console.error(`[TodoScreen] Error refreshing todos for ${dateStr}:`, error);
-            });
-            return; // Exit early - we have instant data
-          }
-        }
-        
-        // No cache available - load from API
-        console.log(`[TodoScreen] Date changed from ${lastLoadedDateRef.current} to ${dateStr}`);
-        setTodos([]);
-        setIsLoading(true);
-        lastLoadedDateRef.current = dateStr;
-        
-        // Load todos from API
-        loadTodos(false, currentDate).catch((error) => {
-          console.error(`[TodoScreen] Error loading todos for ${dateStr}:`, error);
-        });
-        
-        // Check and move incomplete tasks if it's a new day
-        if (isToday(selectedDate)) {
-          const checkKey = `moveCheck_${dateStr}`;
-          if (!checkingRef.current.has(checkKey)) {
-            checkingRef.current.add(checkKey);
-            setTimeout(() => {
-              checkAndMoveTasks();
-            }, 1000);
-          }
-        }
-      }).catch((error) => {
-        console.error(`[TodoScreen] Error checking cache for ${dateStr}:`, error);
-        // Fallback to API load
-        setTodos([]);
-        setIsLoading(true);
-        lastLoadedDateRef.current = dateStr;
-        loadTodos(false, currentDate).catch((err) => {
-          console.error(`[TodoScreen] Error loading todos for ${dateStr}:`, err);
-        });
+      console.log(`[TodoScreen] Date changed from ${lastLoadedDateRef.current} to ${dateStr}`);
+      lastLoadedDateRef.current = dateStr;
+      
+      // Clear todos immediately to prevent showing wrong date
+      setTodos([]);
+      setIsLoading(true);
+      
+      // Load todos for this date - use cache if available, then refresh from API
+      loadTodos(true, currentDate).catch((error) => {
+        console.error(`[TodoScreen] Error loading todos for ${dateStr}:`, error);
+        setIsLoading(false);
       });
+      
+      // Check and move incomplete tasks if it's a new day
+      if (isToday(selectedDate)) {
+        const checkKey = `moveCheck_${dateStr}`;
+        if (!checkingRef.current.has(checkKey)) {
+          checkingRef.current.add(checkKey);
+          setTimeout(() => {
+            checkAndMoveTasks();
+          }, 1000);
+        }
+      }
     }
   }, [isAuthenticated, selectedDate, loadTodos, checkAndMoveTasks]);
   

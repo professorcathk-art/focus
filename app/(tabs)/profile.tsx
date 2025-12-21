@@ -340,6 +340,7 @@ export default function ProfileScreen() {
           )}
 
           <TouchableOpacity 
+            onPress={handleDeleteAccount}
             className="bg-white dark:bg-card-dark rounded-xl p-4 mb-3 flex-row items-center justify-between"
             style={{
               shadowColor: "#000",
