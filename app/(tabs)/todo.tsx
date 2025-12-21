@@ -182,6 +182,12 @@ export default function TodoScreen() {
       console.log("[TodoScreen] Move already in progress or no user, skipping");
       return;
     }
+    
+    // Additional safety check
+    if (!isAuthenticated) {
+      console.log("[TodoScreen] Not authenticated, skipping move");
+      return;
+    }
 
     try {
       // Get today's date in user's timezone
@@ -353,7 +359,11 @@ export default function TodoScreen() {
       ) {
         // App has come to the foreground - check if it's a new day
         console.log("[TodoScreen] App came to foreground, checking for new day...");
-        checkAndMoveTasks();
+        try {
+          checkAndMoveTasks();
+        } catch (error) {
+          console.error("[TodoScreen] ❌ Error calling checkAndMoveTasks on foreground:", error);
+        }
       }
       appStateRef.current = nextAppState;
     });
@@ -382,7 +392,11 @@ export default function TodoScreen() {
       
       // Also check and move tasks
       const timer = setTimeout(() => {
-        checkAndMoveTasks();
+        try {
+          checkAndMoveTasks();
+        } catch (error) {
+          console.error("[TodoScreen] ❌ Error calling checkAndMoveTasks:", error);
+        }
       }, 1000);
       return () => clearTimeout(timer);
     }
