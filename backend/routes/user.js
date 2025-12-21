@@ -150,6 +150,19 @@ router.delete('/delete', requireAuth, async (req, res) => {
     console.log(`[Delete Account] Attempting to delete auth user: ${userId}`);
     
     try {
+      // First, revoke all refresh tokens to invalidate existing sessions
+      // This prevents the user from logging in even if their JWT hasn't expired yet
+      console.log(`[Delete Account] Revoking refresh tokens for user: ${userId}`);
+      const { error: revokeError } = await supabase.auth.admin.signOut(userId, 'global');
+      
+      if (revokeError) {
+        console.warn('[Delete Account] ⚠️ Warning: Failed to revoke refresh tokens:', revokeError);
+        // Continue with deletion even if token revocation fails
+      } else {
+        console.log(`[Delete Account] ✅ Refresh tokens revoked for user: ${userId}`);
+      }
+      
+      // Now delete the auth user
       const { data: deleteResult, error: authDeleteError } = await supabase.auth.admin.deleteUser(userId);
       
       if (authDeleteError) {
