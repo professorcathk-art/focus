@@ -202,7 +202,17 @@ async function transcribeAudioAsync(ideaId, audioBuffer, mimeType, deepgramApiKe
         throw new Error('No words detected in recording');
       }
       
-      throw new Error('No transcript returned from Deepgram API');
+      // Save user-friendly error message instead of technical error
+      await supabase
+        .from('ideas')
+        .update({
+          transcription_error: 'Recording too short - please try again',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ideaId)
+        .eq('user_id', userId)
+        .catch(err => console.error(`[Async Transcription] Failed to save error:`, err));
+      throw new Error('Recording too short - please try again');
     }
     
     const trimmedTranscript = transcript.trim();
