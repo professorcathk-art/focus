@@ -273,10 +273,11 @@ export default function TasksScreen() {
     return paddedDays.concat(Array(remaining === 7 ? 0 : remaining).fill(null));
   })();
 
-  if (!isAuthenticated) {
+  // Safety check: Don't render if not authenticated or user not ready
+  if (!isAuthenticated || !user?.id) {
     return (
       <View className="flex-1 justify-center items-center" style={{ backgroundColor: isDark ? "#000000" : "#F5F5F7" }}>
-        <Text className="text-lg text-gray-500">Please sign in to view your todos</Text>
+        <Text className="text-lg text-gray-500">Please sign in to view your tasks</Text>
       </View>
     );
   }
