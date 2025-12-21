@@ -139,16 +139,35 @@ export const useAuthStore = create<AuthState>((set) => ({
         const timeDiff = now.getTime() - userCreatedAt.getTime();
         const secondsDiff = timeDiff / 1000;
         
-        // If user was created more than 1 second ago, they likely already exist
+        // Check if email is already confirmed - if so, user definitely exists
+        if (data.user.email_confirmed_at) {
+          console.log("[Auth] ⚠️ User exists - email already confirmed, redirecting to sign in");
+          throw new Error("EMAIL_EXISTS");
+        }
+        
+        // If user was created more than 5 seconds ago, they likely already exist
         // (new signups should have created_at within milliseconds)
-        if (secondsDiff > 1) {
+        // Using 5 seconds instead of 1 to be more reliable
+        if (secondsDiff > 5) {
           console.log("[Auth] ⚠️ User exists (created " + Math.round(secondsDiff) + " seconds ago), redirecting to sign in");
+          throw new Error("EMAIL_EXISTS");
+        }
+        
+        // Additional check: If user has last_sign_in_at, they've logged in before
+        if (data.user.last_sign_in_at) {
+          console.log("[Auth] ⚠️ User exists - has previous sign-in history, redirecting to sign in");
           throw new Error("EMAIL_EXISTS");
         }
       }
 
       // If email confirmation is required, no session will be returned
       if (!data.session && data.user) {
+        // Double-check: If user email is already confirmed, they exist
+        if (data.user.email_confirmed_at) {
+          console.log("[Auth] ⚠️ User exists - email already confirmed (no session but confirmed), redirecting to sign in");
+          throw new Error("EMAIL_EXISTS");
+        }
+        
         // User created but needs to confirm email (new signup)
         console.log("[Auth] ✅ Sign up successful - email confirmation required");
         console.log("[Auth] User ID:", data.user?.id);
