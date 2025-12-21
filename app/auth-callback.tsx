@@ -153,9 +153,37 @@ export default function AuthCallbackScreen() {
           setStatus("Signing in...");
           
           try {
-            // Try to use Supabase's built-in session detection first
-            // Supabase should automatically handle PKCE code exchange if code verifier is stored
-            console.log("[Auth Callback] Attempting to get session from Supabase...");
+            // CRITICAL: Use Supabase's exchangeCodeForSession() method FIRST
+            // This is the proper way to exchange OAuth code for session
+            // It handles PKCE code verifier automatically
+            console.log("[Auth Callback] Using Supabase's exchangeCodeForSession()...");
+            
+            const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+            
+            if (exchangeError) {
+              console.error("[Auth Callback] ❌ exchangeCodeForSession error:", exchangeError);
+              // Fall back to manual exchange
+              console.log("[Auth Callback] Falling back to manual code exchange...");
+            } else if (exchangeData?.session) {
+              console.log("[Auth Callback] ✅ exchangeCodeForSession succeeded! User:", exchangeData.session.user.email);
+              await checkAuth();
+              if (!hasRedirectedRef.current) {
+                hasRedirectedRef.current = true;
+                setStatus("Sign in successful!");
+                setTimeout(() => {
+                  try {
+                    router.replace("/(tabs)/record");
+                  } catch (err) {
+                    console.error("[Auth Callback] Redirect error:", err);
+                  }
+                }, 100);
+              }
+              return; // Success - exit early
+            }
+            
+            // Fallback: Try to use Supabase's built-in session detection
+            // Supabase might have automatically handled PKCE code exchange
+            console.log("[Auth Callback] Checking for automatic session...");
             
             // Wait a moment for Supabase to process the callback
             await new Promise(resolve => setTimeout(resolve, 500));
