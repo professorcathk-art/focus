@@ -27,17 +27,13 @@ export default function TasksScreen() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [addingTodo, setAddingTodo] = useState(false);
   const fetchingRef = useRef(false);
+  const currentLoadingDateRef = useRef<string | null>(null); // Track which date is currently being loaded
 
   // Load todos for selected date with INSTANT cache display
   const loadTodos = useCallback(async (date: Date, skipCache = false) => {
     // Safety checks
     if (!isAuthenticated || !user?.id) {
       console.warn('[Tasks] Cannot load todos: not authenticated or no user');
-      return;
-    }
-    
-    if (fetchingRef.current) {
-      console.log('[Tasks] Already fetching, skipping...');
       return;
     }
     
@@ -53,6 +49,22 @@ export default function TasksScreen() {
     // Validate userId
     if (!userId || typeof userId !== 'string') {
       console.error('[Tasks] Invalid userId:', userId);
+      return;
+    }
+    
+    // CRITICAL: Check if this date is still the one we want to load
+    // If user switched dates while this function was queued, skip it
+    const currentSelectedDateStr = format(selectedDate, "yyyy-MM-dd");
+    if (dateStr !== currentSelectedDateStr) {
+      console.log(`[Tasks] ⚠️ Date changed while loading (requested: ${dateStr}, current: ${currentSelectedDateStr}), skipping`);
+      return;
+    }
+    
+    // Set the current loading date BEFORE any async operations
+    currentLoadingDateRef.current = dateStr;
+    
+    if (fetchingRef.current) {
+      console.log('[Tasks] Already fetching, skipping...');
       return;
     }
     
@@ -73,14 +85,22 @@ export default function TasksScreen() {
           const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
           const filteredData = data.filter(todo => todo.date === dateStr);
           await setCachedTodos(dateStr, userId, filteredData);
-          // Only update if still viewing the same date
-          if (format(selectedDate, "yyyy-MM-dd") === dateStr) {
+          // CRITICAL: Only update if still viewing the same date AND this is still the current loading date
+          const stillCurrentDate = format(selectedDate, "yyyy-MM-dd") === dateStr && currentLoadingDateRef.current === dateStr;
+          if (stillCurrentDate) {
+            console.log(`[Tasks] ✅ Background refresh complete for ${dateStr}, updating UI`);
             setTodos(filteredData);
+          } else {
+            console.log(`[Tasks] ⚠️ Background refresh for ${dateStr} completed but date changed, ignoring update`);
           }
         } catch (error) {
           console.error("Background refresh error:", error);
         } finally {
           fetchingRef.current = false;
+          // Clear loading date ref if this was the last operation
+          if (currentLoadingDateRef.current === dateStr) {
+            currentLoadingDateRef.current = null;
+          }
         }
         return; // Exit early - we have instant data!
       }
@@ -99,13 +119,22 @@ export default function TasksScreen() {
             const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
             const filteredData = data.filter(todo => todo.date === dateStr);
             await setCachedTodos(dateStr, userId, filteredData);
-            if (format(selectedDate, "yyyy-MM-dd") === dateStr) {
+            // CRITICAL: Only update if still viewing the same date AND this is still the current loading date
+            const stillCurrentDate = format(selectedDate, "yyyy-MM-dd") === dateStr && currentLoadingDateRef.current === dateStr;
+            if (stillCurrentDate) {
+              console.log(`[Tasks] ✅ Background refresh complete for ${dateStr}, updating UI`);
               setTodos(filteredData);
+            } else {
+              console.log(`[Tasks] ⚠️ Background refresh for ${dateStr} completed but date changed, ignoring update`);
             }
           } catch (error) {
             console.error("Background refresh error:", error);
           } finally {
             fetchingRef.current = false;
+            // Clear loading date ref if this was the last operation
+            if (currentLoadingDateRef.current === dateStr) {
+              currentLoadingDateRef.current = null;
+            }
           }
           return; // Exit early - we have cached data!
         }
@@ -122,13 +151,29 @@ export default function TasksScreen() {
       const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
       const filtered = data.filter(todo => todo.date === dateStr);
       await setCachedTodos(dateStr, userId, filtered);
-      setTodos(filtered);
+      
+      // CRITICAL: Only update if still viewing the same date AND this is still the current loading date
+      const stillCurrentDate = format(selectedDate, "yyyy-MM-dd") === dateStr && currentLoadingDateRef.current === dateStr;
+      if (stillCurrentDate) {
+        console.log(`[Tasks] ✅ API fetch complete for ${dateStr}, updating UI`);
+        setTodos(filtered);
+      } else {
+        console.log(`[Tasks] ⚠️ API fetch for ${dateStr} completed but date changed, ignoring update`);
+      }
     } catch (error) {
       console.error("Load todos error:", error);
-      setTodos([]);
+      // Only clear todos if still viewing this date
+      const stillCurrentDate = format(selectedDate, "yyyy-MM-dd") === dateStr && currentLoadingDateRef.current === dateStr;
+      if (stillCurrentDate) {
+        setTodos([]);
+      }
     } finally {
       setIsLoading(false);
       fetchingRef.current = false;
+      // Clear loading date ref if this was the last operation
+      if (currentLoadingDateRef.current === dateStr) {
+        currentLoadingDateRef.current = null;
+      }
     }
   }, [isAuthenticated, user?.id, selectedDate]);
 
@@ -138,6 +183,7 @@ export default function TasksScreen() {
     if (!isAuthenticated || !user?.id) {
       setTodos([]);
       setIsLoading(false);
+      currentLoadingDateRef.current = null;
       return;
     }
     
@@ -151,13 +197,22 @@ export default function TasksScreen() {
         return;
       }
       
+      // CRITICAL: Clear todos immediately when date changes to prevent showing wrong date's tasks
+      // This prevents race conditions where old data shows briefly
+      console.log(`[Tasks] 📅 Date changed to ${dateStr}, clearing todos and loading...`);
+      setTodos([]);
+      setIsLoading(true);
+      
+      // Set current loading date BEFORE any async operations
+      currentLoadingDateRef.current = dateStr;
+      
       // INSTANT: Check memory cache synchronously FIRST (before any async operations)
       const memoryKey = `${userId}_${dateStr}`;
       const memoryCached = memoryCache.get(memoryKey);
       if (memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000) {
         const filtered = memoryCached.todos.filter(todo => todo.date === dateStr);
         if (filtered.length > 0) {
-          console.log(`[Tasks] ⚡ INSTANT on date change: Showing ${filtered.length} tasks`);
+          console.log(`[Tasks] ⚡ INSTANT on date change: Showing ${filtered.length} tasks for ${dateStr}`);
           setTodos(filtered);
           setIsLoading(false);
           // Load fresh data in background (with error handling)
@@ -172,13 +227,19 @@ export default function TasksScreen() {
       // No memory cache - load normally (will check AsyncStorage cache in loadTodos)
       loadTodos(selectedDate).catch((error) => {
         console.error('[Tasks] Load todos error in useEffect:', error);
-        setIsLoading(false);
-        setTodos([]);
+        // Only update state if still viewing this date
+        if (currentLoadingDateRef.current === dateStr) {
+          setIsLoading(false);
+          setTodos([]);
+        }
       });
     } catch (error) {
       console.error('[Tasks] Error in useEffect:', error);
-      setIsLoading(false);
-      setTodos([]);
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
+      if (currentLoadingDateRef.current === dateStr) {
+        setIsLoading(false);
+        setTodos([]);
+      }
     }
   }, [selectedDate, isAuthenticated, user?.id, loadTodos]);
 
