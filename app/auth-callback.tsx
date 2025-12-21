@@ -153,24 +153,76 @@ export default function AuthCallbackScreen() {
           setStatus("Signing in...");
           
           try {
-            // Supabase should automatically handle the OAuth code exchange via PKCE
-            // We just need to wait for the session to be set
+            // For PKCE flow, we need to manually exchange the code for tokens
+            // Supabase's detectSessionInUrl doesn't work with custom deep link schemes
+            const projectRef = SUPABASE_URL.split('//')[1]?.split('.')[0] || 'wqvevludffkemgicrfos';
+            const codeVerifierKey = `sb-${projectRef}-auth-code-verifier`;
+            const codeVerifier = await SecureStore.getItemAsync(codeVerifierKey);
             
-            // Set up auth state change listener
-            let sessionReceived = false;
-            let subscriptionCleanup: (() => void) | null = null;
+            console.log("[Auth Callback] Code verifier found:", !!codeVerifier);
             
-            const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-              console.log("[Auth Callback] 🔄 Auth state changed:", event, "Has session:", !!session);
+            if (!codeVerifier) {
+              console.error("[Auth Callback] ❌ Code verifier not found! Cannot exchange code.");
+              setStatus("Authentication error - missing code verifier");
+              if (!hasRedirectedRef.current) {
+                hasRedirectedRef.current = true;
+                setTimeout(() => router.replace("/(auth)/signin"), 2000);
+              }
+              return;
+            }
+            
+            // Exchange code for tokens
+            const exchangeUrl = `${SUPABASE_URL}/auth/v1/token`;
+            const requestBody = new URLSearchParams({
+              grant_type: 'authorization_code',
+              code: code,
+              redirect_uri: 'focus://auth-callback',
+              code_verifier: codeVerifier,
+            });
+            
+            console.log("[Auth Callback] Exchanging code for tokens...");
+            const response = await fetch(exchangeUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'apikey': SUPABASE_ANON_KEY,
+              },
+              body: requestBody.toString(),
+            });
+            
+            const exchangeData = await response.json();
+            
+            if (exchangeData.error) {
+              console.error("[Auth Callback] ❌ Token exchange error:", exchangeData);
+              setStatus("Authentication failed");
+              if (!hasRedirectedRef.current) {
+                hasRedirectedRef.current = true;
+                setTimeout(() => router.replace("/(auth)/signin"), 2000);
+              }
+              return;
+            }
+            
+            if (exchangeData.access_token) {
+              console.log("[Auth Callback] ✅ Token exchange successful!");
               
-              if (session && session.user && !sessionReceived) {
-                sessionReceived = true;
-                console.log("[Auth Callback] ✅ Session received! User:", session.user.email);
-                
-                // Clean up subscription
-                if (subscriptionCleanup) {
-                  subscriptionCleanup();
+              // Set the session
+              const { data: sessionData, error: setError } = await supabase.auth.setSession({
+                access_token: exchangeData.access_token,
+                refresh_token: exchangeData.refresh_token,
+              });
+              
+              if (setError) {
+                console.error("[Auth Callback] ❌ Error setting session:", setError);
+                setStatus("Authentication failed");
+                if (!hasRedirectedRef.current) {
+                  hasRedirectedRef.current = true;
+                  setTimeout(() => router.replace("/(auth)/signin"), 2000);
                 }
+                return;
+              }
+              
+              if (sessionData?.session && sessionData.session.user) {
+                console.log("[Auth Callback] ✅ Session set successfully! User:", sessionData.session.user.email);
                 
                 // Update auth store
                 await checkAuth();
@@ -178,126 +230,58 @@ export default function AuthCallbackScreen() {
                 // Small delay to ensure state is updated
                 await new Promise(resolve => setTimeout(resolve, 300));
                 
-                // Redirect
-                if (!hasRedirectedRef.current) {
+                // Verify session is set
+                const { data: verifySession } = await supabase.auth.getSession();
+                if (verifySession?.session && !hasRedirectedRef.current) {
                   hasRedirectedRef.current = true;
                   console.log("[Auth Callback] ✅ Redirecting to app...");
+                  setStatus("Sign in successful!");
                   try {
                     router.replace("/(tabs)/record");
-                  } catch (err) {
-                    console.error("[Auth Callback] Redirect error:", err);
-                    setTimeout(() => router.replace("/(tabs)/record"), 500);
-                  }
-                }
-              }
-            });
-            
-            subscriptionCleanup = () => subscription.unsubscribe();
-            
-            // Also check for session immediately (Supabase might have already processed it)
-            let attempts = 0;
-            const maxAttempts = 10; // 5 seconds
-            
-            while (!sessionReceived && attempts < maxAttempts) {
-              const { data: sessionData } = await supabase.auth.getSession();
-              
-              if (sessionData?.session && sessionData.session.user) {
-                console.log("[Auth Callback] ✅ Session found! User:", sessionData.session.user.email);
-                sessionReceived = true;
-                
-                // Clean up subscription
-                if (subscriptionCleanup) {
-                  subscriptionCleanup();
-                }
-                
-                // Update auth store
-                await checkAuth();
-                
-                // Small delay
-                await new Promise(resolve => setTimeout(resolve, 300));
-                
-                // Redirect
-                if (!hasRedirectedRef.current) {
-                  hasRedirectedRef.current = true;
-                  console.log("[Auth Callback] ✅ Redirecting to app...");
-                  try {
-                    router.replace("/(tabs)/record");
-                  } catch (err) {
-                    console.error("[Auth Callback] Redirect error:", err);
-                    setTimeout(() => router.replace("/(tabs)/record"), 500);
-                  }
-                }
-                break;
-              }
-              
-              // Wait before next check
-              await new Promise(resolve => setTimeout(resolve, 500));
-              attempts++;
-            }
-            
-            // Clean up subscription if still active
-            if (subscriptionCleanup && !sessionReceived) {
-              setTimeout(() => {
-                subscriptionCleanup?.();
-              }, 1000);
-            }
-            
-            // If still no session after waiting, try manual exchange
-            if (!sessionReceived) {
-              console.log("[Auth Callback] ⚠️ No session after waiting, trying manual exchange...");
-              
-              const projectRef = SUPABASE_URL.split('//')[1]?.split('.')[0] || 'wqvevludffkemgicrfos';
-              const codeVerifierKey = `sb-${projectRef}-auth-code-verifier`;
-              const codeVerifier = await SecureStore.getItemAsync(codeVerifierKey);
-              
-              if (codeVerifier) {
-                const exchangeUrl = `${SUPABASE_URL}/auth/v1/token`;
-                const requestBody = new URLSearchParams({
-                  grant_type: 'authorization_code',
-                  code: code,
-                  redirect_uri: 'focus://auth-callback',
-                  code_verifier: codeVerifier,
-                });
-                
-                const response = await fetch(exchangeUrl, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'apikey': SUPABASE_ANON_KEY,
-                  },
-                  body: requestBody.toString(),
-                });
-                
-                const exchangeData = await response.json();
-                
-                if (exchangeData.access_token) {
-                  console.log("[Auth Callback] ✅ Manual token exchange successful!");
-                  const { data: sessionData, error: setError } = await supabase.auth.setSession({
-                    access_token: exchangeData.access_token,
-                    refresh_token: exchangeData.refresh_token,
-                  });
-                  
-                  if (!setError && sessionData?.session) {
-                    await checkAuth();
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    
-                    if (!hasRedirectedRef.current) {
-                      hasRedirectedRef.current = true;
-                      router.replace("/(tabs)/record");
-                    }
                     return;
-                  } else {
-                    console.error("[Auth Callback] Error setting session:", setError);
+                  } catch (err) {
+                    console.error("[Auth Callback] Redirect error:", err);
+                    setTimeout(() => {
+                      try {
+                        router.replace("/(tabs)/record");
+                      } catch (e) {
+                        console.error("[Auth Callback] Fallback redirect failed:", e);
+                      }
+                    }, 500);
                   }
                 } else {
-                  console.error("[Auth Callback] Token exchange failed:", exchangeData);
+                  console.error("[Auth Callback] ❌ Session verification failed");
+                  setStatus("Authentication failed");
+                  if (!hasRedirectedRef.current) {
+                    hasRedirectedRef.current = true;
+                    setTimeout(() => router.replace("/(auth)/signin"), 2000);
+                  }
                 }
+              } else {
+                console.error("[Auth Callback] ❌ No session after setSession");
+                setStatus("Authentication failed");
+                if (!hasRedirectedRef.current) {
+                  hasRedirectedRef.current = true;
+                  setTimeout(() => router.replace("/(auth)/signin"), 2000);
+                }
+              }
+            } else {
+              console.error("[Auth Callback] ❌ No access token in response:", exchangeData);
+              setStatus("Authentication failed");
+              if (!hasRedirectedRef.current) {
+                hasRedirectedRef.current = true;
+                setTimeout(() => router.replace("/(auth)/signin"), 2000);
               }
             }
             
           } catch (err) {
-            console.error("[Auth Callback] Error in code exchange:", err);
+            console.error("[Auth Callback] ❌ Error in code exchange:", err);
+            setStatus("Authentication error");
             await checkAuth();
+            if (!hasRedirectedRef.current) {
+              hasRedirectedRef.current = true;
+              setTimeout(() => router.replace("/(auth)/signin"), 2000);
+            }
           }
         } else {
           console.log("[Auth Callback] No code found, checking auth state...");
