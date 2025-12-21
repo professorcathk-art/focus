@@ -923,32 +923,31 @@ export default function RecordScreen() {
                     </View>
                   )}
 
-                  {/* Record Button with gradient - fixed position */}
+                  {/* Record Button - fixed position container */}
                   <View
                     style={{
                       width: 96,
                       height: 96,
-                      position: 'relative',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
                     <TouchableOpacity
+                      onPress={handlePress}
                       onPressIn={handlePressIn}
                       onPressOut={handlePressOut}
                       className="w-24 h-24 rounded-full items-center justify-center shadow-lg"
                       style={{
+                        width: 96,
+                        height: 96,
                         backgroundColor: isRecording ? "#30D158" : "#34C759",
                         shadowColor: "#34C759",
                         shadowOffset: { width: 0, height: 8 },
                         shadowOpacity: 0.3,
                         shadowRadius: 16,
                         elevation: 8,
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
                       }}
-                      activeOpacity={1}
+                      activeOpacity={0.8}
                       delayPressIn={0}
                       delayPressOut={0}
                       disabled={status === "transcribing" || status === "saved"}
@@ -962,7 +961,7 @@ export default function RecordScreen() {
                   </View>
 
                   <Text className="text-sm text-gray-500 dark:text-gray-400 mt-6 text-center px-4">
-                    Hold to record • Release when done
+                    {isRecording ? "Tap to stop • Release when done" : "Tap to record • Hold to record"}
                   </Text>
                 </View>
               </View>
@@ -1053,7 +1052,13 @@ export default function RecordScreen() {
                       <View className="flex-row items-center">
                         <Ionicons name="musical-notes" size={18} color="#FF6B6B" />
                         <Text className="text-sm text-gray-500 dark:text-gray-400 ml-2 font-medium">
-                          {idea.transcriptionError ? `Error: ${idea.transcriptionError.substring(0, 50)}...` : "Transcribing audio..."}
+                          {idea.transcriptionError ? (
+                            idea.transcriptionError.includes("No words detected") || idea.transcriptionError.includes("no words") 
+                              ? "Recording too short - no words detected"
+                              : idea.transcriptionError.includes("No transcript returned") || idea.transcriptionError.includes("Transcription failed")
+                              ? "Recording too short - please try again"
+                              : "Transcription error - please try again"
+                          ) : "Transcribing audio..."}
                         </Text>
                       </View>
                     ) : idea.transcript && idea.transcript.trim() ? (
