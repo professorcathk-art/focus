@@ -153,25 +153,21 @@ export default function AuthCallbackScreen() {
           setStatus("Signing in...");
           
           try {
-            // Set up auth state change listener FIRST (before any operations)
+            // Supabase should automatically handle the OAuth code exchange via PKCE
+            // We just need to wait for the session to be set
+            
+            // Set up auth state change listener
             let sessionReceived = false;
             let subscriptionCleanup: (() => void) | null = null;
-            let processingComplete = false; // Prevent multiple processing
             
             const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-              // Prevent processing if already complete
-              if (processingComplete || sessionReceived) {
-                return;
-              }
-              
               console.log("[Auth Callback] 🔄 Auth state changed:", event, "Has session:", !!session);
-              if (session && session.user) {
+              
+              if (session && session.user && !sessionReceived) {
                 sessionReceived = true;
-                processingComplete = true;
-                console.log("[Auth Callback] ✅ Session received via auth state change!");
-                console.log("[Auth Callback] User ID:", session.user.id);
+                console.log("[Auth Callback] ✅ Session received! User:", session.user.email);
                 
-                // Clean up subscription immediately
+                // Clean up subscription
                 if (subscriptionCleanup) {
                   subscriptionCleanup();
                 }
@@ -179,25 +175,18 @@ export default function AuthCallbackScreen() {
                 // Update auth store
                 await checkAuth();
                 
-                // Wait a moment for store to update
-                await new Promise(resolve => setTimeout(resolve, 200));
+                // Small delay to ensure state is updated
+                await new Promise(resolve => setTimeout(resolve, 300));
                 
-                // Redirect immediately when session is received
+                // Redirect
                 if (!hasRedirectedRef.current) {
                   hasRedirectedRef.current = true;
-                  console.log("[Auth Callback] ✅ Redirecting immediately after auth state change...");
+                  console.log("[Auth Callback] ✅ Redirecting to app...");
                   try {
                     router.replace("/(tabs)/record");
-                    return; // Exit early
-                  } catch (redirectError) {
-                    console.error("[Auth Callback] Redirect error:", redirectError);
-                    setTimeout(() => {
-                      try {
-                        router.replace("/(tabs)/record");
-                      } catch (e) {
-                        console.error("[Auth Callback] Fallback redirect failed:", e);
-                      }
-                    }, 500);
+                  } catch (err) {
+                    console.error("[Auth Callback] Redirect error:", err);
+                    setTimeout(() => router.replace("/(tabs)/record"), 500);
                   }
                 }
               }
@@ -205,60 +194,64 @@ export default function AuthCallbackScreen() {
             
             subscriptionCleanup = () => subscription.unsubscribe();
             
-            // Wait a moment for listener to be set up
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // Also check for session immediately (Supabase might have already processed it)
+            let attempts = 0;
+            const maxAttempts = 10; // 5 seconds
             
-            // Try to get session immediately (Supabase might have already set it)
-            const { data: immediateSession } = await supabase.auth.getSession();
-            
-            if (immediateSession?.session && !sessionReceived && !processingComplete) {
-              console.log("[Auth Callback] ✅ Session found immediately!");
-              sessionReceived = true;
-              processingComplete = true;
+            while (!sessionReceived && attempts < maxAttempts) {
+              const { data: sessionData } = await supabase.auth.getSession();
               
-              // Clean up subscription
-              if (subscriptionCleanup) {
-                subscriptionCleanup();
-              }
-              
-              await checkAuth();
-              
-              // Wait a moment for store to update
-              await new Promise(resolve => setTimeout(resolve, 200));
-              
-              // Redirect immediately
-              if (!hasRedirectedRef.current) {
-                hasRedirectedRef.current = true;
-                try {
-                  router.replace("/(tabs)/record");
-                  return; // Exit early - don't continue to manual exchange
-                } catch (redirectError) {
-                  console.error("[Auth Callback] Redirect error:", redirectError);
-                  setTimeout(() => {
-                    try {
-                      router.replace("/(tabs)/record");
-                    } catch (e) {
-                      console.error("[Auth Callback] Fallback redirect failed:", e);
-                    }
-                  }, 500);
+              if (sessionData?.session && sessionData.session.user) {
+                console.log("[Auth Callback] ✅ Session found! User:", sessionData.session.user.email);
+                sessionReceived = true;
+                
+                // Clean up subscription
+                if (subscriptionCleanup) {
+                  subscriptionCleanup();
                 }
+                
+                // Update auth store
+                await checkAuth();
+                
+                // Small delay
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // Redirect
+                if (!hasRedirectedRef.current) {
+                  hasRedirectedRef.current = true;
+                  console.log("[Auth Callback] ✅ Redirecting to app...");
+                  try {
+                    router.replace("/(tabs)/record");
+                  } catch (err) {
+                    console.error("[Auth Callback] Redirect error:", err);
+                    setTimeout(() => router.replace("/(tabs)/record"), 500);
+                  }
+                }
+                break;
               }
-              return;
+              
+              // Wait before next check
+              await new Promise(resolve => setTimeout(resolve, 500));
+              attempts++;
             }
             
-            // If no immediate session, try manual exchange (for PKCE flow)
-            if (!sessionReceived && !processingComplete) {
-              // Get the code verifier from SecureStore
+            // Clean up subscription if still active
+            if (subscriptionCleanup && !sessionReceived) {
+              setTimeout(() => {
+                subscriptionCleanup?.();
+              }, 1000);
+            }
+            
+            // If still no session after waiting, try manual exchange
+            if (!sessionReceived) {
+              console.log("[Auth Callback] ⚠️ No session after waiting, trying manual exchange...");
+              
               const projectRef = SUPABASE_URL.split('//')[1]?.split('.')[0] || 'wqvevludffkemgicrfos';
               const codeVerifierKey = `sb-${projectRef}-auth-code-verifier`;
               const codeVerifier = await SecureStore.getItemAsync(codeVerifierKey);
               
-              console.log("[Auth Callback] Code verifier found:", !!codeVerifier);
-              
               if (codeVerifier) {
-                // Manual token exchange for PKCE flow
                 const exchangeUrl = `${SUPABASE_URL}/auth/v1/token`;
-                
                 const requestBody = new URLSearchParams({
                   grant_type: 'authorization_code',
                   code: code,
@@ -278,46 +271,22 @@ export default function AuthCallbackScreen() {
                 const exchangeData = await response.json();
                 
                 if (exchangeData.access_token) {
-                  console.log("[Auth Callback] ✅ Token exchange successful!");
+                  console.log("[Auth Callback] ✅ Manual token exchange successful!");
                   const { data: sessionData, error: setError } = await supabase.auth.setSession({
                     access_token: exchangeData.access_token,
                     refresh_token: exchangeData.refresh_token,
                   });
                   
-                  if (!setError && sessionData?.session && !sessionReceived && !processingComplete) {
-                    console.log("[Auth Callback] ✅ Session set successfully!");
-                    sessionReceived = true;
-                    processingComplete = true;
-                    
-                    // Clean up subscription
-                    if (subscriptionCleanup) {
-                      subscriptionCleanup();
-                    }
-                    
+                  if (!setError && sessionData?.session) {
                     await checkAuth();
+                    await new Promise(resolve => setTimeout(resolve, 300));
                     
-                    // Wait a moment for store to update
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                    
-                    // Redirect immediately
                     if (!hasRedirectedRef.current) {
                       hasRedirectedRef.current = true;
-                      try {
-                        router.replace("/(tabs)/record");
-                        return; // Exit early
-                      } catch (redirectError) {
-                        console.error("[Auth Callback] Redirect error:", redirectError);
-                        setTimeout(() => {
-                          try {
-                            router.replace("/(tabs)/record");
-                          } catch (e) {
-                            console.error("[Auth Callback] Fallback redirect failed:", e);
-                          }
-                        }, 500);
-                      }
+                      router.replace("/(tabs)/record");
                     }
                     return;
-                  } else if (setError) {
+                  } else {
                     console.error("[Auth Callback] Error setting session:", setError);
                   }
                 } else {
@@ -326,62 +295,8 @@ export default function AuthCallbackScreen() {
               }
             }
             
-            // If we still don't have a session, wait for auth state change (with timeout)
-            if (!sessionReceived && !processingComplete) {
-              let attempts = 0;
-              const maxAttempts = 8; // 4 seconds total (reduced from 10)
-              
-              while (!sessionReceived && !processingComplete && attempts < maxAttempts) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-                const { data: checkData } = await supabase.auth.getSession();
-                if (checkData?.session) {
-                  console.log("[Auth Callback] ✅ Session found during wait!");
-                  sessionReceived = true;
-                  processingComplete = true;
-                  
-                  // Clean up subscription
-                  if (subscriptionCleanup) {
-                    subscriptionCleanup();
-                  }
-                  
-                  await checkAuth();
-                  
-                  // Wait a moment for store to update
-                  await new Promise(resolve => setTimeout(resolve, 200));
-                  
-                  // Redirect immediately
-                  if (!hasRedirectedRef.current) {
-                    hasRedirectedRef.current = true;
-                    try {
-                      router.replace("/(tabs)/record");
-                      return;
-                    } catch (redirectError) {
-                      console.error("[Auth Callback] Redirect error:", redirectError);
-                      setTimeout(() => {
-                        try {
-                          router.replace("/(tabs)/record");
-                        } catch (e) {
-                          console.error("[Auth Callback] Fallback redirect failed:", e);
-                        }
-                      }, 500);
-                    }
-                  }
-                  break;
-                }
-                attempts++;
-              }
-              
-              // Clean up subscription after timeout
-              if (subscriptionCleanup && !processingComplete) {
-                setTimeout(() => {
-                  subscriptionCleanup();
-                }, 1000);
-              }
-            }
-            
           } catch (err) {
             console.error("[Auth Callback] Error in code exchange:", err);
-            // Still try to check auth and redirect
             await checkAuth();
           }
         } else {
