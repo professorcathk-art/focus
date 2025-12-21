@@ -30,10 +30,31 @@ export default function TasksScreen() {
 
   // Load todos for selected date with INSTANT cache display
   const loadTodos = useCallback(async (date: Date, skipCache = false) => {
-    if (!isAuthenticated || !user?.id || fetchingRef.current) return;
+    // Safety checks
+    if (!isAuthenticated || !user?.id) {
+      console.warn('[Tasks] Cannot load todos: not authenticated or no user');
+      return;
+    }
+    
+    if (fetchingRef.current) {
+      console.log('[Tasks] Already fetching, skipping...');
+      return;
+    }
+    
+    // Validate date
+    if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+      console.error('[Tasks] Invalid date provided:', date);
+      return;
+    }
     
     const dateStr = format(date, "yyyy-MM-dd");
     const userId = user.id;
+    
+    // Validate userId
+    if (!userId || typeof userId !== 'string') {
+      console.error('[Tasks] Invalid userId:', userId);
+      return;
+    }
     
     // CRITICAL: Check memory cache FIRST (synchronous, 0ms delay) BEFORE setting loading state
     if (!skipCache) {
@@ -113,32 +134,52 @@ export default function TasksScreen() {
 
   // Load todos when date changes - with instant cache check
   useEffect(() => {
+    // Safety check: don't run if not authenticated or user not ready
     if (!isAuthenticated || !user?.id) {
       setTodos([]);
       setIsLoading(false);
       return;
     }
     
-    const dateStr = format(selectedDate, "yyyy-MM-dd");
-    const userId = user.id;
-    
-    // INSTANT: Check memory cache synchronously FIRST (before any async operations)
-    const memoryKey = `${userId}_${dateStr}`;
-    const memoryCached = memoryCache.get(memoryKey);
-    if (memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000) {
-      const filtered = memoryCached.todos.filter(todo => todo.date === dateStr);
-      if (filtered.length > 0) {
-        console.log(`[Tasks] ⚡ INSTANT on date change: Showing ${filtered.length} tasks`);
-        setTodos(filtered);
-        setIsLoading(false);
-        // Load fresh data in background
-        loadTodos(selectedDate, false).catch(console.error);
-        return; // Exit early - instant display!
+    try {
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
+      const userId = user.id;
+      
+      // Validate userId is a valid string
+      if (!userId || typeof userId !== 'string') {
+        console.warn('[Tasks] Invalid userId, skipping load');
+        return;
       }
+      
+      // INSTANT: Check memory cache synchronously FIRST (before any async operations)
+      const memoryKey = `${userId}_${dateStr}`;
+      const memoryCached = memoryCache.get(memoryKey);
+      if (memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000) {
+        const filtered = memoryCached.todos.filter(todo => todo.date === dateStr);
+        if (filtered.length > 0) {
+          console.log(`[Tasks] ⚡ INSTANT on date change: Showing ${filtered.length} tasks`);
+          setTodos(filtered);
+          setIsLoading(false);
+          // Load fresh data in background (with error handling)
+          loadTodos(selectedDate, false).catch((error) => {
+            console.error('[Tasks] Background load error:', error);
+            // Don't crash - just log the error
+          });
+          return; // Exit early - instant display!
+        }
+      }
+      
+      // No memory cache - load normally (will check AsyncStorage cache in loadTodos)
+      loadTodos(selectedDate).catch((error) => {
+        console.error('[Tasks] Load todos error in useEffect:', error);
+        setIsLoading(false);
+        setTodos([]);
+      });
+    } catch (error) {
+      console.error('[Tasks] Error in useEffect:', error);
+      setIsLoading(false);
+      setTodos([]);
     }
-    
-    // No memory cache - load normally (will check AsyncStorage cache in loadTodos)
-    loadTodos(selectedDate);
   }, [selectedDate, isAuthenticated, user?.id, loadTodos]);
 
   // Simple: Add todo

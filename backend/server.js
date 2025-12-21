@@ -63,18 +63,18 @@ console.log('[SERVER] ✅ Todos router mounted at /api/todos');
 app.use('/api/user', require('./routes/user'));
 app.use('/api/feedback', require('./routes/feedback'));
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Favicon handler (ignore favicon requests to prevent 404 spam)
+// Favicon handler (MUST be before routes to catch favicon requests)
 app.get('/favicon.png', (req, res) => {
   res.status(204).end(); // No content
 });
 
 app.get('/favicon.ico', (req, res) => {
   res.status(204).end(); // No content
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // 404 handler for unmatched routes
