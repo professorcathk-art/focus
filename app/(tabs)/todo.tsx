@@ -330,7 +330,11 @@ export default function TodoScreen() {
     // 3. Not already moving
     if (hoursSinceMidnight >= 0 && lastMoveDate !== todayStr && !isMovingTasks) {
       console.log("[TodoScreen] ✅ All conditions met! Calling moveIncompleteTasks...");
-      moveIncompleteTasks();
+      // Wrap in try-catch to prevent crashes
+      moveIncompleteTasks().catch((error) => {
+        console.error("[TodoScreen] ❌ Error in moveIncompleteTasks:", error);
+        // Don't crash the app - just log the error
+      });
     } else {
       if (lastMoveDate === todayStr) {
         console.log("[TodoScreen] ⏭️ Already moved tasks today, skipping");
