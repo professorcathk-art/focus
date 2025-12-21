@@ -209,6 +209,37 @@ export default function AuthCallbackScreen() {
               console.error("[Auth Callback] ❌ Code verifier not found in any expected location");
               console.log("[Auth Callback] Tried keys:", possibleKeys);
               
+              // CRITICAL: Try using Supabase's built-in PKCE handling
+              // Supabase might have already exchanged the code automatically
+              console.log("[Auth Callback] Attempting to use Supabase's automatic PKCE handling...");
+              
+              // Try to exchange code using Supabase's built-in method
+              // This uses the code verifier stored internally by Supabase
+              try {
+                const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+                
+                if (exchangeError) {
+                  console.error("[Auth Callback] ❌ Supabase exchangeCodeForSession error:", exchangeError);
+                } else if (exchangeData?.session) {
+                  console.log("[Auth Callback] ✅ Supabase exchangeCodeForSession succeeded!");
+                  await checkAuth();
+                  if (!hasRedirectedRef.current) {
+                    hasRedirectedRef.current = true;
+                    setStatus("Sign in successful!");
+                    setTimeout(() => {
+                      try {
+                        router.replace("/(tabs)/record");
+                      } catch (err) {
+                        console.error("[Auth Callback] Redirect error:", err);
+                      }
+                    }, 100);
+                  }
+                  return;
+                }
+              } catch (exchangeErr) {
+                console.error("[Auth Callback] Error in exchangeCodeForSession:", exchangeErr);
+              }
+              
               // Try one more time to get session (might have been set by Supabase in the meantime)
               await new Promise(resolve => setTimeout(resolve, 1000));
               const { data: retrySession } = await supabase.auth.getSession();
@@ -229,7 +260,7 @@ export default function AuthCallbackScreen() {
                 return;
               }
               
-              setStatus("Authentication error - please try again");
+              setStatus("Authentication error - missing code verifier");
               if (!hasRedirectedRef.current) {
                 hasRedirectedRef.current = true;
                 setTimeout(() => router.replace("/(auth)/signin"), 2000);

@@ -64,12 +64,13 @@ app.use('/api/user', require('./routes/user'));
 app.use('/api/feedback', require('./routes/feedback'));
 
 // Favicon handler (MUST be before routes to catch favicon requests)
+// Handle favicon requests BEFORE any route matching
 app.get('/favicon.png', (req, res) => {
-  res.status(204).end(); // No content
+  res.status(204).end(); // No content - don't log as error
 });
 
 app.get('/favicon.ico', (req, res) => {
-  res.status(204).end(); // No content
+  res.status(204).end(); // No content - don't log as error
 });
 
 // Health check
@@ -79,17 +80,20 @@ app.get('/api/health', (req, res) => {
 
 // 404 handler for unmatched routes
 app.use((req, res, next) => {
-  // Ignore favicon requests (already handled above, but double-check)
-  if (req.path === '/favicon.png' || req.path === '/favicon.ico') {
+  // CRITICAL: Check for favicon requests FIRST and return silently
+  // Don't log these as errors - they're just browser requests
+  if (req.path === '/favicon.png' || req.path === '/favicon.ico' || req.originalUrl === '/favicon.png' || req.originalUrl === '/favicon.ico') {
     return res.status(204).end();
   }
+  
+  // Only log actual 404 errors (not favicon requests)
   console.error(`[404] Route not found: ${req.method} ${req.originalUrl}`);
   console.error(`[404] Path: ${req.path}, Original URL: ${req.originalUrl}`);
   // Log all registered routes for debugging
   console.error(`[404] Registered todos routes:`, todosRouter.stack.map(r => {
     if (r.route) {
       const methods = Object.keys(r.route.methods).join(', ').toUpperCase();
-      return `${methods} ${r.route.path}`;
+      return `${methods} ${r.route.methods}`;
     }
     return null;
   }).filter(Boolean));
