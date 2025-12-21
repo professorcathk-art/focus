@@ -136,7 +136,8 @@ export default function RecordScreen() {
     };
   }, []);
 
-  const handlePressIn = async () => {
+  // Start recording (used by both single press and long press)
+  const startRecording = async () => {
     // Prevent multiple simultaneous calls
     if (isRecording) {
       return;
@@ -219,6 +220,22 @@ export default function RecordScreen() {
       recordingRef.current = null;
       Alert.alert("Error", "Failed to start recording. Please try again.");
     }
+  };
+
+  // Handle single press - toggle recording
+  const handlePress = async () => {
+    if (isRecording) {
+      // Stop recording
+      await handlePressOut();
+    } else {
+      // Start recording
+      await startRecording();
+    }
+  };
+
+  // Handle long press start
+  const handlePressIn = async () => {
+    await startRecording();
   };
 
   const handlePressOut = async () => {
