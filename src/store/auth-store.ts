@@ -140,9 +140,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         const timeDiff = now.getTime() - userCreatedAt.getTime();
         const secondsDiff = timeDiff / 1000;
         
-        // If user was created more than 5 seconds ago, they likely already exist
+        // If user was created more than 3 seconds ago, they likely already exist
         // (new signups should have created_at within last few seconds)
-        if (secondsDiff > 5) {
+        if (secondsDiff > 3) {
           console.log("[Auth] ⚠️ User exists (created " + Math.round(secondsDiff) + " seconds ago), redirecting to sign in");
           throw new Error("EMAIL_EXISTS");
         }

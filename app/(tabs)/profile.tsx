@@ -75,6 +75,48 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleDeleteAccount = async () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to delete your account? This action cannot be undone. All your data (ideas, todos, categories) will be permanently deleted.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Call backend to delete account
+              await apiClient.delete(API_ENDPOINTS.user.delete);
+              
+              // Sign out and clear local data
+              await signOut();
+              
+              Alert.alert(
+                "Account Deleted",
+                "Your account has been successfully deleted.",
+                [
+                  {
+                    text: "OK",
+                    onPress: () => {
+                      router.replace("/(auth)/signin");
+                    },
+                  },
+                ]
+              );
+            } catch (error) {
+              console.error("Delete account error:", error);
+              Alert.alert(
+                "Error",
+                "Failed to delete account. Please try again or contact support."
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleSendFeedback = async () => {
     if (!feedbackMessage.trim()) {
       Alert.alert("Error", "Please enter your feedback message");
