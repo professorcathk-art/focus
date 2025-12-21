@@ -120,7 +120,7 @@ export default function TodoScreen() {
     }
   }, [user?.id]);
 
-  // SIMPLIFIED loadTodos - just load and filter by date
+  // OPTIMIZED loadTodos - instant display from memory cache, then refresh
   const loadTodos = useCallback(async (useCache = true, dateOverride?: Date) => {
     if (!isAuthenticated || !user?.id || fetchingRef.current) return;
     
@@ -130,8 +130,46 @@ export default function TodoScreen() {
     
     fetchingRef.current = true;
     
-    // Try cache first if enabled
+    // STEP 1: Check memory cache FIRST (synchronous, instant!)
     if (useCache) {
+      const memoryKey = `${userId}_${dateStr}`;
+      const memoryCached = memoryCache.get(memoryKey);
+      const isMemoryCacheValid = memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000;
+      
+      if (isMemoryCacheValid && memoryCached.todos.length > 0) {
+        const filtered = memoryCached.todos.filter(todo => todo.date === dateStr);
+        if (filtered.length > 0) {
+          // INSTANT display from memory cache
+          setTodos(filtered);
+          setIsLoading(false);
+          fetchingRef.current = false;
+          
+          // Refresh from AsyncStorage/API in background (non-blocking)
+          getAllTodosIncludingPending(dateStr, userId)
+            .then(async (asyncCached) => {
+              if (asyncCached !== null && asyncCached.length > 0) {
+                const asyncFiltered = asyncCached.filter(todo => todo.date === dateStr);
+                if (asyncFiltered.length > 0 && format(selectedDate, "yyyy-MM-dd") === dateStr) {
+                  setTodos(asyncFiltered);
+                }
+              }
+              
+              // Then refresh from API
+              return apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
+            })
+            .then(async (data) => {
+              const filteredData = data.filter(todo => todo.date === dateStr);
+              await setCachedTodos(dateStr, userId, filteredData);
+              if (format(selectedDate, "yyyy-MM-dd") === dateStr) {
+                setTodos(filteredData);
+              }
+            })
+            .catch(() => {});
+          return;
+        }
+      }
+      
+      // STEP 2: Check AsyncStorage cache (async but faster than API)
       try {
         const cached = await getAllTodosIncludingPending(dateStr, userId);
         if (cached !== null && cached.length > 0) {
@@ -139,8 +177,9 @@ export default function TodoScreen() {
           if (filtered.length > 0) {
             setTodos(filtered);
             setIsLoading(false);
-            // Refresh in background
             fetchingRef.current = false;
+            
+            // Refresh from API in background
             apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr))
               .then(async (data) => {
                 const filteredData = data.filter(todo => todo.date === dateStr);
@@ -158,7 +197,7 @@ export default function TodoScreen() {
       }
     }
     
-    // Fetch from API
+    // STEP 3: Fetch from API (slowest, only if no cache)
     setIsLoading(true);
     try {
       const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
