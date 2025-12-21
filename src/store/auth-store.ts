@@ -215,6 +215,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         options: {
           redirectTo: redirectUrl, // Deep link - app will intercept this
           skipBrowserRedirect: false,
+          queryParams: {
+            // Force Google to ask for re-authentication (password/2FA)
+            // This ensures users verify their identity even if already logged into Google
+            prompt: 'select_account', // Shows account picker and asks for password/2FA
+            access_type: 'offline', // Request refresh token
+          },
         },
       });
 

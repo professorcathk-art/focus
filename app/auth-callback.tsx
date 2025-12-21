@@ -156,19 +156,31 @@ export default function AuthCallbackScreen() {
             // Set up auth state change listener FIRST (before any operations)
             let sessionReceived = false;
             let subscriptionCleanup: (() => void) | null = null;
+            let processingComplete = false; // Prevent multiple processing
             
             const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+              // Prevent processing if already complete
+              if (processingComplete || sessionReceived) {
+                return;
+              }
+              
               console.log("[Auth Callback] 🔄 Auth state changed:", event, "Has session:", !!session);
-              if (session && session.user && !sessionReceived) {
+              if (session && session.user) {
                 sessionReceived = true;
+                processingComplete = true;
                 console.log("[Auth Callback] ✅ Session received via auth state change!");
                 console.log("[Auth Callback] User ID:", session.user.id);
+                
+                // Clean up subscription immediately
+                if (subscriptionCleanup) {
+                  subscriptionCleanup();
+                }
                 
                 // Update auth store
                 await checkAuth();
                 
                 // Wait a moment for store to update
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await new Promise(resolve => setTimeout(resolve, 200));
                 
                 // Redirect immediately when session is received
                 if (!hasRedirectedRef.current) {
@@ -194,21 +206,25 @@ export default function AuthCallbackScreen() {
             subscriptionCleanup = () => subscription.unsubscribe();
             
             // Wait a moment for listener to be set up
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, 300));
             
             // Try to get session immediately (Supabase might have already set it)
-            setStatus("Checking session...");
-            const { data: immediateSession, error: sessionError } = await supabase.auth.getSession();
+            const { data: immediateSession } = await supabase.auth.getSession();
             
-            if (immediateSession?.session && !sessionReceived) {
+            if (immediateSession?.session && !sessionReceived && !processingComplete) {
               console.log("[Auth Callback] ✅ Session found immediately!");
               sessionReceived = true;
-              await checkAuth();
+              processingComplete = true;
               
               // Clean up subscription
               if (subscriptionCleanup) {
                 subscriptionCleanup();
               }
+              
+              await checkAuth();
+              
+              // Wait a moment for store to update
+              await new Promise(resolve => setTimeout(resolve, 200));
               
               // Redirect immediately
               if (!hasRedirectedRef.current) {
@@ -231,60 +247,114 @@ export default function AuthCallbackScreen() {
             }
             
             // If no immediate session, try manual exchange (for PKCE flow)
-            // Get the code verifier from SecureStore
-            const projectRef = SUPABASE_URL.split('//')[1]?.split('.')[0] || 'wqvevludffkemgicrfos';
-            const codeVerifierKey = `sb-${projectRef}-auth-code-verifier`;
-            const codeVerifier = await SecureStore.getItemAsync(codeVerifierKey);
-            
-            console.log("[Auth Callback] Code verifier found:", !!codeVerifier);
-            
-            if (codeVerifier) {
-              setStatus("Completing sign in...");
+            if (!sessionReceived && !processingComplete) {
+              // Get the code verifier from SecureStore
+              const projectRef = SUPABASE_URL.split('//')[1]?.split('.')[0] || 'wqvevludffkemgicrfos';
+              const codeVerifierKey = `sb-${projectRef}-auth-code-verifier`;
+              const codeVerifier = await SecureStore.getItemAsync(codeVerifierKey);
               
-              // Manual token exchange for PKCE flow
-              const exchangeUrl = `${SUPABASE_URL}/auth/v1/token`;
+              console.log("[Auth Callback] Code verifier found:", !!codeVerifier);
               
-              const requestBody = new URLSearchParams({
-                grant_type: 'authorization_code',
-                code: code,
-                redirect_uri: 'focus://auth-callback',
-                code_verifier: codeVerifier,
-              });
-              
-              const response = await fetch(exchangeUrl, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                  'apikey': SUPABASE_ANON_KEY,
-                },
-                body: requestBody.toString(),
-              });
-              
-              const exchangeData = await response.json();
-              
-              if (exchangeData.access_token) {
-                console.log("[Auth Callback] ✅ Token exchange successful!");
-                const { data: sessionData, error: setError } = await supabase.auth.setSession({
-                  access_token: exchangeData.access_token,
-                  refresh_token: exchangeData.refresh_token,
+              if (codeVerifier) {
+                // Manual token exchange for PKCE flow
+                const exchangeUrl = `${SUPABASE_URL}/auth/v1/token`;
+                
+                const requestBody = new URLSearchParams({
+                  grant_type: 'authorization_code',
+                  code: code,
+                  redirect_uri: 'focus://auth-callback',
+                  code_verifier: codeVerifier,
                 });
                 
-                if (!setError && sessionData?.session) {
-                  console.log("[Auth Callback] ✅ Session set successfully!");
+                const response = await fetch(exchangeUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'apikey': SUPABASE_ANON_KEY,
+                  },
+                  body: requestBody.toString(),
+                });
+                
+                const exchangeData = await response.json();
+                
+                if (exchangeData.access_token) {
+                  console.log("[Auth Callback] ✅ Token exchange successful!");
+                  const { data: sessionData, error: setError } = await supabase.auth.setSession({
+                    access_token: exchangeData.access_token,
+                    refresh_token: exchangeData.refresh_token,
+                  });
+                  
+                  if (!setError && sessionData?.session && !sessionReceived && !processingComplete) {
+                    console.log("[Auth Callback] ✅ Session set successfully!");
+                    sessionReceived = true;
+                    processingComplete = true;
+                    
+                    // Clean up subscription
+                    if (subscriptionCleanup) {
+                      subscriptionCleanup();
+                    }
+                    
+                    await checkAuth();
+                    
+                    // Wait a moment for store to update
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    
+                    // Redirect immediately
+                    if (!hasRedirectedRef.current) {
+                      hasRedirectedRef.current = true;
+                      try {
+                        router.replace("/(tabs)/record");
+                        return; // Exit early
+                      } catch (redirectError) {
+                        console.error("[Auth Callback] Redirect error:", redirectError);
+                        setTimeout(() => {
+                          try {
+                            router.replace("/(tabs)/record");
+                          } catch (e) {
+                            console.error("[Auth Callback] Fallback redirect failed:", e);
+                          }
+                        }, 500);
+                      }
+                    }
+                    return;
+                  } else if (setError) {
+                    console.error("[Auth Callback] Error setting session:", setError);
+                  }
+                } else {
+                  console.error("[Auth Callback] Token exchange failed:", exchangeData);
+                }
+              }
+            }
+            
+            // If we still don't have a session, wait for auth state change (with timeout)
+            if (!sessionReceived && !processingComplete) {
+              let attempts = 0;
+              const maxAttempts = 8; // 4 seconds total (reduced from 10)
+              
+              while (!sessionReceived && !processingComplete && attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const { data: checkData } = await supabase.auth.getSession();
+                if (checkData?.session) {
+                  console.log("[Auth Callback] ✅ Session found during wait!");
                   sessionReceived = true;
-                  await checkAuth();
+                  processingComplete = true;
                   
                   // Clean up subscription
                   if (subscriptionCleanup) {
                     subscriptionCleanup();
                   }
                   
+                  await checkAuth();
+                  
+                  // Wait a moment for store to update
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                  
                   // Redirect immediately
                   if (!hasRedirectedRef.current) {
                     hasRedirectedRef.current = true;
                     try {
                       router.replace("/(tabs)/record");
-                      return; // Exit early
+                      return;
                     } catch (redirectError) {
                       console.error("[Auth Callback] Redirect error:", redirectError);
                       setTimeout(() => {
@@ -296,35 +366,13 @@ export default function AuthCallbackScreen() {
                       }, 500);
                     }
                   }
-                  return;
-                } else if (setError) {
-                  console.error("[Auth Callback] Error setting session:", setError);
-                }
-              } else {
-                console.error("[Auth Callback] Token exchange failed:", exchangeData);
-              }
-            }
-            
-            // If we still don't have a session, wait for auth state change (with timeout)
-            if (!sessionReceived) {
-              setStatus("Finalizing sign in...");
-              let attempts = 0;
-              const maxAttempts = 10; // 5 seconds total
-              
-              while (!sessionReceived && attempts < maxAttempts) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-                const { data: checkData } = await supabase.auth.getSession();
-                if (checkData?.session) {
-                  console.log("[Auth Callback] ✅ Session found during wait!");
-                  sessionReceived = true;
-                  await checkAuth();
                   break;
                 }
                 attempts++;
               }
               
               // Clean up subscription after timeout
-              if (subscriptionCleanup) {
+              if (subscriptionCleanup && !processingComplete) {
                 setTimeout(() => {
                   subscriptionCleanup();
                 }, 1000);
