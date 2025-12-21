@@ -772,8 +772,8 @@ export default function TodoScreen() {
       {/* Header - extends to top */}
       <LinearGradient
         colors={isDark 
-          ? ["#0A0A0A", "#1A1A2E", "#16213E"] 
-          : ["#A8E6CF", "#88D8C0", "#7EC8E3", "#4ECDC4"]
+          ? ["#0A0A0A", "#1A1A2E"] 
+          : ["#A8E6CF", "#88D8C0"]
         }
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
