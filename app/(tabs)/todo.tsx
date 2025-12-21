@@ -36,6 +36,18 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function TodoScreen() {
+  // DISABLED: This page is replaced by Tasks page
+  // Return early to prevent any code execution and crashes
+  const { isAuthenticated } = useAuthStore();
+  if (!isAuthenticated) {
+    return null;
+  }
+  
+  // Even if authenticated, return null to prevent crashes
+  // Users should use the Tasks page instead
+  return null;
+  
+  /* DISABLED CODE BELOW - Using Tasks page instead
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const { isAuthenticated, user } = useAuthStore();
