@@ -427,32 +427,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       // Atomic state update to prevent crashes
       set({ user, session, isAuthenticated: true, isLoading: false });
+      
+      // Note: onAuthStateChange listener is handled in app/_layout.tsx and app/auth-callback.tsx
+      // Don't add another listener here to prevent conflicts and crashes
     } catch (error) {
       console.error("[Auth] Error in checkAuth:", error);
-      set({ user: null, session: null, isAuthenticated: false, isLoading: false });
-    }
-  },
-        
-        if (session && session.user) {
-          const user: User = {
-            id: session.user.id,
-            email: session.user.email!,
-            name: session.user.user_metadata?.name || session.user.email?.split("@")[0],
-            createdAt: session.user.created_at,
-            updatedAt: session.user.updated_at || session.user.created_at,
-          };
-          console.log("[Auth] ✅ User authenticated:", user.email);
-          set({ user, session, isAuthenticated: true, isLoading: false });
-        } else {
-          console.log("[Auth] ⚠️ User signed out or no session");
-          set({ user: null, session: null, isAuthenticated: false, isLoading: false });
-        }
-      });
-      
-      // Note: Subscription cleanup happens when component unmounts
-      // For Zustand store, we keep the listener active
-    } catch (error) {
-      console.error("[Auth] Check auth error:", error);
       set({ user: null, session: null, isAuthenticated: false, isLoading: false });
     }
   },
