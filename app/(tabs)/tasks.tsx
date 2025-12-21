@@ -28,48 +28,50 @@ export default function TasksScreen() {
   const [addingTodo, setAddingTodo] = useState(false);
   const fetchingRef = useRef(false);
 
-  // Load todos for selected date with instant cache
+  // Load todos for selected date with INSTANT cache display
   const loadTodos = useCallback(async (date: Date, skipCache = false) => {
     if (!isAuthenticated || !user?.id || fetchingRef.current) return;
     
     const dateStr = format(date, "yyyy-MM-dd");
     const userId = user.id;
     
-    // INSTANT: Check memory cache first (synchronous, 0ms delay)
+    // CRITICAL: Check memory cache FIRST (synchronous, 0ms delay) BEFORE setting loading state
     if (!skipCache) {
       const memoryKey = `${userId}_${dateStr}`;
       const memoryCached = memoryCache.get(memoryKey);
       if (memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000) {
         const filtered = memoryCached.todos.filter(todo => todo.date === dateStr);
-        if (filtered.length > 0) {
-          console.log(`[Tasks] ⚡ INSTANT: Showing ${filtered.length} tasks from memory cache`);
-          setTodos(filtered);
-          setIsLoading(false);
-          // Refresh from API in background (non-blocking)
-          fetchingRef.current = true;
-          try {
-            const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
-            const filteredData = data.filter(todo => todo.date === dateStr);
-            await setCachedTodos(dateStr, userId, filteredData);
-            if (format(selectedDate, "yyyy-MM-dd") === dateStr) {
-              setTodos(filteredData);
-            }
-          } catch (error) {
-            console.error("Background refresh error:", error);
-          } finally {
-            fetchingRef.current = false;
+        // Show cached data INSTANTLY (don't set loading state)
+        console.log(`[Tasks] ⚡ INSTANT: Showing ${filtered.length} tasks from memory cache`);
+        setTodos(filtered);
+        setIsLoading(false); // Ensure loading is false
+        
+        // Refresh from API in background (non-blocking, doesn't affect UI)
+        fetchingRef.current = true;
+        try {
+          const data = await apiClient.get<Todo[]>(API_ENDPOINTS.todos.today(dateStr));
+          const filteredData = data.filter(todo => todo.date === dateStr);
+          await setCachedTodos(dateStr, userId, filteredData);
+          // Only update if still viewing the same date
+          if (format(selectedDate, "yyyy-MM-dd") === dateStr) {
+            setTodos(filteredData);
           }
-          return; // Exit early - we have instant data!
+        } catch (error) {
+          console.error("Background refresh error:", error);
+        } finally {
+          fetchingRef.current = false;
         }
+        return; // Exit early - we have instant data!
       }
       
-      // Check AsyncStorage cache (fast, ~10-50ms)
+      // Check AsyncStorage cache (fast, ~10-50ms) - but show loading only if no cache
       try {
         const cached = await getCachedTodos(dateStr, userId);
         if (cached && cached.length > 0) {
           console.log(`[Tasks] ⚡ FAST: Showing ${cached.length} tasks from AsyncStorage cache`);
           setTodos(cached);
-          setIsLoading(false);
+          setIsLoading(false); // Ensure loading is false
+          
           // Refresh from API in background
           fetchingRef.current = true;
           try {
@@ -91,7 +93,7 @@ export default function TasksScreen() {
       }
     }
     
-    // No cache hit - fetch from API
+    // No cache hit - fetch from API (only now show loading)
     fetchingRef.current = true;
     setIsLoading(true);
     
@@ -109,11 +111,34 @@ export default function TasksScreen() {
     }
   }, [isAuthenticated, user?.id, selectedDate]);
 
-  // Load todos when date changes
+  // Load todos when date changes - with instant cache check
   useEffect(() => {
-    if (isAuthenticated && user?.id) {
-      loadTodos(selectedDate);
+    if (!isAuthenticated || !user?.id) {
+      setTodos([]);
+      setIsLoading(false);
+      return;
     }
+    
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
+    const userId = user.id;
+    
+    // INSTANT: Check memory cache synchronously FIRST (before any async operations)
+    const memoryKey = `${userId}_${dateStr}`;
+    const memoryCached = memoryCache.get(memoryKey);
+    if (memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000) {
+      const filtered = memoryCached.todos.filter(todo => todo.date === dateStr);
+      if (filtered.length > 0) {
+        console.log(`[Tasks] ⚡ INSTANT on date change: Showing ${filtered.length} tasks`);
+        setTodos(filtered);
+        setIsLoading(false);
+        // Load fresh data in background
+        loadTodos(selectedDate, false).catch(console.error);
+        return; // Exit early - instant display!
+      }
+    }
+    
+    // No memory cache - load normally (will check AsyncStorage cache in loadTodos)
+    loadTodos(selectedDate);
   }, [selectedDate, isAuthenticated, user?.id, loadTodos]);
 
   // Simple: Add todo
