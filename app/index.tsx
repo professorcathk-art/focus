@@ -24,12 +24,23 @@ export default function Index() {
   }
 
   if (isAuthenticated) {
-    return <Redirect href="/(tabs)/record" />;
+    // Use try-catch to prevent crashes
+    try {
+      return <Redirect href="/(tabs)/record" />;
+    } catch (err) {
+      console.error("[Index] Redirect error:", err);
+      return null;
+    }
   }
 
   // Check if user has seen onboarding
   // For now, always show onboarding first time
   // TODO: Add AsyncStorage check to skip onboarding after first time
-  return <Redirect href="/(auth)/onboarding" />;
+  try {
+    return <Redirect href="/(auth)/onboarding" />;
+  } catch (err) {
+    console.error("[Index] Redirect to onboarding error:", err);
+    return null;
+  }
 }
 

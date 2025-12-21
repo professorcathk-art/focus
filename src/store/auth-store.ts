@@ -131,22 +131,24 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error(error.message || "Sign up failed");
       }
 
-      // If email confirmation is required, no session will be returned
-      // BUT: Supabase might return data.user even for existing users
-      // Check if user was just created (new signup) vs existing user
-      if (!data.session && data.user) {
+      // CRITICAL: Check if user already exists BEFORE checking for email confirmation
+      // Supabase might return data.user for existing users even without an error
+      if (data.user) {
         const userCreatedAt = new Date(data.user.created_at);
         const now = new Date();
         const timeDiff = now.getTime() - userCreatedAt.getTime();
         const secondsDiff = timeDiff / 1000;
         
-        // If user was created more than 3 seconds ago, they likely already exist
-        // (new signups should have created_at within last few seconds)
-        if (secondsDiff > 3) {
+        // If user was created more than 1 second ago, they likely already exist
+        // (new signups should have created_at within milliseconds)
+        if (secondsDiff > 1) {
           console.log("[Auth] ⚠️ User exists (created " + Math.round(secondsDiff) + " seconds ago), redirecting to sign in");
           throw new Error("EMAIL_EXISTS");
         }
-        
+      }
+
+      // If email confirmation is required, no session will be returned
+      if (!data.session && data.user) {
         // User created but needs to confirm email (new signup)
         console.log("[Auth] ✅ Sign up successful - email confirmation required");
         console.log("[Auth] User ID:", data.user?.id);

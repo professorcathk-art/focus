@@ -39,7 +39,14 @@ export default function SignInScreen() {
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       console.log("[SignIn] Already authenticated, redirecting...");
-      router.replace("/(tabs)/record");
+      // Use setTimeout to prevent crash during navigation
+      setTimeout(() => {
+        try {
+          router.replace("/(tabs)/record");
+        } catch (err) {
+          console.error("[SignIn] Redirect error:", err);
+        }
+      }, 100);
     }
   }, [isAuthenticated, authLoading, router]);
   

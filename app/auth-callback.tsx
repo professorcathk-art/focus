@@ -236,25 +236,36 @@ export default function AuthCallbackScreen() {
                   hasRedirectedRef.current = true;
                   console.log("[Auth Callback] ✅ Redirecting to app...");
                   setStatus("Sign in successful!");
-                  try {
-                    router.replace("/(tabs)/record");
-                    return;
-                  } catch (err) {
-                    console.error("[Auth Callback] Redirect error:", err);
-                    setTimeout(() => {
-                      try {
-                        router.replace("/(tabs)/record");
-                      } catch (e) {
-                        console.error("[Auth Callback] Fallback redirect failed:", e);
-                      }
-                    }, 500);
-                  }
+                  
+                  // Use setTimeout to prevent crash during navigation
+                  setTimeout(() => {
+                    try {
+                      router.replace("/(tabs)/record");
+                    } catch (err) {
+                      console.error("[Auth Callback] Redirect error:", err);
+                      // Try again after delay
+                      setTimeout(() => {
+                        try {
+                          router.replace("/(tabs)/record");
+                        } catch (e) {
+                          console.error("[Auth Callback] Fallback redirect failed:", e);
+                        }
+                      }, 1000);
+                    }
+                  }, 100);
+                  return;
                 } else {
                   console.error("[Auth Callback] ❌ Session verification failed");
                   setStatus("Authentication failed");
                   if (!hasRedirectedRef.current) {
                     hasRedirectedRef.current = true;
-                    setTimeout(() => router.replace("/(auth)/signin"), 2000);
+                    setTimeout(() => {
+                      try {
+                        router.replace("/(auth)/signin");
+                      } catch (err) {
+                        console.error("[Auth Callback] Redirect to signin error:", err);
+                      }
+                    }, 2000);
                   }
                 }
               } else {
