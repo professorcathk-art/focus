@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirecting to Focus App...</title>
+    <script>
+        // Extract tokens from URL hash/query
+        const hash = window.location.hash.substring(1);
+        const query = window.location.search.substring(1);
+        
+        // Build app redirect URL with tokens
+        const appScheme = 'focus://';
+        const appPath = '/(auth)/signin';
+        
+        // If we have tokens in hash, append them
+        let redirectUrl = appScheme + appPath;
+        if (hash) {
+            redirectUrl += '#' + hash;
+        } else if (query) {
+            redirectUrl += '?' + query;
+        }
+        
+        console.log('Redirecting to:', redirectUrl);
+        
+        // Try to redirect to app
+        window.location.href = redirectUrl;
+        
+        // Fallback: show message if app doesn't open
+        setTimeout(function() {
+            document.body.innerHTML = '<h1>Redirecting...</h1><p>If the app doesn\'t open, please open the Focus app manually.</p>';
+        }, 2000);
+    </script>
+</head>
+<body>
+    <p>Redirecting to Focus app...</p>
+</body>
+</html>
+
