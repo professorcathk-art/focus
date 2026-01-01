@@ -69,14 +69,15 @@ try {
   const indexContent = "// Re-export from react-native-worklets-core\nmodule.exports = require('react-native-worklets-core/lib/commonjs/index');";
   fs.writeFileSync(path.join(workletsPath, 'index.js'), indexContent);
   
-  // 3. Create package.json
-  const pkgContent = {
-    name: 'react-native-worklets',
-    version: '1.0.0',
-    main: './index.js',
-    types: '../react-native-worklets-core/lib/typescript/index.d.ts',
-    'react-native': './index.js'
-  };
+    // 3. Create package.json with version compatible with react-native-reanimated
+    // react-native-reanimated expects version 0.5.x, 0.6.x, or 0.7.x
+    const pkgContent = {
+      name: 'react-native-worklets',
+      version: '0.5.1', // Must match react-native-reanimated's expected range
+      main: './index.js',
+      types: '../react-native-worklets-core/lib/typescript/index.d.ts',
+      'react-native': './index.js'
+    };
   fs.writeFileSync(
     path.join(workletsPath, 'package.json'),
     JSON.stringify(pkgContent, null, 2)
