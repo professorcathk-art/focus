@@ -202,21 +202,26 @@ export default function TasksScreen() {
       const memoryKey = `${userId}_${dateStr}`;
       const memoryCached = memoryCache.get(memoryKey);
       if (memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000) {
-        const filtered = memoryCached.todos.filter(todo => todo.date === dateStr);
-        if (filtered.length > 0) {
-          console.log(`[Tasks] ⚡ INSTANT on date change: Showing ${filtered.length} tasks for ${dateStr} from memory cache`);
-          // Set current loading date BEFORE any async operations
-          currentLoadingDateRef.current = dateStr;
-          // Show cached data INSTANTLY (don't clear todos, don't show loading)
-          setTodos(filtered);
-          setIsLoading(false);
-          // Load fresh data in background (with error handling)
-          loadTodos(selectedDate, false).catch((error) => {
-            console.error('[Tasks] Background load error:', error);
-            // Don't crash - just log the error
-          });
-          return; // Exit early - instant display!
-        }
+        // Filter todos for this specific date (todos already have date property)
+        const filtered = memoryCached.todos.filter(todo => {
+          // Handle both string and Date formats
+          const todoDate = typeof todo.date === 'string' ? todo.date : format(new Date(todo.date), "yyyy-MM-dd");
+          return todoDate === dateStr;
+        });
+        
+        // Show even if empty (0 tasks is valid state)
+        console.log(`[Tasks] ⚡ INSTANT on date change: Showing ${filtered.length} tasks for ${dateStr} from memory cache`);
+        // Set current loading date BEFORE any async operations
+        currentLoadingDateRef.current = dateStr;
+        // Show cached data INSTANTLY (don't clear todos, don't show loading)
+        setTodos(filtered);
+        setIsLoading(false);
+        // Load fresh data in background (with error handling)
+        loadTodos(selectedDate, false).catch((error) => {
+          console.error('[Tasks] Background load error:', error);
+          // Don't crash - just log the error
+        });
+        return; // Exit early - instant display!
       }
       
       // No memory cache - clear todos and show loading
@@ -307,12 +312,40 @@ export default function TasksScreen() {
     if (!todo) return;
     
     const newCompleted = !todo.completed;
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
+    const userId = user?.id;
+    
+    // Update state immediately
     setTodos(prev => prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t));
+    
+    // Update cache immediately
+    if (userId) {
+      try {
+        const memoryKey = `${userId}_${dateStr}`;
+        const memoryCached = memoryCache.get(memoryKey);
+        if (memoryCached) {
+          memoryCache.set(memoryKey, {
+            todos: memoryCached.todos.map(t => t.id === id ? { ...t, completed: newCompleted } : t),
+            timestamp: memoryCached.timestamp,
+          });
+        }
+        
+        // Update AsyncStorage cache
+        const cached = await getCachedTodos(dateStr, userId);
+        if (cached) {
+          const updatedTodos = cached.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
+          await setCachedTodos(dateStr, userId, updatedTodos);
+        }
+      } catch (cacheError) {
+        console.error("[Tasks] Cache update error on toggle:", cacheError);
+      }
+    }
     
     try {
       await apiClient.put(API_ENDPOINTS.todos.update(id), { completed: newCompleted });
     } catch (error) {
       console.error("Toggle error:", error);
+      // Revert state on error
       setTodos(prev => prev.map(t => t.id === id ? { ...t, completed: todo.completed } : t));
       Alert.alert("Error", "Failed to update todo");
     }
@@ -326,7 +359,35 @@ export default function TasksScreen() {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
+          const dateStr = format(selectedDate, "yyyy-MM-dd");
+          const userId = user?.id;
+          
+          // Update state immediately
           setTodos(prev => prev.filter(t => t.id !== id));
+          
+          // Update cache immediately
+          if (userId) {
+            try {
+              const memoryKey = `${userId}_${dateStr}`;
+              const memoryCached = memoryCache.get(memoryKey);
+              if (memoryCached) {
+                memoryCache.set(memoryKey, {
+                  todos: memoryCached.todos.filter(t => t.id !== id),
+                  timestamp: memoryCached.timestamp,
+                });
+              }
+              
+              // Update AsyncStorage cache
+              const cached = await getCachedTodos(dateStr, userId);
+              if (cached) {
+                const updatedTodos = cached.filter(t => t.id !== id);
+                await setCachedTodos(dateStr, userId, updatedTodos);
+              }
+            } catch (cacheError) {
+              console.error("[Tasks] Cache update error on delete:", cacheError);
+            }
+          }
+          
           try {
             await apiClient.delete(API_ENDPOINTS.todos.delete(id));
           } catch (error) {
