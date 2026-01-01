@@ -38,6 +38,7 @@ export default function RecordScreen() {
   const handlePressOutDebounceRef = useRef<number | null>(null); // Debounce ref to prevent rapid successive calls
   const isLongPressRef = useRef(false); // Track if this is a long press vs tap
   const pressStartTimeRef = useRef<number | null>(null); // Track when press started
+  const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Timeout to detect quick tap
   const [textInput, setTextInput] = useState("");
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null); // null = auto-categorize
   const [showNewClusterModal, setShowNewClusterModal] = useState(false);
@@ -225,11 +226,18 @@ export default function RecordScreen() {
     }
   };
 
-  // Handle single press - toggle recording (ONLY for tap, not long press)
+  // Handle single press - toggle recording (for tap)
   const handlePress = async () => {
+    // Clear any pending tap timeout (this was a quick tap)
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+      tapTimeoutRef.current = null;
+    }
+    
     // Only handle tap if this was NOT a long press
     if (isLongPressRef.current) {
       isLongPressRef.current = false; // Reset for next interaction
+      pressStartTimeRef.current = null;
       return;
     }
     
@@ -247,20 +255,40 @@ export default function RecordScreen() {
       // Start recording on tap
       await startRecording();
     }
+    
+    // Reset press tracking
+    pressStartTimeRef.current = null;
   };
 
   // Handle long press start
   const handlePressIn = async () => {
-    // Mark as long press and record start time
-    isLongPressRef.current = false; // Will be set to true if held long enough
+    // Reset long press flag
+    isLongPressRef.current = false;
     pressStartTimeRef.current = Date.now();
     
-    // Don't start recording immediately on pressIn - wait to see if it's a tap or hold
-    // This prevents handlePressIn from interfering with tap-to-record
-    // Recording will start only if user holds for > 200ms (detected in handlePressOut)
+    // Clear any existing tap timeout
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+    }
+    
+    // Set a timeout to detect if this is a quick tap (< 150ms)
+    // If onPressOut fires before this timeout, it's a quick tap
+    // If this timeout fires, we know it's being held (potential long press)
+    tapTimeoutRef.current = setTimeout(() => {
+      // If we get here, the press has been held for > 150ms
+      // This means it's likely a long press, so don't start recording on tap
+      // Recording will start on handlePressOut if held > 200ms
+      tapTimeoutRef.current = null;
+    }, 150);
   };
 
   const handlePressOut = async () => {
+    // Clear tap timeout if it exists (this means it was a quick tap)
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+      tapTimeoutRef.current = null;
+    }
+    
     // Check if this was a long press (held for > 200ms)
     if (pressStartTimeRef.current) {
       const holdDuration = Date.now() - pressStartTimeRef.current;
@@ -272,6 +300,11 @@ export default function RecordScreen() {
           pressStartTimeRef.current = null;
           return; // Exit early - recording started
         }
+      } else {
+        // Quick tap - let handlePress handle it
+        // Don't mark as long press, don't start recording here
+        pressStartTimeRef.current = null;
+        return;
       }
       pressStartTimeRef.current = null;
     }
@@ -1046,7 +1079,7 @@ export default function RecordScreen() {
                   )}
 
                   <Text className="text-sm text-gray-500 dark:text-gray-400 mt-6 text-center px-4">
-                    {isRecording ? "Tap to stop • Release when done" : "Double tap to record • Hold to record"}
+                    {isRecording ? "Tap to stop • Release when done" : "Tap to record • Hold to record"}
                   </Text>
                 </View>
               </View>
