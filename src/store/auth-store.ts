@@ -327,8 +327,22 @@ export const useAuthStore = create<AuthState>((set) => ({
         console.log("[Auth] ✅ Got redirect URL from browser:", result.url);
         
         // Parse the URL to extract code or access_token
-        const url = new URL(result.url);
-        const code = url.searchParams.get('code') || url.hash.match(/code=([^&]+)/)?.[1];
+        // Handle both regular URLs and deep links (focus://)
+        let code: string | null = null;
+        let hasAccessToken = false;
+        
+        try {
+          // Try parsing as regular URL first
+          const url = new URL(result.url);
+          code = url.searchParams.get('code') || url.hash.match(/code=([^&]+)/)?.[1] || null;
+          hasAccessToken = !!url.searchParams.get('access_token') || url.hash.includes('access_token');
+        } catch (urlError) {
+          // If URL parsing fails (e.g., deep link), parse manually
+          console.log("[Auth] URL parsing failed, parsing manually:", urlError);
+          const codeMatch = result.url.match(/[?&#]code=([^&]+)/);
+          code = codeMatch ? codeMatch[1] : null;
+          hasAccessToken = result.url.includes('access_token');
+        }
         
         if (code) {
           console.log("[Auth] ✅ Found OAuth code, exchanging for session...");
@@ -356,7 +370,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         }
         
         // If no code but URL contains access_token or session info, check session
-        if (url.searchParams.get('access_token') || url.hash.includes('access_token')) {
+        if (hasAccessToken) {
           console.log("[Auth] ✅ Found access_token in URL, checking session...");
           await new Promise(resolve => setTimeout(resolve, 500));
           const { data: sessionData } = await supabase.auth.getSession();
