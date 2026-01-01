@@ -137,6 +137,9 @@ export default function RecordScreen() {
       if (recordingRef.current) {
         recordingRef.current.stopAndUnloadAsync().catch(() => {});
       }
+      if (tapTimeoutRef.current) {
+        clearTimeout(tapTimeoutRef.current);
+      }
     };
   }, []);
 
