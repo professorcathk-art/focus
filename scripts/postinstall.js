@@ -85,6 +85,7 @@ try {
   
   // 4. Create RNWorklets.podspec for CocoaPods (CRITICAL - react-native-reanimated depends on this)
   // Note: Podfile explicitly references this podspec with :path
+  // This podspec re-exports headers from react-native-worklets-core so react-native-reanimated can find them
   const podspecContent = `require "json"
 
 package = JSON.parse(File.read(File.join(__dir__, "package.json")))
@@ -104,9 +105,15 @@ Pod::Spec.new do |s|
   # Point to react-native-worklets-core podspec
   s.dependency "react-native-worklets-core"
   
-  # No source files - this is just a wrapper
-  s.source_files = []
-  s.public_header_files = []
+  # Re-export headers from react-native-worklets-core
+  # Use absolute path from the podspec location
+  worklets_core_path = File.join(File.dirname(__FILE__), "..", "react-native-worklets-core")
+  s.source_files = File.join(worklets_core_path, "cpp", "**", "*.{h,cpp}")
+  s.public_header_files = File.join(worklets_core_path, "cpp", "**", "*.h")
+  
+  # Map headers to worklets/ namespace that react-native-reanimated expects
+  s.header_mappings_dir = File.join(worklets_core_path, "cpp")
+  s.header_dir = "worklets"
 end
 `;
   fs.writeFileSync(path.join(workletsPath, 'RNWorklets.podspec'), podspecContent);
