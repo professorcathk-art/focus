@@ -36,6 +36,8 @@ export default function RecordScreen() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const savingRef = useRef(false); // Prevent duplicate saves
   const handlePressOutDebounceRef = useRef<number | null>(null); // Debounce ref to prevent rapid successive calls
+  const isLongPressRef = useRef(false); // Track if this is a long press vs tap
+  const pressStartTimeRef = useRef<number | null>(null); // Track when press started
   const [textInput, setTextInput] = useState("");
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null); // null = auto-categorize
   const [showNewClusterModal, setShowNewClusterModal] = useState(false);
@@ -223,31 +225,52 @@ export default function RecordScreen() {
     }
   };
 
-  // Handle single press - toggle recording
-  // IMPORTANT: Only toggle if NOT currently processing a press (to prevent conflicts with hold-to-record)
+  // Handle single press - toggle recording (ONLY for tap, not long press)
   const handlePress = async () => {
-    // Prevent tap during hold-to-record transition
+    // Only handle tap if this was NOT a long press
+    if (isLongPressRef.current) {
+      isLongPressRef.current = false; // Reset for next interaction
+      return;
+    }
+    
+    // Prevent tap during transitions
     if (status === "transcribing" || status === "saved") {
       return;
     }
     
     if (isRecording) {
-      // Only stop if recording for at least 0.5 seconds (prevent accidental taps)
+      // Stop recording on tap
       if (recordingTime >= 0.5) {
         await handlePressOut();
       }
     } else {
-      // Start recording
+      // Start recording on tap
       await startRecording();
     }
   };
 
   // Handle long press start
   const handlePressIn = async () => {
-    await startRecording();
+    // Mark as long press and record start time
+    isLongPressRef.current = false; // Will be set to true if held long enough
+    pressStartTimeRef.current = Date.now();
+    
+    // Only start recording if not already recording
+    if (!isRecording) {
+      await startRecording();
+    }
   };
 
   const handlePressOut = async () => {
+    // Check if this was a long press (held for > 200ms)
+    if (pressStartTimeRef.current) {
+      const holdDuration = Date.now() - pressStartTimeRef.current;
+      if (holdDuration > 200) {
+        isLongPressRef.current = true; // Mark as long press
+      }
+      pressStartTimeRef.current = null;
+    }
+    
     // Prevent multiple calls
     if (!isRecording || !recordingRef.current) {
       return;

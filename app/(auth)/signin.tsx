@@ -87,16 +87,8 @@ export default function SignInScreen() {
       );
     }
     
-    try {
-      return <Redirect href="/(tabs)/record" />;
-    } catch (err) {
-      console.error("[SignIn] Redirect error:", err);
-      return (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
-          <ActivityIndicator size="large" color="#34C759" />
-        </View>
-      );
-    }
+    // Use Redirect component (safer than router.replace for auth redirects)
+    return <Redirect href="/(tabs)/record" />;
   }
   
   // Animation values for fluid green elements

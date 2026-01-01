@@ -47,21 +47,8 @@ export default function Index() {
       );
     }
     
-    // Use try-catch to prevent crashes
-    try {
-      return <Redirect href="/(tabs)/record" />;
-    } catch (err) {
-      console.error("[Index] Redirect error:", err);
-      // Fallback: try again after a delay
-      setTimeout(() => {
-        setShouldRedirect(false);
-      }, 1000);
-      return (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
-          <ActivityIndicator size="large" color="#34C759" />
-        </View>
-      );
-    }
+    // Use Redirect component (safer than router.replace for initial load)
+    return <Redirect href="/(tabs)/record" />;
   }
 
   // Check if user has seen onboarding

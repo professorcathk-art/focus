@@ -252,6 +252,7 @@ export default function TasksScreen() {
     
     const todoText = input.trim();
     const todoDate = format(selectedDate, "yyyy-MM-dd");
+    const userId = user.id;
     setInput("");
     setAddingTodo(true);
     
@@ -260,7 +261,37 @@ export default function TasksScreen() {
         text: todoText,
         date: todoDate,
       });
+      
+      // Update state immediately
       setTodos(prev => [...prev, newTodo]);
+      
+      // CRITICAL: Update cache immediately so it persists when switching dates
+      try {
+        // Update memory cache
+        const memoryKey = `${userId}_${todoDate}`;
+        const memoryCached = memoryCache.get(memoryKey);
+        if (memoryCached) {
+          memoryCache.set(memoryKey, {
+            todos: [...memoryCached.todos, newTodo],
+            timestamp: Date.now(),
+          });
+        } else {
+          // Create new cache entry
+          memoryCache.set(memoryKey, {
+            todos: [newTodo],
+            timestamp: Date.now(),
+          });
+        }
+        
+        // Update AsyncStorage cache
+        const cached = await getCachedTodos(todoDate, userId);
+        const updatedTodos = cached ? [...cached, newTodo] : [newTodo];
+        await setCachedTodos(todoDate, userId, updatedTodos);
+        console.log(`[Tasks] ✅ Updated cache for ${todoDate} with new todo`);
+      } catch (cacheError) {
+        console.error("[Tasks] Cache update error:", cacheError);
+        // Don't fail the operation if cache update fails
+      }
     } catch (error) {
       console.error("Add todo error:", error);
       Alert.alert("Error", "Failed to add todo");

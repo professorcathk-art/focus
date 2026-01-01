@@ -67,8 +67,26 @@ export default function ProfileScreen() {
           text: "Sign Out",
           style: "destructive",
           onPress: async () => {
-            await signOut();
-            router.replace("/(auth)/signin");
+            try {
+              await signOut();
+              // Use setTimeout to prevent navigation crash
+              setTimeout(() => {
+                try {
+                  router.replace("/(auth)/signin");
+                } catch (navError) {
+                  console.error("[Profile] Navigation error after sign out:", navError);
+                  // Fallback: navigate to root
+                  try {
+                    router.replace("/");
+                  } catch (fallbackError) {
+                    console.error("[Profile] Fallback navigation also failed:", fallbackError);
+                  }
+                }
+              }, 300);
+            } catch (error) {
+              console.error("[Profile] Sign out error:", error);
+              Alert.alert("Error", "Failed to sign out. Please try again.");
+            }
           },
         },
       ]
