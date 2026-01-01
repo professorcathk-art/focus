@@ -285,10 +285,10 @@ export default function AuthCallbackScreen() {
               body: requestBody.toString(),
             });
             
-            const exchangeData = await response.json();
+            const manualExchangeData = await response.json();
             
-            if (exchangeData.error) {
-              console.error("[Auth Callback] ❌ Token exchange error:", exchangeData);
+            if (manualExchangeData.error) {
+              console.error("[Auth Callback] ❌ Token exchange error:", manualExchangeData);
               setStatus("Authentication failed");
               if (!hasRedirectedRef.current) {
                 hasRedirectedRef.current = true;
@@ -297,13 +297,13 @@ export default function AuthCallbackScreen() {
               return;
             }
             
-            if (exchangeData.access_token) {
+            if (manualExchangeData.access_token) {
               console.log("[Auth Callback] ✅ Token exchange successful!");
               
               // Set the session
               const { data: setSessionData, error: setError } = await supabase.auth.setSession({
-                access_token: exchangeData.access_token,
-                refresh_token: exchangeData.refresh_token,
+                access_token: manualExchangeData.access_token,
+                refresh_token: manualExchangeData.refresh_token,
               });
               
               if (setError) {
