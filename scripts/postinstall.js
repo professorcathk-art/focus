@@ -106,14 +106,22 @@ Pod::Spec.new do |s|
   s.dependency "react-native-worklets-core"
   
   # Re-export headers from react-native-worklets-core
-  # Use absolute path from the podspec location
+  # Path relative to podspec location
   worklets_core_path = File.join(File.dirname(__FILE__), "..", "react-native-worklets-core")
   s.source_files = File.join(worklets_core_path, "cpp", "**", "*.{h,cpp}")
   s.public_header_files = File.join(worklets_core_path, "cpp", "**", "*.h")
   
   # Map headers to worklets/ namespace that react-native-reanimated expects
+  # This makes headers available as <worklets/...> instead of <cpp/...>
   s.header_mappings_dir = File.join(worklets_core_path, "cpp")
   s.header_dir = "worklets"
+  
+  # Ensure headers are searchable
+  s.pod_target_xcconfig = {
+    "HEADER_SEARCH_PATHS" => [
+      "\\"$(PODS_TARGET_SRCROOT)/#{File.join(worklets_core_path, "cpp")}\\"",
+    ].join(" ")
+  }
 end
 `;
   fs.writeFileSync(path.join(workletsPath, 'RNWorklets.podspec'), podspecContent);
