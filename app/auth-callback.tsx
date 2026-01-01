@@ -175,8 +175,14 @@ export default function AuthCallbackScreen() {
                     router.replace("/(tabs)/record");
                   } catch (err) {
                     console.error("[Auth Callback] Redirect error:", err);
+                    // Fallback: try navigating to index which will handle redirect
+                    try {
+                      router.replace("/");
+                    } catch (fallbackErr) {
+                      console.error("[Auth Callback] Fallback redirect also failed:", fallbackErr);
+                    }
                   }
-                }, 100);
+                }, 500);
               }
               return; // Success - exit early
             }
@@ -202,8 +208,14 @@ export default function AuthCallbackScreen() {
                     router.replace("/(tabs)/record");
                   } catch (err) {
                     console.error("[Auth Callback] Redirect error:", err);
+                    // Fallback: try navigating to index which will handle redirect
+                    try {
+                      router.replace("/");
+                    } catch (fallbackErr) {
+                      console.error("[Auth Callback] Fallback redirect also failed:", fallbackErr);
+                    }
                   }
-                }, 100);
+                }, 500);
               }
               return;
             }
