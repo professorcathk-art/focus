@@ -56,9 +56,10 @@ export default function SignInScreen() {
   useEffect(() => {
     if (!authLoading && isAuthenticated && !shouldRedirect) {
       console.log("[SignIn] Authenticated, preparing redirect...");
+      // Increased delay to prevent crashes - wait for auth state and navigation stack to settle
       const timer = setTimeout(() => {
         setShouldRedirect(true);
-      }, 800); // Increased delay to ensure auth state is fully settled
+      }, 1500); // Increased from 800ms to 1500ms for better stability
       return () => clearTimeout(timer);
     }
   }, [isAuthenticated, authLoading, shouldRedirect]);
@@ -152,14 +153,17 @@ export default function SignInScreen() {
     try {
       await signIn(email, password);
       // Wait longer for auth state to fully update and navigation stack to be ready
-      // Increased delay to prevent crashes
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Increased delay to prevent crashes - don't clear loading, let redirect handle it
+      await new Promise(resolve => setTimeout(resolve, 2000));
       // Don't redirect here - let useEffect handle it with Redirect component
       // This prevents crashes from race conditions
-      // Don't clear loading - let redirect handle it
+      // Loading state will be cleared by redirect or error handler
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed");
+      const errorMsg = err instanceof Error ? err.message : "Sign in failed";
+      setError(errorMsg);
       setIsLoading(false);
+      // Reset redirect flag on error
+      setShouldRedirect(false);
     }
   };
 
@@ -185,11 +189,11 @@ export default function SignInScreen() {
     try {
       await signInWithApple();
       // Wait longer for auth state to fully update and navigation stack to be ready
-      // Increased delay to prevent crashes
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Increased delay to prevent crashes - don't clear loading, let redirect handle it
+      await new Promise(resolve => setTimeout(resolve, 2000));
       // Don't redirect here - let useEffect handle it with Redirect component
       // This prevents crashes from race conditions
-      // Don't clear loading - let redirect handle it
+      // Loading state will be cleared by redirect or error handler
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Apple sign in failed";
       // Don't show error if user cancelled
@@ -197,6 +201,8 @@ export default function SignInScreen() {
         setError(errorMessage);
       }
       setIsLoading(false);
+      // Reset redirect flag on error
+      setShouldRedirect(false);
     }
   };
 

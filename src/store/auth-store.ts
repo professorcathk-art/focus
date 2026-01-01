@@ -31,7 +31,7 @@ interface AuthState {
   checkAuth: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
@@ -356,7 +356,7 @@ export const useAuthStore = create<AuthState>((set) => ({
             const { data: sessionData } = await supabase.auth.getSession();
             if (sessionData?.session) {
               console.log("[Auth] ✅ Session found after code exchange error");
-              await checkAuth();
+              await get().checkAuth();
               return;
             }
             throw new Error(exchangeError.message || "Failed to exchange code for session");
@@ -364,7 +364,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           
           if (exchangeData?.session) {
             console.log("[Auth] ✅ Code exchanged successfully, session created");
-            await checkAuth();
+            await get().checkAuth();
             return;
           }
         }
@@ -376,7 +376,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           const { data: sessionData } = await supabase.auth.getSession();
           if (sessionData?.session) {
             console.log("[Auth] ✅ Session found from access_token");
-            await checkAuth();
+            await get().checkAuth();
             return;
           }
         }
@@ -388,7 +388,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const { data: sessionData } = await supabase.auth.getSession();
       if (sessionData?.session) {
         console.log("[Auth] ✅ Session found after wait");
-        await checkAuth();
+        await get().checkAuth();
         return;
       }
       

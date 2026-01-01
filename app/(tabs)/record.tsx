@@ -539,23 +539,17 @@ export default function RecordScreen() {
           "Please record for at least 1 second. The recording was not saved.",
           [{ text: "OK" }]
         );
-      } else if (errorMessage.includes("No words detected") || errorMessage.includes("no words")) {
-        // No words detected in recording
-        Alert.alert(
-          "No Words Detected",
-          "No words were detected in the recording. Please try speaking more clearly or check your microphone.",
-          [{ text: "OK" }]
-        );
-      } else if (errorMessage.includes("Transcription failed") || errorMessage.includes("no transcript")) {
-        // Transcription error - likely due to API issue
-        Alert.alert(
-          "Transcription Failed",
-          "Could not transcribe the recording. Please try recording again.",
-          [{ text: "OK" }]
-        );
       } else {
+        // Sanitize error messages - don't show technical Supabase details
+        const isTranscriptionError = 
+          errorMessage.toLowerCase().includes("transcript") ||
+          errorMessage.toLowerCase().includes("transcription") ||
+          errorMessage.toLowerCase().includes("no words") ||
+          errorMessage.toLowerCase().includes("words detected") ||
+          errorMessage.toLowerCase().includes("supabase") ||
+          errorMessage.toLowerCase().includes("from(");
+        
         // Filter out false errors from expo-av (e.g., "recorder does not exist" when recording actually worked)
-        // Only show error if it's a real error, not a false positive
         const isFalseError = 
           errorMessage.toLowerCase().includes("recorder does not exist") || 
           errorMessage.toLowerCase().includes("preparetorecordasync") ||
@@ -563,10 +557,24 @@ export default function RecordScreen() {
           (errorMessage.toLowerCase().includes("recording") && errorMessage.toLowerCase().includes("not found") && status === "saved") ||
           (errorMessage.toLowerCase().includes("recorder") && errorMessage.toLowerCase().includes("exist") && status === "saved");
         
-        if (!isFalseError) {
+        if (isTranscriptionError && !isFalseError) {
+          // Show clean message for transcription errors
+          Alert.alert(
+            "Transcription Error",
+            "Transcript not detected. Please try recording again.",
+            [{ text: "OK" }]
+          );
+        } else if (!isFalseError) {
+          // Show generic error for other errors (but sanitize Supabase details)
+          const sanitizedMessage = errorMessage
+            .replace(/Supabase\.from\([^)]+\)/g, '')
+            .replace(/supabase[^ ]*/gi, '')
+            .replace(/from\([^)]+\)/g, '')
+            .trim() || "Could not process recording. Please try again.";
+          
           Alert.alert(
             "Recording Failed",
-            errorMessage || "Could not process recording. Please try again.",
+            sanitizedMessage,
             [{ text: "OK" }]
           );
         } else {
@@ -1212,11 +1220,18 @@ export default function RecordScreen() {
                         <Ionicons name="musical-notes" size={18} color="#FF6B6B" />
                         <Text className="text-sm text-gray-500 dark:text-gray-400 ml-2 font-medium">
                           {idea.transcriptionError ? (
-                            idea.transcriptionError.includes("No words detected") || idea.transcriptionError.includes("no words") 
-                              ? "Recording too short - no words detected"
-                              : idea.transcriptionError.includes("No transcript returned") || idea.transcriptionError.includes("Transcription failed")
-                              ? "Recording too short - please try again"
-                              : "Transcription error - please try again"
+                            // Sanitize error messages - don't show technical Supabase details
+                            idea.transcriptionError.toLowerCase().includes("no words") || 
+                            idea.transcriptionError.toLowerCase().includes("no words detected") ||
+                            idea.transcriptionError.toLowerCase().includes("words detected")
+                              ? "Transcript not detected"
+                              : idea.transcriptionError.toLowerCase().includes("transcript") ||
+                                idea.transcriptionError.toLowerCase().includes("transcription") ||
+                                idea.transcriptionError.toLowerCase().includes("supabase") ||
+                                idea.transcriptionError.toLowerCase().includes("from(") ||
+                                idea.transcriptionError.toLowerCase().includes("error")
+                              ? "Transcript not detected"
+                              : "Transcript not detected"
                           ) : "Transcribing audio..."}
                         </Text>
                       </View>
