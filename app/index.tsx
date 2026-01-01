@@ -20,11 +20,6 @@ export default function Index() {
     }
   }, [checkAuth]);
 
-  // Don't redirect while loading or if we haven't checked yet
-  if (isLoading || !hasCheckedRef.current) {
-    return null; // TODO: Add loading screen
-  }
-
   useEffect(() => {
     if (isAuthenticated && !shouldRedirect) {
       // Longer delay to ensure auth state and navigation stack are fully settled
@@ -35,6 +30,11 @@ export default function Index() {
       return () => clearTimeout(timer);
     }
   }, [isAuthenticated, shouldRedirect]);
+
+  // Don't redirect while loading or if we haven't checked yet
+  if (isLoading || !hasCheckedRef.current) {
+    return null; // TODO: Add loading screen
+  }
 
   if (isAuthenticated) {
     // Wait for redirect flag to prevent race conditions

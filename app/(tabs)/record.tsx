@@ -35,6 +35,7 @@ export default function RecordScreen() {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const savingRef = useRef(false); // Prevent duplicate saves
+  const handlePressOutDebounceRef = useRef<number | null>(null); // Debounce ref to prevent rapid successive calls
   const [textInput, setTextInput] = useState("");
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null); // null = auto-categorize
   const [showNewClusterModal, setShowNewClusterModal] = useState(false);
@@ -246,9 +247,6 @@ export default function RecordScreen() {
     await startRecording();
   };
 
-  // Debounce ref to prevent rapid successive calls
-  const handlePressOutDebounceRef = useRef<number | null>(null);
-  
   const handlePressOut = async () => {
     // Prevent multiple calls
     if (!isRecording || !recordingRef.current) {

@@ -66,20 +66,18 @@ export default function SignInScreen() {
     checkAppleAuth();
   }, []);
   
+  // Handle redirect when authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && !shouldRedirect) {
+      const timer = setTimeout(() => {
+        setShouldRedirect(true);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, authLoading, shouldRedirect]);
+
   // Don't render if already authenticated - but add delay to prevent crash
   if (!authLoading && isAuthenticated) {
-    // Use a small delay to ensure navigation stack is ready
-    const [shouldRedirect, setShouldRedirect] = useState(false);
-    
-    useEffect(() => {
-      if (isAuthenticated) {
-        const timer = setTimeout(() => {
-          setShouldRedirect(true);
-        }, 300);
-        return () => clearTimeout(timer);
-      }
-    }, [isAuthenticated]);
-    
     if (!shouldRedirect) {
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
