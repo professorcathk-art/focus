@@ -432,11 +432,21 @@ export default function RecordScreen() {
           [{ text: "OK" }]
         );
       } else {
-        Alert.alert(
-          "Recording Failed",
-          errorMessage || "Could not process recording. Please try again.",
-          [{ text: "OK" }]
-        );
+        // Filter out false errors from expo-av (e.g., "recorder does not exist" when recording actually worked)
+        // Only show error if it's a real error, not a false positive
+        const isFalseError = errorMessage.includes("recorder does not exist") || 
+                            errorMessage.includes("prepareToRecordAsync") ||
+                            (errorMessage.includes("recording") && errorMessage.includes("not found") && status === "saved");
+        
+        if (!isFalseError) {
+          Alert.alert(
+            "Recording Failed",
+            errorMessage || "Could not process recording. Please try again.",
+            [{ text: "OK" }]
+          );
+        } else {
+          console.log("[Record] Ignoring false error:", errorMessage);
+        }
       }
 
       // Clean up
@@ -527,6 +537,7 @@ export default function RecordScreen() {
     setIsAssigningCategory(false); // Reset assignment state at start
     
     // Show loading indicator if auto-categorize is enabled (no manual category selected)
+    // Keep showing until category is assigned or suggestion modal appears
     if (!selectedClusterId) {
       setIsCategorizing(true);
     }
@@ -622,10 +633,10 @@ export default function RecordScreen() {
         }
       } else {
         // No manual selection - check backend response
-        setIsCategorizing(false); // Stop loading indicator
         if (newIdea.suggestedClusterLabel && !newIdea.clusterId) {
           // Backend suggests a new category - show modal BEFORE marking as saved
           console.log(`[Frontend] Backend suggested category: "${newIdea.suggestedClusterLabel}"`);
+          setIsCategorizing(false); // Stop loading indicator when suggestion appears
           setSuggestedCategoryLabel(newIdea.suggestedClusterLabel);
           setEditableCategoryName(newIdea.suggestedClusterLabel);
           setPendingIdeaId(newIdea.id);
@@ -635,6 +646,7 @@ export default function RecordScreen() {
         } else if (newIdea.clusterId) {
           // Backend auto-assigned to existing cluster - mark as saved
           console.log(`[Frontend] Backend auto-assigned idea ${newIdea.id} to cluster ${newIdea.clusterId}`);
+          setIsCategorizing(false); // Stop loading indicator
           setStatus("saved");
           // Refetch in background - don't block on errors
           refetch().catch(err => console.error("Error refetching ideas:", err));
@@ -642,6 +654,7 @@ export default function RecordScreen() {
           setTimeout(() => setStatus("idle"), 2000);
         } else {
           // No assignment and no suggestion - mark as saved
+          setIsCategorizing(false); // Stop loading indicator
           setStatus("saved");
           // Refetch in background - don't block on errors
           refetch().catch(err => console.error("Error refetching ideas:", err));
@@ -668,6 +681,7 @@ export default function RecordScreen() {
       
       setStatus("idle");
       setIsAssigningCategory(false);
+      setIsCategorizing(false); // Stop loading indicator on error
       setSelectedClusterId(null);
       
       // Handle authentication errors
@@ -920,26 +934,6 @@ export default function RecordScreen() {
               {/* Record Button Container */}
               <View className="py-6 items-center" style={{ minHeight: 200 }}>
                 <View className="items-center">
-                  {/* Status Text */}
-                  {status !== "idle" && (
-                    <View className="items-center mb-6">
-                      <Text className="text-lg font-medium text-gray-700 dark:text-gray-300">
-                        {status === "recording" && `Recording... ${formatTime(recordingTime)}`}
-                        {status === "transcribing" && "Transcribing..."}
-                        {status === "saved" && !isAssigningCategory && "✓ Idea saved!"}
-                        {isAssigningCategory && "Assigning category..."}
-                      </Text>
-                      {isCategorizing && status === "idle" && (
-                        <View className="flex-row items-center mt-2">
-                          <ActivityIndicator size="small" color="#34C759" style={{ marginRight: 8 }} />
-                          <Text className="text-sm text-gray-500 dark:text-gray-400">
-                            Suggesting category...
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-
                   {/* Record Button - fixed position container */}
                   <View
                     style={{
@@ -976,6 +970,28 @@ export default function RecordScreen() {
                       />
                     </TouchableOpacity>
                   </View>
+
+                  {/* Status Text - BELOW button to prevent position shift */}
+                  {status !== "idle" && (
+                    <View className="items-center mt-6">
+                      <Text className="text-lg font-medium text-gray-700 dark:text-gray-300">
+                        {status === "recording" && `Recording... ${formatTime(recordingTime)}`}
+                        {status === "transcribing" && "Transcribing..."}
+                        {status === "saved" && !isAssigningCategory && "✓ Idea saved!"}
+                        {isAssigningCategory && "Assigning category..."}
+                      </Text>
+                    </View>
+                  )}
+                  
+                  {/* Loading indicator for auto categorize - show when categorizing */}
+                  {isCategorizing && (
+                    <View className="flex-row items-center mt-4">
+                      <ActivityIndicator size="small" color="#34C759" style={{ marginRight: 8 }} />
+                      <Text className="text-sm text-gray-500 dark:text-gray-400">
+                        Suggesting category...
+                      </Text>
+                    </View>
+                  )}
 
                   <Text className="text-sm text-gray-500 dark:text-gray-400 mt-6 text-center px-4">
                     {isRecording ? "Tap to stop • Release when done" : "Tap to record • Hold to record"}

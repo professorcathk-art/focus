@@ -2,13 +2,14 @@
  * Root index - redirects to auth or tabs based on auth state
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Redirect } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
 
 export default function Index() {
   const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
   const hasCheckedRef = useRef(false);
+  const [shouldRedirect, setShouldRedirect] = useState(false);
 
   useEffect(() => {
     // Check auth status on mount (only once)
@@ -23,7 +24,23 @@ export default function Index() {
     return null; // TODO: Add loading screen
   }
 
+  useEffect(() => {
+    if (isAuthenticated && !shouldRedirect) {
+      // Small delay to ensure auth state is fully settled before navigation
+      // This prevents crashes from race conditions
+      const timer = setTimeout(() => {
+        setShouldRedirect(true);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, shouldRedirect]);
+
   if (isAuthenticated) {
+    // Wait for redirect flag to prevent race conditions
+    if (!shouldRedirect) {
+      return null; // Wait for state to settle
+    }
+    
     // Use try-catch to prevent crashes
     try {
       return <Redirect href="/(tabs)/record" />;

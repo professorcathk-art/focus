@@ -197,22 +197,17 @@ export default function TasksScreen() {
         return;
       }
       
-      // CRITICAL: Clear todos immediately when date changes to prevent showing wrong date's tasks
-      // This prevents race conditions where old data shows briefly
-      console.log(`[Tasks] 📅 Date changed to ${dateStr}, clearing todos and loading...`);
-      setTodos([]);
-      setIsLoading(true);
-      
-      // Set current loading date BEFORE any async operations
-      currentLoadingDateRef.current = dateStr;
-      
-      // INSTANT: Check memory cache synchronously FIRST (before any async operations)
+      // CRITICAL: Check memory cache FIRST (synchronously, 0ms delay) BEFORE clearing todos
+      // This prevents flash of empty state when cache exists
       const memoryKey = `${userId}_${dateStr}`;
       const memoryCached = memoryCache.get(memoryKey);
       if (memoryCached && Date.now() - memoryCached.timestamp < 30 * 60 * 1000) {
         const filtered = memoryCached.todos.filter(todo => todo.date === dateStr);
         if (filtered.length > 0) {
-          console.log(`[Tasks] ⚡ INSTANT on date change: Showing ${filtered.length} tasks for ${dateStr}`);
+          console.log(`[Tasks] ⚡ INSTANT on date change: Showing ${filtered.length} tasks for ${dateStr} from memory cache`);
+          // Set current loading date BEFORE any async operations
+          currentLoadingDateRef.current = dateStr;
+          // Show cached data INSTANTLY (don't clear todos, don't show loading)
           setTodos(filtered);
           setIsLoading(false);
           // Load fresh data in background (with error handling)
@@ -224,7 +219,15 @@ export default function TasksScreen() {
         }
       }
       
-      // No memory cache - load normally (will check AsyncStorage cache in loadTodos)
+      // No memory cache - clear todos and show loading
+      console.log(`[Tasks] 📅 Date changed to ${dateStr}, clearing todos and loading...`);
+      setTodos([]);
+      setIsLoading(true);
+      
+      // Set current loading date BEFORE any async operations
+      currentLoadingDateRef.current = dateStr;
+      
+      // Load normally (will check AsyncStorage cache in loadTodos)
       loadTodos(selectedDate).catch((error) => {
         console.error('[Tasks] Load todos error in useEffect:', error);
         // Only update state if still viewing this date
