@@ -31,6 +31,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shouldRedirect, setShouldRedirect] = useState(false);
   const router = useRouter();
   const { signIn, signInWithGoogle, signInWithApple, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
