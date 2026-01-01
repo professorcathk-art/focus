@@ -18,6 +18,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.focuscircle",
       "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Focus needs access to your microphone to record your ideas.",
         "NSSpeechRecognitionUsageDescription": "Focus uses speech recognition to transcribe your ideas.",
