@@ -150,6 +150,12 @@ export default function TasksScreen() {
             }
           } catch (error) {
             console.error("Background refresh error:", error);
+            // Don't show error to user - silent fail for background refresh
+            // Ensure loading state is cleared if somehow set
+            const stillCurrentDate = format(selectedDate, "yyyy-MM-dd") === dateStr && currentLoadingDateRef.current === dateStr;
+            if (stillCurrentDate) {
+              setIsLoading(false);
+            }
           } finally {
             fetchingRef.current = false;
             // Clear loading date ref if this was the last operation
@@ -161,6 +167,11 @@ export default function TasksScreen() {
         }
       } catch (error) {
         console.error("Cache read error:", error);
+        // Ensure loading state is cleared on cache read error
+        const stillCurrentDate = format(selectedDate, "yyyy-MM-dd") === dateStr && currentLoadingDateRef.current === dateStr;
+        if (stillCurrentDate) {
+          setIsLoading(false);
+        }
       }
     }
     
@@ -183,13 +194,23 @@ export default function TasksScreen() {
       }
     } catch (error) {
       console.error("Load todos error:", error);
+      // CRITICAL: Always clear loading state on error
       // Only clear todos if still viewing this date
       const stillCurrentDate = format(selectedDate, "yyyy-MM-dd") === dateStr && currentLoadingDateRef.current === dateStr;
       if (stillCurrentDate) {
-        setTodos([]);
+        setIsLoading(false);
+        // Keep existing todos if any (might be from cache), otherwise empty array
+        setTodos(prev => {
+          // If we have cached todos, keep them; otherwise set empty
+          return prev.length > 0 ? prev : [];
+        });
       }
     } finally {
-      setIsLoading(false);
+      // CRITICAL: Always ensure loading state is cleared
+      const stillCurrentDate = format(selectedDate, "yyyy-MM-dd") === dateStr && currentLoadingDateRef.current === dateStr;
+      if (stillCurrentDate) {
+        setIsLoading(false);
+      }
       fetchingRef.current = false;
       // Clear loading date ref if this was the last operation
       if (currentLoadingDateRef.current === dateStr) {
@@ -323,13 +344,24 @@ export default function TasksScreen() {
         currentLoadingDateRef.current = dateStr;
         setTodos([]);
         setIsLoading(true);
-        loadTodos(selectedDate).catch((error) => {
+        
+        // CRITICAL: Always clear loading state, even on error
+        try {
+          await loadTodos(selectedDate);
+        } catch (error) {
           console.error('[Tasks] Load todos error in useEffect:', error);
+          // Always clear loading state on error
           if (currentLoadingDateRef.current === dateStr) {
             setIsLoading(false);
-            setTodos([]);
+            // Keep existing todos if any, otherwise empty array
+            setTodos(prev => prev.length > 0 ? prev : []);
           }
-        });
+        } finally {
+          // Ensure loading is cleared even if loadTodos doesn't handle it
+          if (currentLoadingDateRef.current === dateStr) {
+            setIsLoading(false);
+          }
+        }
       };
       
       // Check AsyncStorage immediately (don't await - let it run async)
@@ -635,8 +667,11 @@ export default function TasksScreen() {
                 </View>
                 <View className="h-2 bg-white/30 rounded-full overflow-hidden">
                   <View
-                    className="h-full bg-white"
-                    style={{ width: `${progress * 100}%` }}
+                    className="h-full"
+                    style={{ 
+                      width: `${progress * 100}%`,
+                      backgroundColor: progress > 0 ? "#A8E6CF" : "#FFFFFF" // Light green when tasks completed
+                    }}
                   />
                 </View>
               </View>

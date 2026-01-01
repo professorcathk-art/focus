@@ -24,9 +24,10 @@ export default function Index() {
     if (isAuthenticated && !shouldRedirect) {
       // Longer delay to ensure auth state and navigation stack are fully settled
       // This prevents crashes from race conditions and navigation conflicts
+      // Increased delay to allow signin screen to navigate to root first
       const timer = setTimeout(() => {
         setShouldRedirect(true);
-      }, 500); // Increased delay to 500ms for better stability
+      }, 1000); // Increased delay to 1000ms to allow signin navigation to complete
       return () => clearTimeout(timer);
     }
   }, [isAuthenticated, shouldRedirect]);

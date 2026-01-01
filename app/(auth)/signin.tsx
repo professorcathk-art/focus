@@ -18,7 +18,7 @@ import {
   Pressable,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter, Redirect } from "expo-router";
+import { useRouter } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -52,31 +52,39 @@ export default function SignInScreen() {
     checkAppleAuth();
   }, []);
   
-  // Handle redirect when authenticated - use longer delay and Redirect component
+  // Handle redirect when authenticated - navigate to root and let index.tsx handle redirect
+  // This prevents navigation conflicts that cause crashes
   useEffect(() => {
     if (!authLoading && isAuthenticated && !shouldRedirect) {
-      console.log("[SignIn] Authenticated, preparing redirect...");
-      // Increased delay to prevent crashes - wait for auth state and navigation stack to settle
-      // Use longer delay to ensure React Navigation stack is fully ready
+      console.log("[SignIn] Authenticated, navigating to root...");
+      // Navigate to root - index.tsx will handle redirect to tabs
+      // This is safer than redirecting directly from signin screen
       const timer = setTimeout(() => {
-        setShouldRedirect(true);
-      }, 2500); // Increased to 2500ms for maximum stability
+        try {
+          router.replace("/");
+        } catch (err) {
+          console.error("[SignIn] Navigation error:", err);
+          // Fallback: try again after delay
+          setTimeout(() => {
+            try {
+              router.replace("/");
+            } catch (e) {
+              console.error("[SignIn] Fallback navigation failed:", e);
+            }
+          }, 500);
+        }
+      }, 1000); // Shorter delay since we're going to root, not directly to tabs
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, authLoading, shouldRedirect]);
+  }, [isAuthenticated, authLoading, shouldRedirect, router]);
 
-  // Don't render if already authenticated - but add delay to prevent crash
+  // Don't render if already authenticated - show loading while navigating
   if (!authLoading && isAuthenticated) {
-    if (!shouldRedirect) {
-      return (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
-          <ActivityIndicator size="large" color="#34C759" />
-        </View>
-      );
-    }
-    
-    // Use Redirect component (safer than router.replace for auth redirects)
-    return <Redirect href="/(tabs)/record" />;
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
+        <ActivityIndicator size="large" color="#34C759" />
+      </View>
+    );
   }
   
   // Animation values for fluid green elements
@@ -154,17 +162,15 @@ export default function SignInScreen() {
 
     try {
       await signIn(email, password);
-      // Wait longer for auth state to fully update and navigation stack to be ready
-      // Increased delay to prevent crashes - don't clear loading, let redirect handle it
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      // Don't redirect here - let useEffect handle it with Redirect component
-      // This prevents crashes from race conditions
-      // Loading state will be cleared by redirect or error handler
+      // Wait for auth state to update - useEffect will handle navigation to root
+      // Root (index.tsx) will then redirect to tabs
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Don't clear loading here - let useEffect handle navigation
+      // Loading will be cleared when component unmounts or on error
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Sign in failed";
       setError(errorMsg);
       setIsLoading(false);
-      // Reset redirect flag on error
       setShouldRedirect(false);
     }
   };
@@ -191,12 +197,10 @@ export default function SignInScreen() {
     setShouldRedirect(false); // Reset redirect flag before sign in
     try {
       await signInWithApple();
-      // Wait longer for auth state to fully update and navigation stack to be ready
-      // Increased delay to prevent crashes - don't clear loading, let redirect handle it
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      // Don't redirect here - let useEffect handle it with Redirect component
-      // This prevents crashes from race conditions
-      // Loading state will be cleared by redirect or error handler
+      // Wait for auth state to update - useEffect will handle navigation to root
+      // Root (index.tsx) will then redirect to tabs
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Don't clear loading here - let useEffect handle navigation
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Apple sign in failed";
       // Don't show error if user cancelled
@@ -204,7 +208,6 @@ export default function SignInScreen() {
         setError(errorMessage);
       }
       setIsLoading(false);
-      // Reset redirect flag on error
       setShouldRedirect(false);
     }
   };
