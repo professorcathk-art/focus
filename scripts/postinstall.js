@@ -116,10 +116,18 @@ Pod::Spec.new do |s|
   s.header_mappings_dir = File.join(worklets_core_path, "cpp")
   s.header_dir = "worklets"
   
-  # Ensure headers are searchable
+  # Ensure headers are searchable - use both PODS_TARGET_SRCROOT and PODS_ROOT
   s.pod_target_xcconfig = {
     "HEADER_SEARCH_PATHS" => [
-      "\\"$(PODS_TARGET_SRCROOT)/#{File.join(worklets_core_path, "cpp")}\\"",
+      "\"$(PODS_TARGET_SRCROOT)/#{File.join(worklets_core_path, "cpp")}\"",
+      "\"$(PODS_ROOT)/#{File.join(worklets_core_path, "cpp")}\"",
+    ].join(" ")
+  }
+  
+  # Also add to xcconfig for consumers like react-native-reanimated
+  s.xcconfig = {
+    "HEADER_SEARCH_PATHS" => [
+      "\"$(PODS_ROOT)/#{File.join(worklets_core_path, "cpp")}\"",
     ].join(" ")
   }
 end
