@@ -106,13 +106,14 @@ Pod::Spec.new do |s|
   s.dependency "react-native-worklets-core"
   
   # Re-export headers from react-native-worklets-core
-  # Path relative to podspec location
+  # react-native-reanimated expects Common/cpp structure, map cpp -> Common/cpp -> worklets/
   worklets_core_path = File.join(File.dirname(__FILE__), "..", "react-native-worklets-core")
   s.source_files = File.join(worklets_core_path, "cpp", "**", "*.{h,cpp}")
   s.public_header_files = File.join(worklets_core_path, "cpp", "**", "*.h")
   
   # Map headers to worklets/ namespace that react-native-reanimated expects
-  # This makes headers available as <worklets/...> instead of <cpp/...>
+  # Map cpp/ -> worklets/ so headers are available as <worklets/...>
+  # react-native-reanimated looks for worklets/Tools/ but those are in reanimated itself
   s.header_mappings_dir = File.join(worklets_core_path, "cpp")
   s.header_dir = "worklets"
   
