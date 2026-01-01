@@ -165,10 +165,12 @@ export default function SignInScreen() {
 
     try {
       await signIn(email, password);
-      router.replace("/(tabs)/record");
+      // Wait for auth state to update before redirecting
+      await new Promise(resolve => setTimeout(resolve, 500));
+      // Use Redirect component instead of router.replace to prevent crash
+      // The redirect will happen via the useEffect that watches isAuthenticated
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
-    } finally {
       setIsLoading(false);
     }
   };
@@ -180,9 +182,9 @@ export default function SignInScreen() {
     try {
       await signInWithGoogle();
       // OAuth opens browser for Google sign-in
-      // After sign-in, browser redirects back to app
-      // Session will be set via onAuthStateChange listener in auth-store
-      // Keep loading state - will be cleared when auth state changes
+      // After sign-in, browser redirects back to app via auth-callback route
+      // Don't redirect here - let auth-callback handle it
+      // Keep loading state - will be cleared when auth state changes or callback redirects
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google sign in failed");
       setIsLoading(false);
@@ -194,14 +196,16 @@ export default function SignInScreen() {
     setError(null);
     try {
       await signInWithApple();
-      router.replace("/(tabs)/record");
+      // Wait for auth state to update before redirecting
+      await new Promise(resolve => setTimeout(resolve, 500));
+      // Use Redirect component instead of router.replace to prevent crash
+      // The redirect will happen via the useEffect that watches isAuthenticated
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Apple sign in failed";
       // Don't show error if user cancelled
       if (!errorMessage.includes("cancelled")) {
         setError(errorMessage);
       }
-    } finally {
       setIsLoading(false);
     }
   };

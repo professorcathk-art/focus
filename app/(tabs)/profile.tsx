@@ -69,20 +69,22 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               await signOut();
+              // Wait longer for sign out to complete and auth state to clear
+              await new Promise(resolve => setTimeout(resolve, 800));
               // Use setTimeout to prevent navigation crash
               setTimeout(() => {
                 try {
                   router.replace("/(auth)/signin");
                 } catch (navError) {
                   console.error("[Profile] Navigation error after sign out:", navError);
-                  // Fallback: navigate to root
+                  // Fallback: navigate to root which will redirect to signin
                   try {
                     router.replace("/");
                   } catch (fallbackError) {
                     console.error("[Profile] Fallback navigation also failed:", fallbackError);
                   }
                 }
-              }, 300);
+              }, 200);
             } catch (error) {
               console.error("[Profile] Sign out error:", error);
               Alert.alert("Error", "Failed to sign out. Please try again.");

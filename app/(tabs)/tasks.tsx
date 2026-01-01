@@ -268,7 +268,13 @@ export default function TasksScreen() {
       });
       
       // Update state immediately
-      setTodos(prev => [...prev, newTodo]);
+      setTodos(prev => {
+        // Prevent duplicates - check if todo already exists
+        if (prev.some(t => t.id === newTodo.id)) {
+          return prev;
+        }
+        return [...prev, newTodo];
+      });
       
       // CRITICAL: Update cache immediately so it persists when switching dates
       try {
@@ -276,10 +282,20 @@ export default function TasksScreen() {
         const memoryKey = `${userId}_${todoDate}`;
         const memoryCached = memoryCache.get(memoryKey);
         if (memoryCached) {
-          memoryCache.set(memoryKey, {
-            todos: [...memoryCached.todos, newTodo],
-            timestamp: Date.now(),
-          });
+          // Prevent duplicates in cache
+          const existingIndex = memoryCached.todos.findIndex(t => t.id === newTodo.id);
+          if (existingIndex === -1) {
+            memoryCache.set(memoryKey, {
+              todos: [...memoryCached.todos, newTodo],
+              timestamp: Date.now(),
+            });
+          } else {
+            // Update existing todo instead of duplicating
+            memoryCache.set(memoryKey, {
+              todos: memoryCached.todos.map((t, idx) => idx === existingIndex ? newTodo : t),
+              timestamp: Date.now(),
+            });
+          }
         } else {
           // Create new cache entry
           memoryCache.set(memoryKey, {
@@ -290,8 +306,16 @@ export default function TasksScreen() {
         
         // Update AsyncStorage cache
         const cached = await getCachedTodos(todoDate, userId);
-        const updatedTodos = cached ? [...cached, newTodo] : [newTodo];
-        await setCachedTodos(todoDate, userId, updatedTodos);
+        if (cached) {
+          // Prevent duplicates in AsyncStorage
+          const existingIndex = cached.findIndex(t => t.id === newTodo.id);
+          const updatedTodos = existingIndex === -1 
+            ? [...cached, newTodo]
+            : cached.map((t, idx) => idx === existingIndex ? newTodo : t);
+          await setCachedTodos(todoDate, userId, updatedTodos);
+        } else {
+          await setCachedTodos(todoDate, userId, [newTodo]);
+        }
         console.log(`[Tasks] ✅ Updated cache for ${todoDate} with new todo`);
       } catch (cacheError) {
         console.error("[Tasks] Cache update error:", cacheError);

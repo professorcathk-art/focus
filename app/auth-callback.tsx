@@ -167,6 +167,8 @@ export default function AuthCallbackScreen() {
             } else if (exchangeData?.session) {
               console.log("[Auth Callback] ✅ exchangeCodeForSession succeeded! User:", exchangeData.session.user.email);
               await checkAuth();
+              // Wait for auth store to update
+              await new Promise(resolve => setTimeout(resolve, 300));
               if (!hasRedirectedRef.current) {
                 hasRedirectedRef.current = true;
                 setStatus("Sign in successful!");

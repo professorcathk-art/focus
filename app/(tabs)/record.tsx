@@ -255,10 +255,9 @@ export default function RecordScreen() {
     isLongPressRef.current = false; // Will be set to true if held long enough
     pressStartTimeRef.current = Date.now();
     
-    // Only start recording if not already recording
-    if (!isRecording) {
-      await startRecording();
-    }
+    // Don't start recording immediately on pressIn - wait to see if it's a tap or hold
+    // This prevents handlePressIn from interfering with tap-to-record
+    // Recording will start only if user holds for > 200ms (detected in handlePressOut)
   };
 
   const handlePressOut = async () => {
@@ -1041,7 +1040,7 @@ export default function RecordScreen() {
                   )}
 
                   <Text className="text-sm text-gray-500 dark:text-gray-400 mt-6 text-center px-4">
-                    {isRecording ? "Tap to stop • Release when done" : "Tap to record • Hold to record"}
+                    {isRecording ? "Tap to stop • Release when done" : "Double tap to record • Hold to record"}
                   </Text>
                 </View>
               </View>
