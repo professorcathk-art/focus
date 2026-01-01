@@ -24,13 +24,21 @@ try {
   const workletsCorePath = path.join(__dirname, '..', 'node_modules', 'react-native-worklets-core');
   const workletsPath = path.join(__dirname, '..', 'node_modules', 'react-native-worklets');
 
+  // Check if the real react-native-worklets package is already installed
+  // If it has Common/cpp structure, don't override it - use the real package
+  const realWorkletsToolsPath = path.join(workletsPath, 'Common', 'cpp', 'worklets', 'Tools');
+  if (fs.existsSync(realWorkletsToolsPath)) {
+    console.log('ℹ️  Real react-native-worklets package found with Common/cpp structure, skipping wrapper creation');
+    process.exit(0);
+  }
+
   if (!fs.existsSync(workletsCorePath)) {
     console.log('ℹ️  react-native-worklets-core not found, skipping worklets setup');
     process.exit(0);
   }
 
-  // Remove old package if it exists
-  if (fs.existsSync(workletsPath)) {
+  // Remove old wrapper package if it exists (but not if it's the real package)
+  if (fs.existsSync(workletsPath) && !fs.existsSync(realWorkletsToolsPath)) {
     try {
       // Use fs.rmSync if available (Node 14.14+), otherwise use recursive rmdir
       if (typeof fs.rmSync === 'function') {
