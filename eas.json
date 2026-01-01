@@ -12,6 +12,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "node": "22.11.0",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://focus-psi-one.vercel.app/api",
         "EXPO_PUBLIC_SUPABASE_URL": "https://wqvevludffkemgicrfos.supabase.co",
