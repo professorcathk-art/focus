@@ -16,10 +16,11 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.focus.app",
+      "bundleIdentifier": "com.focuscircle",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Focus needs access to your microphone to record your ideas.",
-        "NSSpeechRecognitionUsageDescription": "Focus uses speech recognition to transcribe your ideas."
+        "NSSpeechRecognitionUsageDescription": "Focus uses speech recognition to transcribe your ideas.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -28,7 +29,8 @@
         "backgroundColor": "#ffffff"
       },
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
@@ -46,6 +48,12 @@
       ],
       "expo-secure-store"
     ],
-    "scheme": "focus"
+    "scheme": "focus",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ba0a6b0e-1878-4fc4-8957-470a1f15c363"
+      }
+    }
   }
 }
