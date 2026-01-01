@@ -223,10 +223,18 @@ export default function RecordScreen() {
   };
 
   // Handle single press - toggle recording
+  // IMPORTANT: Only toggle if NOT currently processing a press (to prevent conflicts with hold-to-record)
   const handlePress = async () => {
+    // Prevent tap during hold-to-record transition
+    if (status === "transcribing" || status === "saved") {
+      return;
+    }
+    
     if (isRecording) {
-      // Stop recording
-      await handlePressOut();
+      // Only stop if recording for at least 0.5 seconds (prevent accidental taps)
+      if (recordingTime >= 0.5) {
+        await handlePressOut();
+      }
     } else {
       // Start recording
       await startRecording();
@@ -434,9 +442,12 @@ export default function RecordScreen() {
       } else {
         // Filter out false errors from expo-av (e.g., "recorder does not exist" when recording actually worked)
         // Only show error if it's a real error, not a false positive
-        const isFalseError = errorMessage.includes("recorder does not exist") || 
-                            errorMessage.includes("prepareToRecordAsync") ||
-                            (errorMessage.includes("recording") && errorMessage.includes("not found") && status === "saved");
+        const isFalseError = 
+          errorMessage.toLowerCase().includes("recorder does not exist") || 
+          errorMessage.toLowerCase().includes("preparetorecordasync") ||
+          errorMessage.toLowerCase().includes("prepare to record") ||
+          (errorMessage.toLowerCase().includes("recording") && errorMessage.toLowerCase().includes("not found") && status === "saved") ||
+          (errorMessage.toLowerCase().includes("recorder") && errorMessage.toLowerCase().includes("exist") && status === "saved");
         
         if (!isFalseError) {
           Alert.alert(
@@ -446,6 +457,7 @@ export default function RecordScreen() {
           );
         } else {
           console.log("[Record] Ignoring false error:", errorMessage);
+          // Don't show alert for false errors
         }
       }
 
