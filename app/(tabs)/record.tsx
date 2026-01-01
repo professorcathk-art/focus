@@ -238,8 +238,20 @@ export default function RecordScreen() {
     }
     
     // Only handle tap if this was NOT a long press
+    // Check if pressStartTimeRef exists and duration was > 200ms (long press)
+    if (pressStartTimeRef.current) {
+      const holdDuration = Date.now() - pressStartTimeRef.current;
+      if (holdDuration > 200) {
+        // This was a long press, don't handle as tap
+        isLongPressRef.current = true;
+        pressStartTimeRef.current = null;
+        return;
+      }
+    }
+    
+    // If isLongPressRef is set from previous interaction, reset it
     if (isLongPressRef.current) {
-      isLongPressRef.current = false; // Reset for next interaction
+      isLongPressRef.current = false;
       pressStartTimeRef.current = null;
       return;
     }
