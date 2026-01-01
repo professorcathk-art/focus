@@ -96,7 +96,8 @@ Pod::Spec.new do |s|
   s.description  = "Wrapper podspec that points to react-native-worklets-core"
   s.homepage     = "https://github.com/margelo/react-native-worklets-core"
   s.license      = "MIT"
-  s.authors      = {}
+  s.authors      = { "Margelo" => "info@margelo.io" }
+  s.source       = { :git => "https://github.com/margelo/react-native-worklets-core.git", :tag => "#{s.version}" }
 
   s.platforms    = { :ios => "11.0" }
   
