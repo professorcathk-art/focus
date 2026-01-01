@@ -70,7 +70,8 @@ export default function ProfileScreen() {
             try {
               await signOut();
               // Wait longer for sign out to complete and auth state to clear
-              await new Promise(resolve => setTimeout(resolve, 800));
+              // Increased delay to prevent crashes
+              await new Promise(resolve => setTimeout(resolve, 1200));
               // Use setTimeout to prevent navigation crash
               setTimeout(() => {
                 try {
@@ -82,11 +83,27 @@ export default function ProfileScreen() {
                     router.replace("/");
                   } catch (fallbackError) {
                     console.error("[Profile] Fallback navigation also failed:", fallbackError);
+                    // Last resort: try again after delay
+                    setTimeout(() => {
+                      try {
+                        router.replace("/");
+                      } catch (e) {
+                        console.error("[Profile] Final fallback failed:", e);
+                      }
+                    }, 500);
                   }
                 }
-              }, 200);
+              }, 300);
             } catch (error) {
               console.error("[Profile] Sign out error:", error);
+              // Even if signOut fails, try to navigate away
+              try {
+                setTimeout(() => {
+                  router.replace("/");
+                }, 500);
+              } catch (navError) {
+                console.error("[Profile] Navigation after signout error failed:", navError);
+              }
               Alert.alert("Error", "Failed to sign out. Please try again.");
             }
           },

@@ -152,9 +152,11 @@ export default function SignInScreen() {
     try {
       await signIn(email, password);
       // Wait longer for auth state to fully update and navigation stack to be ready
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Increased delay to prevent crashes
+      await new Promise(resolve => setTimeout(resolve, 1500));
       // Don't redirect here - let useEffect handle it with Redirect component
       // This prevents crashes from race conditions
+      // Don't clear loading - let redirect handle it
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
       setIsLoading(false);
@@ -183,9 +185,11 @@ export default function SignInScreen() {
     try {
       await signInWithApple();
       // Wait longer for auth state to fully update and navigation stack to be ready
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Increased delay to prevent crashes
+      await new Promise(resolve => setTimeout(resolve, 1500));
       // Don't redirect here - let useEffect handle it with Redirect component
       // This prevents crashes from race conditions
+      // Don't clear loading - let redirect handle it
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Apple sign in failed";
       // Don't show error if user cancelled

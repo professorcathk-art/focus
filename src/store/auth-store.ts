@@ -318,11 +318,69 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error("Google sign in was dismissed");
       }
       
-      console.log("[Auth] ✅ In-app browser opened successfully");
+      console.log("[Auth] ✅ In-app browser closed");
       console.log("[Auth] Browser result type:", result.type);
+      console.log("[Auth] Browser result URL:", result.url);
       
-      // OAuth will redirect to deep link, then app will handle it via auth-callback
-      // Session will be set via onAuthStateChange listener or auth-callback handler
+      // Check if we got a redirect URL with auth code
+      if (result.type === 'success' && result.url) {
+        console.log("[Auth] ✅ Got redirect URL from browser:", result.url);
+        
+        // Parse the URL to extract code or access_token
+        const url = new URL(result.url);
+        const code = url.searchParams.get('code') || url.hash.match(/code=([^&]+)/)?.[1];
+        
+        if (code) {
+          console.log("[Auth] ✅ Found OAuth code, exchanging for session...");
+          // Exchange code for session
+          const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          
+          if (exchangeError) {
+            console.error("[Auth] ❌ Code exchange error:", exchangeError);
+            // Fallback: check if session was created automatically
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const { data: sessionData } = await supabase.auth.getSession();
+            if (sessionData?.session) {
+              console.log("[Auth] ✅ Session found after code exchange error");
+              await checkAuth();
+              return;
+            }
+            throw new Error(exchangeError.message || "Failed to exchange code for session");
+          }
+          
+          if (exchangeData?.session) {
+            console.log("[Auth] ✅ Code exchanged successfully, session created");
+            await checkAuth();
+            return;
+          }
+        }
+        
+        // If no code but URL contains access_token or session info, check session
+        if (url.searchParams.get('access_token') || url.hash.includes('access_token')) {
+          console.log("[Auth] ✅ Found access_token in URL, checking session...");
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session) {
+            console.log("[Auth] ✅ Session found from access_token");
+            await checkAuth();
+            return;
+          }
+        }
+      }
+      
+      // Fallback: Wait and check session (Supabase might have created it automatically)
+      console.log("[Auth] ⏳ Waiting for session to be created...");
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session) {
+        console.log("[Auth] ✅ Session found after wait");
+        await checkAuth();
+        return;
+      }
+      
+      // If still no session, the deep link handler should have processed it
+      // But log a warning
+      console.log("[Auth] ⚠️ No session found yet, deep link handler should process it");
     } catch (error) {
       console.error("[Auth] ❌ Google sign in error:", error);
       throw error;

@@ -197,40 +197,50 @@ export default function TasksScreen() {
     }
   }, [isAuthenticated, user?.id, selectedDate]);
 
-  // Preload nearby dates into memory cache for instant switching
+  // Preload ALL visible dates in calendar (like Apple Calendar)
+  // Preload entire month + adjacent months for instant switching
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
     
     const userId = user.id;
     const preloadDates = [];
     
-    // Preload 7 days before and 7 days after current date
-    for (let i = -7; i <= 7; i++) {
+    // Preload entire visible month + adjacent months (90 days total)
+    // This ensures instant loading like Apple Calendar
+    const startDate = addDays(selectedDate, -45); // 45 days before
+    const endDate = addDays(selectedDate, 45); // 45 days after
+    
+    for (let i = -45; i <= 45; i++) {
       if (i === 0) continue; // Skip current date (already loading)
       const date = addDays(selectedDate, i);
       preloadDates.push(format(date, "yyyy-MM-dd"));
     }
     
-    // Preload dates in background (non-blocking)
-    Promise.all(
-      preloadDates.map(async (dateStr) => {
-        const memoryKey = `${userId}_${dateStr}`;
-        // Only preload if not already in memory cache
-        if (!memoryCache.has(memoryKey)) {
-          try {
-            const cached = await getCachedTodos(dateStr, userId);
-            if (cached && cached.length > 0) {
-              // Cache is now in memory via getCachedTodos
-              console.log(`[Tasks] 🔮 Preloaded ${cached.length} tasks for ${dateStr}`);
+    // Preload dates in background (non-blocking, batched for performance)
+    // Process in batches of 10 to avoid overwhelming AsyncStorage
+    const batchSize = 10;
+    for (let i = 0; i < preloadDates.length; i += batchSize) {
+      const batch = preloadDates.slice(i, i + batchSize);
+      Promise.all(
+        batch.map(async (dateStr) => {
+          const memoryKey = `${userId}_${dateStr}`;
+          // Only preload if not already in memory cache
+          if (!memoryCache.has(memoryKey)) {
+            try {
+              const cached = await getCachedTodos(dateStr, userId);
+              // Cache is now in memory via getCachedTodos (even if empty)
+              if (cached && cached.length > 0) {
+                console.log(`[Tasks] 🔮 Preloaded ${cached.length} tasks for ${dateStr}`);
+              }
+            } catch (error) {
+              // Silently fail - preloading is best effort
             }
-          } catch (error) {
-            // Silently fail - preloading is best effort
           }
-        }
-      })
-    ).catch(() => {
-      // Silently fail - preloading is best effort
-    });
+        })
+      ).catch(() => {
+        // Silently fail - preloading is best effort
+      });
+    }
   }, [selectedDate, isAuthenticated, user?.id]);
 
   // Load todos when date changes - with instant cache check
@@ -283,12 +293,14 @@ export default function TasksScreen() {
         return; // Exit early - instant display!
       }
       
-      // No memory cache - try AsyncStorage synchronously (fast, ~10-50ms)
-      // But don't show loading yet - check AsyncStorage first
+      // No memory cache - check AsyncStorage BEFORE showing loading
+      // This prevents loading spinner flash when cache exists
+      // Use Promise to check AsyncStorage synchronously before render
       const checkAsyncStorage = async () => {
         try {
           const cached = await getCachedTodos(dateStr, userId);
-          if (cached && cached.length >= 0) {
+          // Show cached data even if empty (0 tasks is valid state)
+          if (cached !== null) {
             // Found in AsyncStorage - show instantly
             console.log(`[Tasks] ⚡ FAST: Showing ${cached.length} tasks from AsyncStorage cache`);
             currentLoadingDateRef.current = dateStr;
@@ -301,6 +313,7 @@ export default function TasksScreen() {
             return;
           }
         } catch (error) {
+          console.error('[Tasks] AsyncStorage check error:', error);
           // Continue to API fetch if AsyncStorage fails
         }
         
@@ -318,6 +331,8 @@ export default function TasksScreen() {
         });
       };
       
+      // Check AsyncStorage immediately (don't await - let it run async)
+      // But set loading state only if no cache found
       checkAsyncStorage();
     } catch (error) {
       console.error('[Tasks] Error in useEffect:', error);
