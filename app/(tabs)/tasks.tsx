@@ -197,6 +197,42 @@ export default function TasksScreen() {
     }
   }, [isAuthenticated, user?.id, selectedDate]);
 
+  // Preload nearby dates into memory cache for instant switching
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    
+    const userId = user.id;
+    const preloadDates = [];
+    
+    // Preload 7 days before and 7 days after current date
+    for (let i = -7; i <= 7; i++) {
+      if (i === 0) continue; // Skip current date (already loading)
+      const date = addDays(selectedDate, i);
+      preloadDates.push(format(date, "yyyy-MM-dd"));
+    }
+    
+    // Preload dates in background (non-blocking)
+    Promise.all(
+      preloadDates.map(async (dateStr) => {
+        const memoryKey = `${userId}_${dateStr}`;
+        // Only preload if not already in memory cache
+        if (!memoryCache.has(memoryKey)) {
+          try {
+            const cached = await getCachedTodos(dateStr, userId);
+            if (cached && cached.length > 0) {
+              // Cache is now in memory via getCachedTodos
+              console.log(`[Tasks] 🔮 Preloaded ${cached.length} tasks for ${dateStr}`);
+            }
+          } catch (error) {
+            // Silently fail - preloading is best effort
+          }
+        }
+      })
+    ).catch(() => {
+      // Silently fail - preloading is best effort
+    });
+  }, [selectedDate, isAuthenticated, user?.id]);
+
   // Load todos when date changes - with instant cache check
   useEffect(() => {
     // Safety check: don't run if not authenticated or user not ready
@@ -247,23 +283,42 @@ export default function TasksScreen() {
         return; // Exit early - instant display!
       }
       
-      // No memory cache - clear todos and show loading
-      console.log(`[Tasks] 📅 Date changed to ${dateStr}, clearing todos and loading...`);
-      setTodos([]);
-      setIsLoading(true);
-      
-      // Set current loading date BEFORE any async operations
-      currentLoadingDateRef.current = dateStr;
-      
-      // Load normally (will check AsyncStorage cache in loadTodos)
-      loadTodos(selectedDate).catch((error) => {
-        console.error('[Tasks] Load todos error in useEffect:', error);
-        // Only update state if still viewing this date
-        if (currentLoadingDateRef.current === dateStr) {
-          setIsLoading(false);
-          setTodos([]);
+      // No memory cache - try AsyncStorage synchronously (fast, ~10-50ms)
+      // But don't show loading yet - check AsyncStorage first
+      const checkAsyncStorage = async () => {
+        try {
+          const cached = await getCachedTodos(dateStr, userId);
+          if (cached && cached.length >= 0) {
+            // Found in AsyncStorage - show instantly
+            console.log(`[Tasks] ⚡ FAST: Showing ${cached.length} tasks from AsyncStorage cache`);
+            currentLoadingDateRef.current = dateStr;
+            setTodos(cached);
+            setIsLoading(false);
+            // Refresh from API in background
+            setTimeout(() => {
+              loadTodos(selectedDate, false).catch(() => {});
+            }, 100);
+            return;
+          }
+        } catch (error) {
+          // Continue to API fetch if AsyncStorage fails
         }
-      });
+        
+        // No cache found - show loading and fetch from API
+        console.log(`[Tasks] 📅 No cache for ${dateStr}, fetching from API...`);
+        currentLoadingDateRef.current = dateStr;
+        setTodos([]);
+        setIsLoading(true);
+        loadTodos(selectedDate).catch((error) => {
+          console.error('[Tasks] Load todos error in useEffect:', error);
+          if (currentLoadingDateRef.current === dateStr) {
+            setIsLoading(false);
+            setTodos([]);
+          }
+        });
+      };
+      
+      checkAsyncStorage();
     } catch (error) {
       console.error('[Tasks] Error in useEffect:', error);
       const dateStr = format(selectedDate, "yyyy-MM-dd");

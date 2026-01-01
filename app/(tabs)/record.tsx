@@ -264,9 +264,17 @@ export default function RecordScreen() {
     
     // Toggle recording: if recording, stop; if not recording, start
     if (isRecording) {
-      // Stop recording on tap
-      if (recordingTime >= 0.5) {
+      // Stop recording on tap - bypass long press detection by clearing pressStartTimeRef
+      // This ensures handlePressOut treats it as a direct stop call
+      const savedPressStartTime = pressStartTimeRef.current;
+      pressStartTimeRef.current = null; // Clear so handlePressOut knows this is a direct call
+      
+      if (recordingTime >= 0.5 && recordingRef.current) {
+        // Call handlePressOut - it will work correctly since pressStartTimeRef is null
         await handlePressOut();
+      } else {
+        // Restore pressStartTimeRef if we didn't stop
+        pressStartTimeRef.current = savedPressStartTime;
       }
     } else {
       // Start recording on tap

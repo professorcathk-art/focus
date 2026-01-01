@@ -36,21 +36,6 @@ export default function SignInScreen() {
   const { signIn, signInWithGoogle, signInWithApple, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
   
-  // Redirect if already authenticated
-  useEffect(() => {
-    if (!authLoading && isAuthenticated) {
-      console.log("[SignIn] Already authenticated, redirecting...");
-      // Use setTimeout to prevent crash during navigation
-      setTimeout(() => {
-        try {
-          router.replace("/(tabs)/record");
-        } catch (err) {
-          console.error("[SignIn] Redirect error:", err);
-        }
-      }, 100);
-    }
-  }, [isAuthenticated, authLoading, router]);
-  
   // Check if Apple Sign-In is available
   useEffect(() => {
     const checkAppleAuth = async () => {
@@ -67,12 +52,13 @@ export default function SignInScreen() {
     checkAppleAuth();
   }, []);
   
-  // Handle redirect when authenticated
+  // Handle redirect when authenticated - use longer delay and Redirect component
   useEffect(() => {
     if (!authLoading && isAuthenticated && !shouldRedirect) {
+      console.log("[SignIn] Authenticated, preparing redirect...");
       const timer = setTimeout(() => {
         setShouldRedirect(true);
-      }, 300);
+      }, 800); // Increased delay to ensure auth state is fully settled
       return () => clearTimeout(timer);
     }
   }, [isAuthenticated, authLoading, shouldRedirect]);
@@ -165,10 +151,10 @@ export default function SignInScreen() {
 
     try {
       await signIn(email, password);
-      // Wait for auth state to update before redirecting
-      await new Promise(resolve => setTimeout(resolve, 500));
-      // Use Redirect component instead of router.replace to prevent crash
-      // The redirect will happen via the useEffect that watches isAuthenticated
+      // Wait longer for auth state to fully update and navigation stack to be ready
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Don't redirect here - let useEffect handle it with Redirect component
+      // This prevents crashes from race conditions
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
       setIsLoading(false);
@@ -196,10 +182,10 @@ export default function SignInScreen() {
     setError(null);
     try {
       await signInWithApple();
-      // Wait for auth state to update before redirecting
-      await new Promise(resolve => setTimeout(resolve, 500));
-      // Use Redirect component instead of router.replace to prevent crash
-      // The redirect will happen via the useEffect that watches isAuthenticated
+      // Wait longer for auth state to fully update and navigation stack to be ready
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Don't redirect here - let useEffect handle it with Redirect component
+      // This prevents crashes from race conditions
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Apple sign in failed";
       // Don't show error if user cancelled
