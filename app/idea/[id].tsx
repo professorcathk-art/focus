@@ -490,9 +490,6 @@ export default function IdeaDetailScreen() {
               <Text className="text-sm text-gray-400 dark:text-gray-500 mt-2">
                 This may take a few moments
               </Text>
-              <Text className="text-xs text-gray-400 dark:text-gray-500 mt-4">
-                Check Vercel logs if this takes too long
-              </Text>
             </View>
           ) : idea.transcript && idea.transcript.trim() ? (
             <Text className="text-lg text-black dark:text-white leading-7">
