@@ -229,16 +229,16 @@ export default function RecordScreen() {
     }
   };
 
-  // Handle single press - toggle recording (for tap)
+  // Handle single tap - toggle recording (tap to start, tap again to stop)
   const handlePress = async () => {
-    // Clear any pending tap timeout (this was a quick tap)
+    // Clear any pending tap timeout
     if (tapTimeoutRef.current) {
       clearTimeout(tapTimeoutRef.current);
       tapTimeoutRef.current = null;
     }
     
     // Only handle tap if this was NOT a long press
-    // Check if pressStartTimeRef exists and duration was > 200ms (long press)
+    // Check duration to distinguish tap from hold
     if (pressStartTimeRef.current) {
       const holdDuration = Date.now() - pressStartTimeRef.current;
       if (holdDuration > 200) {
@@ -258,9 +258,11 @@ export default function RecordScreen() {
     
     // Prevent tap during transitions
     if (status === "transcribing" || status === "saved") {
+      pressStartTimeRef.current = null;
       return;
     }
     
+    // Toggle recording: if recording, stop; if not recording, start
     if (isRecording) {
       // Stop recording on tap
       if (recordingTime >= 0.5) {
@@ -275,7 +277,7 @@ export default function RecordScreen() {
     pressStartTimeRef.current = null;
   };
 
-  // Handle long press start
+  // Handle press start (for hold-to-record)
   const handlePressIn = async () => {
     // Reset long press flag
     isLongPressRef.current = false;
@@ -286,19 +288,22 @@ export default function RecordScreen() {
       clearTimeout(tapTimeoutRef.current);
     }
     
-    // Set a timeout to detect if this is a quick tap (< 150ms)
-    // If onPressOut fires before this timeout, it's a quick tap
-    // If this timeout fires, we know it's being held (potential long press)
-    tapTimeoutRef.current = setTimeout(() => {
-      // If we get here, the press has been held for > 150ms
-      // This means it's likely a long press, so don't start recording on tap
-      // Recording will start on handlePressOut if held > 200ms
+    // Set a timeout to detect long press (> 200ms)
+    // If user holds for > 200ms, start recording immediately
+    tapTimeoutRef.current = setTimeout(async () => {
+      // User has held for > 200ms - this is a long press
+      isLongPressRef.current = true;
       tapTimeoutRef.current = null;
-    }, 150);
+      
+      // Start recording if not already recording
+      if (!isRecording && status !== "transcribing" && status !== "saved") {
+        await startRecording();
+      }
+    }, 200);
   };
 
   const handlePressOut = async () => {
-    // Clear tap timeout if it exists (this means it was a quick tap)
+    // Clear tap timeout
     if (tapTimeoutRef.current) {
       clearTimeout(tapTimeoutRef.current);
       tapTimeoutRef.current = null;
@@ -308,22 +313,26 @@ export default function RecordScreen() {
     if (pressStartTimeRef.current) {
       const holdDuration = Date.now() - pressStartTimeRef.current;
       if (holdDuration > 200) {
-        isLongPressRef.current = true; // Mark as long press
-        // If it was a long press and we're not recording yet, start recording now
-        if (!isRecording) {
-          await startRecording();
+        // This was a long press - stop recording on release
+        isLongPressRef.current = true;
+        
+        // Stop recording if currently recording
+        if (isRecording && recordingRef.current) {
+          // Continue to stop recording logic below
+        } else {
+          // If not recording, recording was already started by timeout in handlePressIn
           pressStartTimeRef.current = null;
-          return; // Exit early - recording started
+          return;
         }
       } else {
         // Quick tap (< 200ms) - let handlePress handle it
-        // Don't clear pressStartTimeRef yet - handlePress needs it to verify it's a tap
-        // Don't mark as long press, don't start recording here
+        // Don't clear pressStartTimeRef yet - handlePress needs it
         return;
       }
       pressStartTimeRef.current = null;
     }
     
+    // Stop recording (either from tap stop or hold release)
     // Prevent multiple calls
     if (!isRecording || !recordingRef.current) {
       return;
