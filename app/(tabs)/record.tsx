@@ -316,9 +316,9 @@ export default function RecordScreen() {
           return; // Exit early - recording started
         }
       } else {
-        // Quick tap - let handlePress handle it
+        // Quick tap (< 200ms) - let handlePress handle it
+        // Don't clear pressStartTimeRef yet - handlePress needs it to verify it's a tap
         // Don't mark as long press, don't start recording here
-        pressStartTimeRef.current = null;
         return;
       }
       pressStartTimeRef.current = null;
