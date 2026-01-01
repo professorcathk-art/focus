@@ -38,6 +38,9 @@ target 'Focus' do
 
   config = use_native_modules!(config_command)
 
+  # Explicitly reference RNWorklets podspec (created by postinstall script)
+  pod 'RNWorklets', :path => '../node_modules/react-native-worklets'
+
   use_frameworks! :linkage => podfile_properties['ios.useFrameworks'].to_sym if podfile_properties['ios.useFrameworks']
   use_frameworks! :linkage => ENV['USE_FRAMEWORKS'].to_sym if ENV['USE_FRAMEWORKS']
 

@@ -84,6 +84,7 @@ try {
   );
   
   // 4. Create RNWorklets.podspec for CocoaPods (CRITICAL - react-native-reanimated depends on this)
+  // Note: Podfile explicitly references this podspec with :path
   const podspecContent = `require "json"
 
 package = JSON.parse(File.read(File.join(__dir__, "package.json")))
@@ -102,7 +103,7 @@ Pod::Spec.new do |s|
   # Point to react-native-worklets-core podspec
   s.dependency "react-native-worklets-core"
   
-  # Re-export headers from react-native-worklets-core
+  # No source files - this is just a wrapper
   s.source_files = []
   s.public_header_files = []
 end
