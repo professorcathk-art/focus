@@ -69,19 +69,45 @@ try {
   const indexContent = "// Re-export from react-native-worklets-core\nmodule.exports = require('react-native-worklets-core/lib/commonjs/index');";
   fs.writeFileSync(path.join(workletsPath, 'index.js'), indexContent);
   
-    // 3. Create package.json with version compatible with react-native-reanimated
-    // react-native-reanimated expects version 0.5.x, 0.6.x, or 0.7.x
-    const pkgContent = {
-      name: 'react-native-worklets',
-      version: '0.5.1', // Must match react-native-reanimated's expected range
-      main: './index.js',
-      types: '../react-native-worklets-core/lib/typescript/index.d.ts',
-      'react-native': './index.js'
-    };
+  // 3. Create package.json with version compatible with react-native-reanimated
+  // react-native-reanimated expects version 0.5.x, 0.6.x, or 0.7.x
+  const pkgContent = {
+    name: 'react-native-worklets',
+    version: '0.5.1', // Must match react-native-reanimated's expected range
+    main: './index.js',
+    types: '../react-native-worklets-core/lib/typescript/index.d.ts',
+    'react-native': './index.js'
+  };
   fs.writeFileSync(
     path.join(workletsPath, 'package.json'),
     JSON.stringify(pkgContent, null, 2)
   );
+  
+  // 4. Create RNWorklets.podspec for CocoaPods (CRITICAL - react-native-reanimated depends on this)
+  const podspecContent = `require "json"
+
+package = JSON.parse(File.read(File.join(__dir__, "package.json")))
+
+Pod::Spec.new do |s|
+  s.name         = "RNWorklets"
+  s.version      = package["version"]
+  s.summary      = "React Native Worklets - Native module wrapper"
+  s.description  = "Wrapper podspec that points to react-native-worklets-core"
+  s.homepage     = "https://github.com/margelo/react-native-worklets-core"
+  s.license      = "MIT"
+  s.authors      = {}
+
+  s.platforms    = { :ios => "11.0" }
+  
+  # Point to react-native-worklets-core podspec
+  s.dependency "react-native-worklets-core"
+  
+  # Re-export headers from react-native-worklets-core
+  s.source_files = []
+  s.public_header_files = []
+end
+`;
+  fs.writeFileSync(path.join(workletsPath, 'RNWorklets.podspec'), podspecContent);
   
   console.log('✅ Created react-native-worklets package (plugin + module exports)');
   process.exit(0); // Exit successfully
