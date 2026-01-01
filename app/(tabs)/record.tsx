@@ -250,9 +250,9 @@ export default function RecordScreen() {
     }
     
     // If isLongPressRef is set from previous interaction, reset it
-    if (isLongPressRef.current) {
+    // But only if pressStartTimeRef is null (meaning previous interaction is complete)
+    if (isLongPressRef.current && !pressStartTimeRef.current) {
       isLongPressRef.current = false;
-      pressStartTimeRef.current = null;
       return;
     }
     
@@ -286,6 +286,7 @@ export default function RecordScreen() {
     // Clear any existing tap timeout
     if (tapTimeoutRef.current) {
       clearTimeout(tapTimeoutRef.current);
+      tapTimeoutRef.current = null;
     }
     
     // Set a timeout to detect long press (> 200ms)
@@ -295,7 +296,8 @@ export default function RecordScreen() {
       isLongPressRef.current = true;
       tapTimeoutRef.current = null;
       
-      // Start recording if not already recording
+      // Start recording if not already recording and not in transition states
+      // Double-check state to prevent race conditions
       if (!isRecording && status !== "transcribing" && status !== "saved") {
         await startRecording();
       }
@@ -303,7 +305,7 @@ export default function RecordScreen() {
   };
 
   const handlePressOut = async () => {
-    // Clear tap timeout
+    // Clear tap timeout (prevents handlePressIn timeout from firing)
     if (tapTimeoutRef.current) {
       clearTimeout(tapTimeoutRef.current);
       tapTimeoutRef.current = null;
@@ -316,17 +318,24 @@ export default function RecordScreen() {
         // This was a long press - stop recording on release
         isLongPressRef.current = true;
         
+        // Wait a brief moment for any pending startRecording to complete
+        // This handles race condition where timeout fired but startRecording hasn't finished
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
         // Stop recording if currently recording
         if (isRecording && recordingRef.current) {
           // Continue to stop recording logic below
         } else {
-          // If not recording, recording was already started by timeout in handlePressIn
+          // If not recording after wait, either:
+          // 1. Recording failed to start (permission/auth error)
+          // 2. User released too quickly before timeout completed
+          // In either case, just clean up and return
           pressStartTimeRef.current = null;
           return;
         }
       } else {
         // Quick tap (< 200ms) - let handlePress handle it
-        // Don't clear pressStartTimeRef yet - handlePress needs it
+        // Don't clear pressStartTimeRef yet - handlePress needs it to verify it's a tap
         return;
       }
       pressStartTimeRef.current = null;
