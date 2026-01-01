@@ -5,21 +5,26 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_NO_CAPABILITY_SYNC": "1"
+      }
     },
     "preview": {
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://focus-psi-one.vercel.app/api",
         "EXPO_PUBLIC_SUPABASE_URL": "https://wqvevludffkemgicrfos.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_Wh-OXf9VvhfJjI7vcuYuFw_bqP9nUk1"
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_Wh-OXf9VvhfJjI7vcuYuFw_bqP9nUk1",
+        "EXPO_NO_CAPABILITY_SYNC": "1"
       }
     },
     "production": {
       "env": {
         "EXPO_PUBLIC_API_URL": "https://focus-psi-one.vercel.app/api",
         "EXPO_PUBLIC_SUPABASE_URL": "https://wqvevludffkemgicrfos.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_Wh-OXf9VvhfJjI7vcuYuFw_bqP9nUk1"
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_Wh-OXf9VvhfJjI7vcuYuFw_bqP9nUk1",
+        "EXPO_NO_CAPABILITY_SYNC": "1"
       }
     }
   },
