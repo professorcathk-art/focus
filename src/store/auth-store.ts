@@ -8,6 +8,7 @@ import { User } from "@/types";
 import { supabase } from "@/lib/supabase";
 import { Session, AuthError } from "@supabase/supabase-js";
 import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { Platform } from "react-native";
 
@@ -292,21 +293,36 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       console.log("[Auth] ✅ Google sign in initiated");
       console.log("[Auth] OAuth URL:", data.url);
-      console.log("[Auth] Opening browser for Google sign-in...");
+      console.log("[Auth] Opening in-app browser for Google sign-in...");
       
-      // Manually open the OAuth URL in browser
-      // In React Native, signInWithOAuth doesn't automatically open the browser
-      const canOpen = await Linking.canOpenURL(data.url);
-      if (canOpen) {
-        await Linking.openURL(data.url);
-        console.log("[Auth] ✅ Browser opened successfully");
-      } else {
-        console.error("[Auth] ❌ Cannot open URL:", data.url);
-        throw new Error("Cannot open browser for Google sign-in");
+      // Use expo-web-browser for in-app browser experience
+      // This uses Chrome Custom Tabs on Android and SFSafariViewController on iOS
+      // Provides better UX than external browser while maintaining security
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectUrl, // Deep link that app will intercept
+        {
+          // Show browser controls for better security indicators
+          showInRecents: false, // Don't show in recent apps
+          enableBarCollapsing: false, // Keep browser bar visible
+        }
+      );
+      
+      if (result.type === 'cancel') {
+        console.log("[Auth] ⚠️ User cancelled Google sign in");
+        throw new Error("Google sign in was cancelled");
       }
       
-      // OAuth will redirect to browser, then back to app
-      // Session will be set via onAuthStateChange listener
+      if (result.type === 'dismiss') {
+        console.log("[Auth] ⚠️ Google sign in browser was dismissed");
+        throw new Error("Google sign in was dismissed");
+      }
+      
+      console.log("[Auth] ✅ In-app browser opened successfully");
+      console.log("[Auth] Browser result type:", result.type);
+      
+      // OAuth will redirect to deep link, then app will handle it via auth-callback
+      // Session will be set via onAuthStateChange listener or auth-callback handler
     } catch (error) {
       console.error("[Auth] ❌ Google sign in error:", error);
       throw error;
