@@ -3,6 +3,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { View, ActivityIndicator } from "react-native";
 import { Redirect } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -26,11 +27,11 @@ export default function Index() {
 
   useEffect(() => {
     if (isAuthenticated && !shouldRedirect) {
-      // Small delay to ensure auth state is fully settled before navigation
-      // This prevents crashes from race conditions
+      // Longer delay to ensure auth state and navigation stack are fully settled
+      // This prevents crashes from race conditions and navigation conflicts
       const timer = setTimeout(() => {
         setShouldRedirect(true);
-      }, 150);
+      }, 500); // Increased delay to 500ms for better stability
       return () => clearTimeout(timer);
     }
   }, [isAuthenticated, shouldRedirect]);
@@ -38,7 +39,12 @@ export default function Index() {
   if (isAuthenticated) {
     // Wait for redirect flag to prevent race conditions
     if (!shouldRedirect) {
-      return null; // Wait for state to settle
+      // Show loading indicator while waiting
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
+          <ActivityIndicator size="large" color="#34C759" />
+        </View>
+      );
     }
     
     // Use try-catch to prevent crashes
@@ -46,7 +52,15 @@ export default function Index() {
       return <Redirect href="/(tabs)/record" />;
     } catch (err) {
       console.error("[Index] Redirect error:", err);
-      return null;
+      // Fallback: try again after a delay
+      setTimeout(() => {
+        setShouldRedirect(false);
+      }, 1000);
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
+          <ActivityIndicator size="large" color="#34C759" />
+        </View>
+      );
     }
   }
 

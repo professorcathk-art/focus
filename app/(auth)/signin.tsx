@@ -66,9 +66,38 @@ export default function SignInScreen() {
     checkAppleAuth();
   }, []);
   
-  // Don't render if already authenticated
+  // Don't render if already authenticated - but add delay to prevent crash
   if (!authLoading && isAuthenticated) {
-    return <Redirect href="/(tabs)/record" />;
+    // Use a small delay to ensure navigation stack is ready
+    const [shouldRedirect, setShouldRedirect] = useState(false);
+    
+    useEffect(() => {
+      if (isAuthenticated) {
+        const timer = setTimeout(() => {
+          setShouldRedirect(true);
+        }, 300);
+        return () => clearTimeout(timer);
+      }
+    }, [isAuthenticated]);
+    
+    if (!shouldRedirect) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
+          <ActivityIndicator size="large" color="#34C759" />
+        </View>
+      );
+    }
+    
+    try {
+      return <Redirect href="/(tabs)/record" />;
+    } catch (err) {
+      console.error("[SignIn] Redirect error:", err);
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
+          <ActivityIndicator size="large" color="#34C759" />
+        </View>
+      );
+    }
   }
   
   // Animation values for fluid green elements
