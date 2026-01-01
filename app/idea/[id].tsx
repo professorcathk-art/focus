@@ -453,40 +453,33 @@ export default function IdeaDetailScreen() {
         <View className="mb-6">
           {idea.transcriptionError ? (
             <View className={`py-6 px-4 rounded-xl border ${
-              idea.transcriptionError.includes("No words detected") || idea.transcriptionError.includes("no words")
+              idea.transcriptionError.toLowerCase().includes("no words") || idea.transcriptionError.toLowerCase().includes("words detected")
                 ? "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800"
                 : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
             }`}>
               <View className="flex-row items-center mb-2">
                 <Ionicons 
-                  name={idea.transcriptionError.includes("No words detected") || idea.transcriptionError.includes("no words") ? "mic-off" : "alert-circle"} 
+                  name={idea.transcriptionError.toLowerCase().includes("no words") || idea.transcriptionError.toLowerCase().includes("words detected") ? "mic-off" : "alert-circle"} 
                   size={20} 
-                  color={idea.transcriptionError.includes("No words detected") || idea.transcriptionError.includes("no words") ? "#F59E0B" : "#EF4444"} 
+                  color={idea.transcriptionError.toLowerCase().includes("no words") || idea.transcriptionError.toLowerCase().includes("words detected") ? "#F59E0B" : "#EF4444"} 
                 />
                 <Text className={`text-base font-semibold ml-2 ${
-                  idea.transcriptionError.includes("No words detected") || idea.transcriptionError.includes("no words")
+                  idea.transcriptionError.toLowerCase().includes("no words") || idea.transcriptionError.toLowerCase().includes("words detected")
                     ? "text-yellow-600 dark:text-yellow-400"
                     : "text-red-600 dark:text-red-400"
                 }`}>
-                  {idea.transcriptionError.includes("No words detected") || idea.transcriptionError.includes("no words")
-                    ? "No Words Transcribed"
-                    : "Transcription Failed"}
+                  Transcript not detected
                 </Text>
               </View>
               <Text className={`text-sm mt-2 ${
-                idea.transcriptionError.includes("No words detected") || idea.transcriptionError.includes("no words")
+                idea.transcriptionError.toLowerCase().includes("no words") || idea.transcriptionError.toLowerCase().includes("words detected")
                   ? "text-yellow-700 dark:text-yellow-300"
                   : "text-red-700 dark:text-red-300"
               }`}>
-                {idea.transcriptionError.includes("No words detected") || idea.transcriptionError.includes("no words")
+                {idea.transcriptionError.toLowerCase().includes("no words") || idea.transcriptionError.toLowerCase().includes("words detected")
                   ? "No words were detected in the recording. Please try recording again with clearer speech."
-                  : idea.transcriptionError.split('\n')[0]}
+                  : "Transcript not detected. Please try recording again."}
               </Text>
-              {!(idea.transcriptionError.includes("No words detected") || idea.transcriptionError.includes("no words")) && (
-                <Text className="text-xs text-red-600 dark:text-red-400 mt-2 italic">
-                  Check Vercel logs for details. Idea ID: {idea.id}
-                </Text>
-              )}
             </View>
           ) : idea.audioUrl && (!idea.transcript || idea.transcript.trim() === '') ? (
             <View className="py-8 items-center">

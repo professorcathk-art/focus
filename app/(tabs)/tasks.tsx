@@ -118,8 +118,9 @@ export default function TasksScreen() {
       // Check AsyncStorage cache (fast, ~10-50ms) - but show loading only if no cache
       try {
         const cached = await getCachedTodos(dateStr, userId);
-        if (cached && cached.length > 0) {
-          console.log(`[Tasks] ⚡ FAST: Showing ${cached.length} tasks from AsyncStorage cache`);
+        // Show cached data even if empty (0 tasks is valid state) - includes completed tasks
+        if (cached !== null) {
+          console.log(`[Tasks] ⚡ FAST: Showing ${cached.length} tasks from AsyncStorage cache (including completed)`);
           setTodos(cached);
           setIsLoading(false); // Ensure loading is false
           
@@ -516,12 +517,26 @@ export default function TasksScreen() {
     ]);
   };
 
-  // Calendar helpers
+  // Calendar helpers - with smooth transitions
   const handleDateChange = (days: number) => {
-    setSelectedDate(addDays(selectedDate, days));
+    const newDate = addDays(selectedDate, days);
+    // Preload the new date's cache before switching to ensure instant display
+    const newDateStr = format(newDate, "yyyy-MM-dd");
+    const userId = user?.id;
+    if (userId) {
+      // Preload cache in background (non-blocking)
+      getCachedTodos(newDateStr, userId).catch(() => {});
+    }
+    setSelectedDate(newDate);
   };
 
   const handleSelectDate = (date: Date) => {
+    const dateStr = format(date, "yyyy-MM-dd");
+    const userId = user?.id;
+    if (userId) {
+      // Preload cache before switching (non-blocking)
+      getCachedTodos(dateStr, userId).catch(() => {});
+    }
     setSelectedDate(date);
     setShowCalendar(false);
   };

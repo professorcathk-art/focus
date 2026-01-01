@@ -57,9 +57,10 @@ export default function SignInScreen() {
     if (!authLoading && isAuthenticated && !shouldRedirect) {
       console.log("[SignIn] Authenticated, preparing redirect...");
       // Increased delay to prevent crashes - wait for auth state and navigation stack to settle
+      // Use longer delay to ensure React Navigation stack is fully ready
       const timer = setTimeout(() => {
         setShouldRedirect(true);
-      }, 1500); // Increased from 800ms to 1500ms for better stability
+      }, 2500); // Increased to 2500ms for maximum stability
       return () => clearTimeout(timer);
     }
   }, [isAuthenticated, authLoading, shouldRedirect]);
@@ -149,12 +150,13 @@ export default function SignInScreen() {
 
     setIsLoading(true);
     setError(null);
+    setShouldRedirect(false); // Reset redirect flag before sign in
 
     try {
       await signIn(email, password);
       // Wait longer for auth state to fully update and navigation stack to be ready
       // Increased delay to prevent crashes - don't clear loading, let redirect handle it
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
       // Don't redirect here - let useEffect handle it with Redirect component
       // This prevents crashes from race conditions
       // Loading state will be cleared by redirect or error handler
@@ -186,11 +188,12 @@ export default function SignInScreen() {
   const handleAppleSignIn = async () => {
     setIsLoading(true);
     setError(null);
+    setShouldRedirect(false); // Reset redirect flag before sign in
     try {
       await signInWithApple();
       // Wait longer for auth state to fully update and navigation stack to be ready
       // Increased delay to prevent crashes - don't clear loading, let redirect handle it
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
       // Don't redirect here - let useEffect handle it with Redirect component
       // This prevents crashes from race conditions
       // Loading state will be cleared by redirect or error handler
