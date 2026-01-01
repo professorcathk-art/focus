@@ -18,7 +18,7 @@ import {
   Pressable,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useRouter, Redirect } from "expo-router";
 import { useAuthStore } from "@/store/auth-store";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -52,39 +52,30 @@ export default function SignInScreen() {
     checkAppleAuth();
   }, []);
   
-  // Handle redirect when authenticated - navigate to root and let index.tsx handle redirect
+  // Handle redirect when authenticated - use Redirect component for safer navigation
   // This prevents navigation conflicts that cause crashes
   useEffect(() => {
     if (!authLoading && isAuthenticated && !shouldRedirect) {
-      console.log("[SignIn] Authenticated, navigating to root...");
-      // Navigate to root - index.tsx will handle redirect to tabs
-      // This is safer than redirecting directly from signin screen
+      console.log("[SignIn] Authenticated, preparing redirect...");
+      // Wait longer to ensure auth state is fully settled and navigation stack is ready
       const timer = setTimeout(() => {
-        try {
-          router.replace("/");
-        } catch (err) {
-          console.error("[SignIn] Navigation error:", err);
-          // Fallback: try again after delay
-          setTimeout(() => {
-            try {
-              router.replace("/");
-            } catch (e) {
-              console.error("[SignIn] Fallback navigation failed:", e);
-            }
-          }, 500);
-        }
-      }, 1000); // Shorter delay since we're going to root, not directly to tabs
+        setShouldRedirect(true);
+      }, 2000); // Increased delay to ensure everything is ready
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, authLoading, shouldRedirect, router]);
+  }, [isAuthenticated, authLoading, shouldRedirect]);
 
-  // Don't render if already authenticated - show loading while navigating
+  // Don't render if already authenticated - use Redirect component for safer navigation
   if (!authLoading && isAuthenticated) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
-        <ActivityIndicator size="large" color="#34C759" />
-      </View>
-    );
+    if (!shouldRedirect) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000000' }}>
+          <ActivityIndicator size="large" color="#34C759" />
+        </View>
+      );
+    }
+    // Use Redirect component - safer than router.replace for auth flows
+    return <Redirect href="/" />;
   }
   
   // Animation values for fluid green elements

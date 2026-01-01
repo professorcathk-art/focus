@@ -71,34 +71,52 @@ export default function ProfileScreen() {
               await signOut();
               // Wait longer for sign out to complete and auth state to clear
               // Increased delay to prevent crashes - ensure auth state is fully cleared
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              // Use Redirect component instead of router.replace for better stability
-              // The index route will handle redirecting to signin when not authenticated
+              await new Promise(resolve => setTimeout(resolve, 2500));
+              // Use a more defensive navigation approach
+              // Wait for navigation stack to be ready before navigating
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              // Use requestAnimationFrame to ensure UI is ready before navigation
+              requestAnimationFrame(() => {
+                setTimeout(() => {
+                  try {
+                    // Use replace with a small delay to ensure navigation stack is ready
+                    router.replace("/");
+                  } catch (navError) {
+                    console.error("[Profile] Navigation error after sign out:", navError);
+                    // Fallback: try again after longer delay
+                    setTimeout(() => {
+                      try {
+                        router.replace("/");
+                      } catch (e) {
+                        console.error("[Profile] Fallback navigation failed:", e);
+                        // Last resort: try one more time
+                        setTimeout(() => {
+                          try {
+                            router.replace("/");
+                          } catch (finalError) {
+                            console.error("[Profile] Final navigation attempt failed:", finalError);
+                          }
+                        }, 1000);
+                      }
+                    }, 1000);
+                  }
+                }, 300);
+              });
+            } catch (error) {
+              console.error("[Profile] Sign out error:", error);
+              // Even if signOut fails, try to navigate away after delay
               setTimeout(() => {
-                try {
-                  router.replace("/");
-                } catch (navError) {
-                  console.error("[Profile] Navigation error after sign out:", navError);
-                  // Fallback: try again after delay
+                requestAnimationFrame(() => {
                   setTimeout(() => {
                     try {
                       router.replace("/");
-                    } catch (e) {
-                      console.error("[Profile] Fallback navigation failed:", e);
+                    } catch (navError) {
+                      console.error("[Profile] Navigation after signout error failed:", navError);
                     }
                   }, 500);
-                }
-              }, 500);
-            } catch (error) {
-              console.error("[Profile] Sign out error:", error);
-              // Even if signOut fails, try to navigate away
-              try {
-                setTimeout(() => {
-                  router.replace("/");
-                }, 1000);
-              } catch (navError) {
-                console.error("[Profile] Navigation after signout error failed:", navError);
-              }
+                });
+              }, 1500);
               Alert.alert("Error", "Failed to sign out. Please try again.");
             }
           },
