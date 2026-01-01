@@ -89,7 +89,17 @@ export default function TasksScreen() {
           const stillCurrentDate = format(selectedDate, "yyyy-MM-dd") === dateStr && currentLoadingDateRef.current === dateStr;
           if (stillCurrentDate) {
             console.log(`[Tasks] ✅ Background refresh complete for ${dateStr}, updating UI`);
-            setTodos(filteredData);
+            // Prevent duplicates - merge with existing todos, preferring API data
+            setTodos(prev => {
+              // Create a map of existing todos by ID
+              const existingMap = new Map(prev.map(t => [t.id, t]));
+              // Add/update todos from API
+              filteredData.forEach(todo => {
+                existingMap.set(todo.id, todo);
+              });
+              // Return deduplicated array
+              return Array.from(existingMap.values());
+            });
           } else {
             console.log(`[Tasks] ⚠️ Background refresh for ${dateStr} completed but date changed, ignoring update`);
           }
@@ -123,7 +133,17 @@ export default function TasksScreen() {
             const stillCurrentDate = format(selectedDate, "yyyy-MM-dd") === dateStr && currentLoadingDateRef.current === dateStr;
             if (stillCurrentDate) {
               console.log(`[Tasks] ✅ Background refresh complete for ${dateStr}, updating UI`);
-              setTodos(filteredData);
+              // Prevent duplicates - merge with existing todos, preferring API data
+              setTodos(prev => {
+                // Create a map of existing todos by ID
+                const existingMap = new Map(prev.map(t => [t.id, t]));
+                // Add/update todos from API
+                filteredData.forEach(todo => {
+                  existingMap.set(todo.id, todo);
+                });
+                // Return deduplicated array
+                return Array.from(existingMap.values());
+              });
             } else {
               console.log(`[Tasks] ⚠️ Background refresh for ${dateStr} completed but date changed, ignoring update`);
             }
@@ -217,10 +237,13 @@ export default function TasksScreen() {
         setTodos(filtered);
         setIsLoading(false);
         // Load fresh data in background (with error handling)
-        loadTodos(selectedDate, false).catch((error) => {
-          console.error('[Tasks] Background load error:', error);
-          // Don't crash - just log the error
-        });
+        // Use a small delay to prevent race condition with cache update
+        setTimeout(() => {
+          loadTodos(selectedDate, false).catch((error) => {
+            console.error('[Tasks] Background load error:', error);
+            // Don't crash - just log the error
+          });
+        }, 100);
         return; // Exit early - instant display!
       }
       

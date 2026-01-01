@@ -266,6 +266,12 @@ export default function RecordScreen() {
       const holdDuration = Date.now() - pressStartTimeRef.current;
       if (holdDuration > 200) {
         isLongPressRef.current = true; // Mark as long press
+        // If it was a long press and we're not recording yet, start recording now
+        if (!isRecording) {
+          await startRecording();
+          pressStartTimeRef.current = null;
+          return; // Exit early - recording started
+        }
       }
       pressStartTimeRef.current = null;
     }
