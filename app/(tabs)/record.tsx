@@ -246,11 +246,22 @@ export default function RecordScreen() {
     await startRecording();
   };
 
+  // Debounce ref to prevent rapid successive calls
+  const handlePressOutDebounceRef = useRef<number | null>(null);
+  
   const handlePressOut = async () => {
     // Prevent multiple calls
     if (!isRecording || !recordingRef.current) {
       return;
     }
+    
+    // Debounce: prevent rapid successive calls (e.g., tap immediately after hold)
+    const now = Date.now();
+    if (handlePressOutDebounceRef.current && (now - handlePressOutDebounceRef.current) < 200) {
+      console.log("[Record] Debouncing handlePressOut - too rapid");
+      return;
+    }
+    handlePressOutDebounceRef.current = now;
 
     // Minimum recording duration check (prevent accidental releases and API errors)
     // Require recordings >= 1 second - Deepgram API needs at least 1 second of audio
@@ -268,12 +279,15 @@ export default function RecordScreen() {
       setRecordingTime(0);
       setStatus("idle");
       
-      // Show user-friendly warning
-      Alert.alert(
-        "Recording Too Short",
-        "Please record for at least 1 second. The recording was not saved.",
-        [{ text: "OK" }]
-      );
+      // Only show warning if recording was intentional (not accidental tap)
+      // Don't show if it was less than 0.3 seconds (likely accidental)
+      if (recordingTime >= 0.3) {
+        Alert.alert(
+          "Recording Too Short",
+          "Please record for at least 1 second. The recording was not saved.",
+          [{ text: "OK" }]
+        );
+      }
       return;
     }
 
