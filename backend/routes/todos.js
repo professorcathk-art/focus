@@ -146,7 +146,7 @@ router.post('/move-incomplete', requireAuth, async (req, res) => {
 
     // DUPLICATE each incomplete todo to today (don't delete original)
     const duplicatedTodos = [];
-    const now = new Date().toISOString();
+    const nowISO = new Date().toISOString();
     
     for (const todo of incompleteTodos) {
       // Create a new todo for today with same content
@@ -159,8 +159,8 @@ router.post('/move-incomplete', requireAuth, async (req, res) => {
           text: todo.text,
           completed: false, // Always incomplete when duplicated
           date: todayStr,
-          created_at: now,
-          updated_at: now,
+          created_at: nowISO,
+          updated_at: nowISO,
           is_rolled_over: true, // Mark as rolled over from previous day
         })
         .select('*')
